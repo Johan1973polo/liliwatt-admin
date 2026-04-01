@@ -72,8 +72,11 @@
           <input type="text" id="telephone" placeholder="07 00 00 00 00">
         </div>
         <div class="form-group full">
-          <label>Mot de passe temporaire</label>
-          <input type="text" id="password" placeholder="ex: Liliwatt2026!">
+          <label>Email personnel (pour recevoir les identifiants)</label>
+          <input type="email" id="email_perso" placeholder="prenom.nom@gmail.com">
+        </div>
+        <div class="form-group full" style="background:#f0fdf4;border-radius:10px;padding:14px;font-size:13px;color:#16a34a;">
+          🔐 Un mot de passe sécurisé sera généré automatiquement et envoyé par email
         </div>
       </div>
       <br>
@@ -126,10 +129,11 @@ async function createUser() {
   const nom = document.getElementById('nom').value.trim();
   const poste = document.getElementById('poste').value.trim();
   const telephone = document.getElementById('telephone').value.trim();
-  const password = document.getElementById('password').value.trim();
+  const password = '';
+  const email_perso = document.getElementById('email_perso').value.trim();
   const result = document.getElementById('result-creer');
 
-  if (!prenom || !nom || !poste || !telephone || !password) {
+  if (!prenom || !nom || !poste || !telephone || !email_perso) {
     result.className = 'result err'; result.style.display = 'block';
     result.textContent = 'Tous les champs sont obligatoires.'; return;
   }
@@ -140,7 +144,7 @@ async function createUser() {
   const r = await fetch('/api/users', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({prenom, nom, poste, telephone, password})
+    body: JSON.stringify({prenom, nom, poste, telephone, password, email_perso})
   });
   const data = await r.json();
 

@@ -50,7 +50,19 @@ def make_signature(prenom, nom, poste, telephone, email):
 </div>"""
 
 
-def send_welcome_email(prenom, nom, email, password):
+def generate_password():
+    """Génère un mot de passe sécurisé automatiquement"""
+    import random
+    import string
+    majuscules = random.choices(string.ascii_uppercase, k=2)
+    minuscules = random.choices(string.ascii_lowercase, k=4)
+    chiffres = random.choices(string.digits, k=3)
+    speciaux = random.choices('@#$!%&', k=2)
+    all_chars = majuscules + minuscules + chiffres + speciaux
+    random.shuffle(all_chars)
+    return ''.join(all_chars)
+
+def send_welcome_email(prenom, nom, email, password, email_perso=''):
     """Envoie l'email de bienvenue avec les identifiants"""
     import smtplib
     from email.mime.multipart import MIMEMultipart
@@ -113,9 +125,11 @@ def send_welcome_email(prenom, nom, email, password):
     msg.attach(MIMEText(html, 'html'))
 
     try:
-        with smtplib.SMTP_SSL('smtp.zoho.eu', 465) as server:
+        destinataire = email_perso if email_perso else email
+        with smtplib.SMTP('smtp.zoho.eu', 587) as server:
+            server.starttls()
             server.login(ZOHO_USER, ZOHO_PASS)
-            server.sendmail(ZOHO_USER, email, msg.as_string())
+            server.sendmail(ZOHO_USER, destinataire, msg.as_string())
         print(f"✅ Email bienvenue envoyé à {email}")
         return True
     except Exception as e:
@@ -167,7 +181,10 @@ def create_user():
         nom = d.get('nom', '').strip()
         poste = d.get('poste', '').strip()
         telephone = d.get('telephone', '').strip()
-        password = d.get('password', '').strip()
+        password_input = d.get('password', '').strip()
+        email_perso = d.get('email_perso', '').strip()
+        # Générer automatiquement si vide
+        password = password_input if password_input else generate_password()
 
         email_local = f"{prenom.lower()}.{nom.lower()}@liliwatt.fr"
         email_local = email_local.replace('é','e').replace('è','e').replace('ê','e').replace('ë','e')
@@ -203,7 +220,7 @@ def create_user():
                 )
 
             # Envoyer email de bienvenue
-            send_welcome_email(prenom, nom, email_local, password)
+            send_welcome_email(prenom, nom, email_local, password, email_perso)
             
             return jsonify({
                 'success': True,
