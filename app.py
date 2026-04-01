@@ -250,7 +250,7 @@ def create_user():
             if account_id:
                 sig_html = make_signature(prenom, nom, poste, telephone, email_local)
                 sig_r = requests.post(
-                    f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts/{account_id}/signatures',
+                    f'https://mail.zoho.eu/api/accounts/{account_id}/signatures',
                     headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
                     json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
                     timeout=15
