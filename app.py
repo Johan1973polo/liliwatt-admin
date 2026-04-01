@@ -101,7 +101,7 @@ def generate_password():
     random.shuffle(all_chars)
     return ''.join(all_chars)
 
-def send_welcome_email(prenom, nom, email, password, email_perso='', account_id_zoho=''):
+def send_welcome_email(prenom, nom, email, password, poste='', telephone='', email_perso='', account_id_zoho=''):
     """Envoie l'email de bienvenue via API Zoho Mail (pas SMTP)"""
     try:
         destinataire = email_perso if email_perso else email
@@ -309,7 +309,7 @@ def create_user():
             created_account_id = result.get('data', {}).get('accountId', '')
             
             # Envoyer email directement (pas de thread)
-            send_welcome_email(prenom, nom, email_local, password, email_perso, created_account_id)
+            send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, created_account_id)
             
             return jsonify({
                 'success': True,
