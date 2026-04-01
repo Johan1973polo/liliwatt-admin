@@ -126,7 +126,7 @@ def send_welcome_email(prenom, nom, email, password, email_perso=''):
 
     try:
         destinataire = email_perso if email_perso else email
-        with smtplib.SMTP('smtp.zoho.eu', 587) as server:
+        with smtplib.SMTP('smtp.zoho.eu', 587, timeout=20) as server:
             server.starttls()
             server.login(ZOHO_USER, ZOHO_PASS)
             server.sendmail(ZOHO_USER, destinataire, msg.as_string())
@@ -219,8 +219,14 @@ def create_user():
                     json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True}
                 )
 
-            # Envoyer email de bienvenue
-            send_welcome_email(prenom, nom, email_local, password, email_perso)
+            # Envoyer email de bienvenue en arrière-plan (thread)
+            import threading
+            t = threading.Thread(
+                target=send_welcome_email,
+                args=(prenom, nom, email_local, password, email_perso)
+            )
+            t.daemon = True
+            t.start()
             
             return jsonify({
                 'success': True,
