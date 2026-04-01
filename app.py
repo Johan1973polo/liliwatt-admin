@@ -101,7 +101,7 @@ def generate_password():
     random.shuffle(all_chars)
     return ''.join(all_chars)
 
-def send_welcome_email(prenom, nom, email, password, email_perso=''):
+def send_welcome_email(prenom, nom, email, password, email_perso='', account_id_zoho=''):
     """Envoie l'email de bienvenue via API Zoho Mail (pas SMTP)"""
     try:
         destinataire = email_perso if email_perso else email
@@ -144,20 +144,29 @@ def send_welcome_email(prenom, nom, email, password, email_perso=''):
 </div>"""
 
         # Envoyer via API Zoho Mail
-        account_id = os.environ.get('ZOHO_ACCOUNT_ID', '')
+        # Utiliser l'account_id passé en paramètre ou récupérer via API
+        if account_id_zoho:
+            account_id = account_id_zoho
+        else:
+            account_id = os.environ.get('ZOHO_ACCOUNT_ID', '')
         
-        # Si pas d'account_id, le récupérer  
+        # Si toujours pas d'account_id, le récupérer via API
         if not account_id:
             acc_r = requests.get(
                 'https://mail.zoho.eu/api/accounts',
                 headers={'Authorization': f'Zoho-oauthtoken {token}'},
                 timeout=15
             )
-            acc_data = acc_r.json().get('data', [])
-            if isinstance(acc_data, list) and acc_data:
-                account_id = acc_data[0].get('accountId', '')
-            elif isinstance(acc_data, dict):
-                account_id = acc_data.get('accountId', '')
+            raw = acc_r.json()
+            # L'API retourne soit {"data": [...]} soit directement une liste
+            if isinstance(raw, list):
+                acc_list = raw
+            else:
+                acc_list = raw.get('data', [])
+            if isinstance(acc_list, list) and acc_list:
+                account_id = acc_list[0].get('accountId', '')
+            elif isinstance(acc_list, dict):
+                account_id = acc_list.get('accountId', '')
         
         send_r = requests.post(
             f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
@@ -290,11 +299,14 @@ def create_user():
             # Enregistrer dans Google Sheets
             save_to_sheet(prenom, nom, email_local, password, poste)
             
+            # Récupérer account_id depuis la réponse Zoho
+            created_account_id = result.get('data', {}).get('accountId', '')
+            
             # Envoyer email de bienvenue en arrière-plan (thread)
             import threading
             t = threading.Thread(
                 target=send_welcome_email,
-                args=(prenom, nom, email_local, password, email_perso)
+                args=(prenom, nom, email_local, password, email_perso, created_account_id)
             )
             t.daemon = True
             t.start()
