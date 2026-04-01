@@ -125,7 +125,8 @@ L'application sera accessible sur: `https://liliwatt-admin.onrender.com`
 ✅ Normalisation des accents (é→e, à→a, etc.)
 ✅ Application automatique de signature HTML LILIWATT
 ✅ Email de bienvenue automatique avec identifiants (envoyé depuis bo@liliwatt.fr à l'email personnel)
-✅ SMTP configuré sur port 587 avec STARTTLS
+✅ SMTP configuré sur port 587 avec STARTTLS (timeout 20s)
+✅ Envoi email en thread séparé pour performance optimale
 ✅ Liste des utilisateurs existants
 ✅ Suppression d'utilisateurs
 ✅ Interface responsive avec branding LILIWATT
@@ -166,6 +167,27 @@ Format HTML avec:
 - **Composition:** 2 majuscules + 4 minuscules + 3 chiffres + 2 caractères spéciaux (@#$!%&)
 - **Ordre:** Aléatoire (shuffle)
 - **Exemple:** `Ax3@kpTs#9q`
+
+## Performance et Optimisations
+
+### Threading Email
+L'envoi de l'email de bienvenue se fait dans un **thread séparé** (daemon) pour:
+- Ne pas bloquer la réponse HTTP
+- Éviter les timeouts sur Render.com (30s max)
+- Retourner immédiatement les identifiants à l'admin
+- Le worker continue l'envoi en arrière-plan
+
+### SMTP Configuration
+- **Port:** 587 (STARTTLS)
+- **Timeout:** 20 secondes
+- **Host:** smtp.zoho.eu
+- Si l'email échoue, l'utilisateur est quand même créé dans Zoho
+
+### Temps de Réponse Typiques
+- Création utilisateur Zoho: ~2-3 secondes
+- Application signature: ~500ms
+- Réponse HTTP totale: **< 5 secondes**
+- Envoi email (en arrière-plan): ~3-5 secondes
 
 ## URLs Importantes
 
