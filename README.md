@@ -46,8 +46,7 @@ L'application sera accessible sur http://localhost:5001
    - `ZOHO_CLIENT_SECRET` : Secret client OAuth Zoho
    - `ZOHO_REFRESH_TOKEN` : Token de rafraîchissement Zoho
    - `ZOHO_ORG_ID` : ID de l'organisation Zoho
-   - `ZOHO_SMTP_USER` : Adresse email d'envoi (bo@liliwatt.fr)
-   - `ZOHO_SMTP_PASS` : Mot de passe SMTP Zoho
+   - `ZOHO_ACCOUNT_ID` : (Optionnel) Account ID pour envoi email
 4. Build Command : `pip install -r requirements.txt`
 5. Start Command : `gunicorn app:app`
 

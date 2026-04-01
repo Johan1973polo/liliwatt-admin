@@ -84,10 +84,7 @@ ZOHO_CLIENT_ID=1000.9W93I9JDA3GN47P3ZBAWAEVCQI2RWU
 ZOHO_CLIENT_SECRET=4a13cc8af6573803ea9084dca1931542648d96e4a0
 ZOHO_REFRESH_TOKEN=1000.b405dc6c268231a8f7f827d1898d5011.32fce7278b68d4ded24688514710e322
 ZOHO_ORG_ID=20113501048
-
-# Zoho SMTP (pour emails de bienvenue)
-ZOHO_SMTP_USER=bo@liliwatt.fr
-ZOHO_SMTP_PASS=<mot-de-passe-smtp-zoho>
+ZOHO_ACCOUNT_ID=<optionnel-account-id-zoho>
 ```
 
 ## Déploiement sur Render.com
@@ -126,7 +123,7 @@ L'application sera accessible sur: `https://liliwatt-admin.onrender.com`
 ✅ Sauvegarde automatique dans Google Sheets (feuille COMMERCIAUX)
 ✅ Application automatique de signature HTML LILIWATT
 ✅ Email de bienvenue automatique avec identifiants (envoyé depuis bo@liliwatt.fr à l'email personnel)
-✅ SMTP SSL configuré sur port 465 (timeout 25s)
+✅ Envoi email via API Zoho Mail (pas de problème SMTP)
 ✅ Envoi email en thread séparé pour performance optimale
 ✅ Liste des utilisateurs existants
 ✅ Suppression d'utilisateurs
@@ -179,10 +176,12 @@ L'envoi de l'email de bienvenue se fait dans un **thread séparé** (daemon) pou
 - Retourner immédiatement les identifiants à l'admin
 - Le worker continue l'envoi en arrière-plan
 
-### SMTP Configuration
-- **Port:** 465 (SSL)
-- **Timeout:** 25 secondes
-- **Host:** smtp.zoho.eu
+### Email Configuration
+L'application utilise **l'API Zoho Mail** pour envoyer les emails de bienvenue (pas SMTP):
+- **Avantage:** Pas de ports bloqués (465/587)
+- **API Endpoint:** `/api/accounts/{accountId}/messages`
+- **Authentication:** Token OAuth (réutilisé)
+- **Timeout:** 15 secondes
 - Si l'email échoue, l'utilisateur est quand même créé dans Zoho
 
 ### Google Sheets Integration
