@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LILIWATT Admin</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f5f3ff; min-height: 100vh; }
+  header { background: linear-gradient(135deg, #1e1b4b, #7c3aed); padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { color: white; font-size: 20px; font-weight: 800; letter-spacing: 2px; }
+  header a { color: rgba(255,255,255,0.7); font-size: 13px; text-decoration: none; }
+  .container { max-width: 900px; margin: 40px auto; padding: 0 20px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 28px; }
+  .tab { padding: 10px 24px; border-radius: 50px; font-size: 13px; font-weight: 700; cursor: pointer; border: 2px solid #7c3aed; color: #7c3aed; background: white; transition: all 0.2s; }
+  .tab.active { background: #7c3aed; color: white; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card { background: white; border-radius: 16px; padding: 32px; box-shadow: 0 4px 20px rgba(124,58,237,0.08); }
+  .card h2 { font-size: 18px; color: #1e1b4b; margin-bottom: 24px; font-weight: 700; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; }
+  input, select { padding: 11px 14px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 14px; outline: none; transition: border-color 0.2s; }
+  input:focus, select:focus { border-color: #7c3aed; }
+  .btn { padding: 13px 28px; background: linear-gradient(135deg, #7c3aed, #d946ef); color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 8px; }
+  .btn-danger { background: linear-gradient(135deg, #ef4444, #f97316); }
+  .result { margin-top: 20px; padding: 16px; border-radius: 10px; font-size: 14px; display: none; }
+  .result.ok { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+  .result.err { background: #fef2f2; color: #ef4444; border: 1px solid #fecaca; }
+  .user-list { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .user-item { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background: #faf5ff; border-radius: 10px; border: 1px solid #e9d5ff; }
+  .user-info strong { color: #1e1b4b; font-size: 14px; }
+  .user-info span { color: #7c3aed; font-size: 12px; display: block; }
+  .loading { text-align: center; color: #7c3aed; font-size: 14px; padding: 20px; }
+  .bar { height: 3px; background: linear-gradient(135deg, #7c3aed, #d946ef); border-radius: 0 0 0 0; }
+</style>
+</head>
+<body>
+<div class="bar"></div>
+<header>
+  <h1>LILIWATT Admin</h1>
+  <a href="/logout">Déconnexion</a>
+</header>
+
+<div class="container">
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('creer')">+ Créer un commercial</div>
+    <div class="tab" onclick="showTab('gerer')">Gérer les commerciaux</div>
+  </div>
+
+  <!-- Créer -->
+  <div class="panel active" id="tab-creer">
+    <div class="card">
+      <h2>Créer un nouveau commercial</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Prénom</label>
+          <input type="text" id="prenom" placeholder="Jean">
+        </div>
+        <div class="form-group">
+          <label>Nom</label>
+          <input type="text" id="nom" placeholder="Dupont">
+        </div>
+        <div class="form-group">
+          <label>Poste</label>
+          <input type="text" id="poste" placeholder="Business Developer">
+        </div>
+        <div class="form-group">
+          <label>Téléphone</label>
+          <input type="text" id="telephone" placeholder="07 00 00 00 00">
+        </div>
+        <div class="form-group full">
+          <label>Mot de passe temporaire</label>
+          <input type="text" id="password" placeholder="ex: Liliwatt2026!">
+        </div>
+      </div>
+      <br>
+      <div style="background:#f5f3ff;border-radius:10px;padding:14px;font-size:13px;color:#7c3aed;margin-bottom:16px;">
+        L'adresse email sera automatiquement : <strong id="preview-email">prenom.nom@liliwatt.fr</strong>
+      </div>
+      <button class="btn" onclick="createUser()">Créer le commercial</button>
+      <div class="result" id="result-creer"></div>
+    </div>
+  </div>
+
+  <!-- Gérer -->
+  <div class="panel" id="tab-gerer">
+    <div class="card">
+      <h2>Commerciaux actifs</h2>
+      <button class="btn" onclick="loadUsers()" style="margin-bottom:16px;">Actualiser la liste</button>
+      <div class="user-list" id="user-list">
+        <div class="loading">Cliquez sur "Actualiser" pour charger les utilisateurs</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('active', (i === 0 && name === 'creer') || (i === 1 && name === 'gerer'));
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+function normalize(s) {
+  return s.toLowerCase()
+    .replace(/[éèêë]/g,'e').replace(/[àâ]/g,'a')
+    .replace(/[ùû]/g,'u').replace(/[ôo]/g,'o')
+    .replace(/\s+/g,'.').replace(/'/g,'');
+}
+
+document.getElementById('prenom').addEventListener('input', updatePreview);
+document.getElementById('nom').addEventListener('input', updatePreview);
+function updatePreview() {
+  const p = normalize(document.getElementById('prenom').value || 'prenom');
+  const n = normalize(document.getElementById('nom').value || 'nom');
+  document.getElementById('preview-email').textContent = p + '.' + n + '@liliwatt.fr';
+}
+
+async function createUser() {
+  const prenom = document.getElementById('prenom').value.trim();
+  const nom = document.getElementById('nom').value.trim();
+  const poste = document.getElementById('poste').value.trim();
+  const telephone = document.getElementById('telephone').value.trim();
+  const password = document.getElementById('password').value.trim();
+  const result = document.getElementById('result-creer');
+
+  if (!prenom || !nom || !poste || !telephone || !password) {
+    result.className = 'result err'; result.style.display = 'block';
+    result.textContent = 'Tous les champs sont obligatoires.'; return;
+  }
+
+  result.className = 'result'; result.style.display = 'block';
+  result.textContent = 'Création en cours...';
+
+  const r = await fetch('/api/users', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({prenom, nom, poste, telephone, password})
+  });
+  const data = await r.json();
+
+  if (data.success) {
+    result.className = 'result ok';
+    result.innerHTML = `✅ ${data.message}<br><strong>Email :</strong> ${data.email}<br><strong>Mot de passe :</strong> ${data.password}`;
+    document.getElementById('prenom').value = '';
+    document.getElementById('nom').value = '';
+    document.getElementById('poste').value = '';
+    document.getElementById('telephone').value = '';
+    document.getElementById('password').value = '';
+    updatePreview();
+  } else {
+    result.className = 'result err';
+    result.textContent = 'Erreur : ' + data.error;
+  }
+}
+
+async function loadUsers() {
+  const list = document.getElementById('user-list');
+  list.innerHTML = '<div class="loading">Chargement...</div>';
+  const r = await fetch('/api/users');
+  const data = await r.json();
+  if (!data.success) { list.innerHTML = '<div class="loading">Erreur : ' + data.error + '</div>'; return; }
+  if (!data.users.length) { list.innerHTML = '<div class="loading">Aucun utilisateur trouvé</div>'; return; }
+  list.innerHTML = data.users.map(u => `
+    <div class="user-item">
+      <div class="user-info">
+        <strong>${u.displayName || u.firstName + ' ' + u.lastName}</strong>
+        <span>${u.emailAddress || ''}</span>
+      </div>
+      <button class="btn btn-danger" onclick="deleteUser('${u.accountId}', '${u.displayName || ''}')">Supprimer</button>
+    </div>
+  `).join('');
+}
+
+async function deleteUser(id, name) {
+  if (!confirm('Supprimer ' + name + ' ? Cette action est irréversible.')) return;
+  const r = await fetch('/api/users/' + id, {method: 'DELETE'});
+  const data = await r.json();
+  if (data.success) { alert('Utilisateur supprimé.'); loadUsers(); }
+  else alert('Erreur : ' + data.error);
+}
+</script>
+</body>
+</html>
