@@ -263,6 +263,27 @@ def create_user():
                     json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True}
                 )
 
+            # Configurer redirection vers contact@liliwatt.fr
+            try:
+                token_fwd = get_zoho_token()
+                account_id = result.get('data', {}).get('accountId', '')
+                if account_id:
+                    requests.post(
+                        f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts/{account_id}/settings/forwardingaddress',
+                        headers={
+                            'Authorization': f'Zoho-oauthtoken {token_fwd}',
+                            'Content-Type': 'application/json'
+                        },
+                        json={
+                            'forwardingAddress': 'contact@liliwatt.fr',
+                            'keepCopy': True
+                        },
+                        timeout=15
+                    )
+                    print(f"✅ Redirection configurée : {email_local} → contact@liliwatt.fr")
+            except Exception as e:
+                print(f"⚠️ Erreur redirection : {e}")
+
             # Enregistrer dans Google Sheets
             save_to_sheet(nom, prenom, password, email_local, poste)
             
