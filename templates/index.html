@@ -166,20 +166,23 @@ async function loadUsers() {
   const data = await r.json();
   if (!data.success) { list.innerHTML = '<div class="loading">Erreur : ' + data.error + '</div>'; return; }
   if (!data.users.length) { list.innerHTML = '<div class="loading">Aucun utilisateur trouvé</div>'; return; }
-  list.innerHTML = data.users.map(u => `
+  list.innerHTML = data.users.map(u => {
+    const email = u.primaryEmailAddress || (Array.isArray(u.emailAddress) ? u.emailAddress[0]?.mailId : u.emailAddress) || '';
+    return `
     <div class="user-item">
       <div class="user-info">
         <strong>${u.displayName || u.firstName + ' ' + u.lastName}</strong>
-        <span>${u.emailAddress || ''}</span>
+        <span>${email}</span>
       </div>
-      <button class="btn btn-danger" onclick="deleteUser('${u.accountId}', '${u.displayName || ''}')">Supprimer</button>
+      <button class="btn btn-danger" onclick="deleteUser('${email}', '${u.displayName || ''}')">Supprimer</button>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
-async function deleteUser(id, name) {
+async function deleteUser(email, name) {
   if (!confirm('Supprimer ' + name + ' ? Cette action est irréversible.')) return;
-  const r = await fetch('/api/users/' + id, {method: 'DELETE'});
+  const r = await fetch('/api/users/' + encodeURIComponent(email), {method: 'DELETE'});
   const data = await r.json();
   if (data.success) { alert('Utilisateur supprimé.'); loadUsers(); }
   else alert('Erreur : ' + data.error);

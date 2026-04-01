@@ -141,14 +141,15 @@ def create_user():
         import traceback
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
 
-@app.route('/api/users/<account_id>', methods=['DELETE'])
+@app.route('/api/users/<email>', methods=['DELETE'])
 @login_required
-def delete_user(account_id):
+def delete_user(email):
     try:
         token = get_zoho_token()
         r = requests.delete(
-            f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts/{account_id}',
-            headers={'Authorization': f'Zoho-oauthtoken {token}'}
+            f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts',
+            headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+            json={'emailList': [email]}
         )
         return jsonify({'success': True, 'result': r.json()})
     except Exception as e:
