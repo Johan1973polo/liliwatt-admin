@@ -185,7 +185,7 @@ def send_welcome_email(prenom, nom, email, password, email_perso='', account_id_
         )
         
         result = send_r.json()
-        print(f"✅ Email bienvenue envoyé via API Zoho : {result.get('status', {}).get('description', '')}")
+        print(f"✅ Email bienvenue envoyé - status: {send_r.status_code} - response: {str(result)[:100]}")
         return True
         
     except Exception as e:
