@@ -1,0 +1,154 @@
+# Guide de Déploiement LILIWATT Admin
+
+## Résumé du Projet
+
+Application Flask pour gérer automatiquement les comptes email Zoho Mail des commerciaux LILIWATT.
+
+## Credentials Zoho OAuth (testés et validés)
+
+### Configuration OAuth
+```
+Client ID: 1000.9W93I9JDA3GN47P3ZBAWAEVCQI2RWU
+Client Secret: 4a13cc8af6573803ea9084dca1931542648d96e4a0
+Refresh Token: 1000.b405dc6c268231a8f7f827d1898d5011.32fce7278b68d4ded24688514710e322
+Organization ID: 20113501048
+```
+
+### Scopes autorisés
+- `ZohoMail.organization.accounts.ALL`
+- `ZohoMail.organization.accounts.CREATE`
+- `ZohoMail.organization.accounts.DELETE`
+- `ZohoMail.organization.accounts.READ`
+
+## Tests Réalisés
+
+### ✅ Test 1: Obtention du token d'accès
+```bash
+curl -s -X POST "https://accounts.zoho.eu/oauth/v2/token" \
+  -d "refresh_token=1000.b405dc6c268231a8f7f827d1898d5011.32fce7278b68d4ded24688514710e322" \
+  -d "client_id=1000.9W93I9JDA3GN47P3ZBAWAEVCQI2RWU" \
+  -d "client_secret=4a13cc8af6573803ea9084dca1931542648d96e4a0" \
+  -d "grant_type=refresh_token"
+```
+**Résultat:** ✅ Token obtenu avec succès
+
+### ✅ Test 2: Création d'utilisateur
+```bash
+curl -X POST "https://mail.zoho.eu/api/organization/20113501048/accounts" \
+  -H "Authorization: Zoho-oauthtoken [TOKEN]" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Jean",
+    "lastName": "Dupont",
+    "primaryEmailAddress": "jean.dupont@liliwatt.fr",
+    "password": "Liliwatt2026"
+  }'
+```
+**Résultat:** ✅ Utilisateur créé (Status 201)
+- Email: jean.dupont@liliwatt.fr
+- Account ID: 8412233000000002002
+- ZUID: 20113514806
+
+### ✅ Test 3: Suppression d'utilisateur
+```bash
+curl -X DELETE "https://mail.zoho.eu/api/organization/20113501048/accounts" \
+  -H "Authorization: Zoho-oauthtoken [TOKEN]" \
+  -H "Content-Type: application/json" \
+  -d '{"emailList": ["jean.dupont@liliwatt.fr"]}'
+```
+**Résultat:** ✅ Utilisateur supprimé (Status 200)
+
+## Corrections API Apportées
+
+### 1. Champ email
+- ❌ Avant: `emailAddress`
+- ✅ Après: `primaryEmailAddress`
+
+### 2. Champs requis
+- ❌ Avant: displayName, role (causaient erreur PATTERN_NOT_MATCHED)
+- ✅ Après: Uniquement firstName, lastName, primaryEmailAddress, password
+
+### 3. Suppression d'utilisateur
+- ❌ Avant: DELETE /accounts/{accountId}
+- ✅ Après: DELETE /accounts avec JSON {"emailList": ["email@liliwatt.fr"]}
+
+## Variables d'Environnement pour Render.com
+
+```bash
+# Flask
+SECRET_KEY=<générer avec: python -c "import secrets; print(secrets.token_hex(32))">
+ADMIN_PASSWORD=liliwatt2026
+
+# Zoho Mail API
+ZOHO_CLIENT_ID=1000.9W93I9JDA3GN47P3ZBAWAEVCQI2RWU
+ZOHO_CLIENT_SECRET=4a13cc8af6573803ea9084dca1931542648d96e4a0
+ZOHO_REFRESH_TOKEN=1000.b405dc6c268231a8f7f827d1898d5011.32fce7278b68d4ded24688514710e322
+ZOHO_ORG_ID=20113501048
+```
+
+## Déploiement sur Render.com
+
+### Étape 1: Créer le Web Service
+1. Aller sur https://dashboard.render.com
+2. Cliquer sur "New +" → "Web Service"
+3. Connecter le repository: `https://github.com/Johan1973polo/liliwatt-admin`
+
+### Étape 2: Configuration
+```
+Name: liliwatt-admin
+Region: Frankfurt (EU Central)
+Branch: main
+Runtime: Python 3
+Build Command: pip install -r requirements.txt
+Start Command: gunicorn app:app
+Instance Type: Free (ou Starter pour production)
+```
+
+### Étape 3: Variables d'environnement
+Ajouter toutes les variables listées ci-dessus dans "Environment Variables"
+
+### Étape 4: Déployer
+Cliquer sur "Create Web Service"
+
+L'application sera accessible sur: `https://liliwatt-admin.onrender.com`
+
+## Fonctionnalités Validées
+
+✅ Authentification admin sécurisée
+✅ Création automatique de comptes Zoho
+✅ Génération automatique d'emails (prenom.nom@liliwatt.fr)
+✅ Normalisation des accents (é→e, à→a, etc.)
+✅ Application automatique de signature HTML LILIWATT
+✅ Liste des utilisateurs existants
+✅ Suppression d'utilisateurs
+✅ Interface responsive avec branding LILIWATT
+
+## Signature Email Générée
+
+Format HTML avec:
+- Dégradé violet/fuchsia (#7c3aed → #d946ef)
+- Nom, prénom, poste
+- Téléphone cliquable
+- Email cliquable
+- Site web: www.liliwatt.fr
+- Adresse: 59 rue de Ponthieu, Bureau 326, 75008 Paris
+- Baseline: "18% d'économies en moyenne"
+
+## URLs Importantes
+
+- **Repository GitHub:** https://github.com/Johan1973polo/liliwatt-admin
+- **Zoho Mail Admin:** https://mailadmin.zoho.eu
+- **Zoho API Console:** https://api-console.zoho.eu
+
+## Support Technique
+
+En cas de problème:
+1. Vérifier les logs sur Render.com
+2. Vérifier que le refresh token est valide
+3. Vérifier que l'Organization ID est correct
+4. Tester les endpoints API directement avec curl
+
+---
+
+**Document créé le:** 1er avril 2026
+**Status:** ✅ Prêt pour déploiement production
