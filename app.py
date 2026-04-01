@@ -8,10 +8,10 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'liliwatt-admin-secret-2026')
 
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'liliwatt2026')
-ZOHO_CLIENT_ID = os.environ.get('ZOHO_CLIENT_ID', '')
-ZOHO_CLIENT_SECRET = os.environ.get('ZOHO_CLIENT_SECRET', '')
-ZOHO_REFRESH_TOKEN = os.environ.get('ZOHO_REFRESH_TOKEN', '')
-ZOHO_ORG_ID = os.environ.get('ZOHO_ORG_ID', '')
+ZOHO_CLIENT_ID = os.environ.get('ZOHO_CLIENT_ID', '1000.9W93I9JDA3GN47P3ZBAWAEVCQI2RWU')
+ZOHO_CLIENT_SECRET = os.environ.get('ZOHO_CLIENT_SECRET', '4a13cc8af6573803ea9084dca1931542648d96e4a0')
+ZOHO_REFRESH_TOKEN = os.environ.get('ZOHO_REFRESH_TOKEN', '1000.b405dc6c268231a8f7f827d1898d5011.32fce7278b68d4ded24688514710e322')
+ZOHO_ORG_ID = os.environ.get('ZOHO_ORG_ID', '20113501048')
 
 def get_zoho_token():
     r = requests.post('https://accounts.zoho.eu/oauth/v2/token', data={
@@ -107,12 +107,10 @@ def create_user():
             f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts',
             headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
             json={
-                'displayName': f'{prenom} {nom}',
                 'firstName': prenom,
                 'lastName': nom,
-                'emailAddress': email_local,
-                'password': password,
-                'role': 'MemberUser'
+                'primaryEmailAddress': email_local,
+                'password': password
             }
         )
         result = r.json()
