@@ -269,11 +269,24 @@ def create_user():
             # Appliquer la signature
             if account_id:
                 sig_html = make_signature(prenom, nom, poste, telephone, email_local)
-                requests.post(
+                sig_r = requests.post(
                     f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts/{account_id}/signatures',
                     headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
-                    json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True}
+                    json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
+                    timeout=15
                 )
+                sig_result = sig_r.json()
+                print(f"📝 Signature API response: {sig_result}")
+                # Récupérer l'ID de la signature pour la définir par défaut
+                sig_id = sig_result.get('data', {}).get('signatureId', '')
+                if sig_id:
+                    requests.put(
+                        f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts/{account_id}/signatures/{sig_id}',
+                        headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                        json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
+                        timeout=15
+                    )
+                    print(f"✅ Signature appliquée pour {email_local}")
 
             # Configurer redirection vers contact@liliwatt.fr
             try:
