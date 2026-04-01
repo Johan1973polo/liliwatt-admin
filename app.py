@@ -302,14 +302,8 @@ def create_user():
             # Récupérer account_id depuis la réponse Zoho
             created_account_id = result.get('data', {}).get('accountId', '')
             
-            # Envoyer email de bienvenue en arrière-plan (thread)
-            import threading
-            t = threading.Thread(
-                target=send_welcome_email,
-                args=(prenom, nom, email_local, password, email_perso, created_account_id)
-            )
-            t.daemon = True
-            t.start()
+            # Envoyer email directement (pas de thread)
+            send_welcome_email(prenom, nom, email_local, password, email_perso, created_account_id)
             
             return jsonify({
                 'success': True,
