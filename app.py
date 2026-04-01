@@ -49,6 +49,80 @@ def make_signature(prenom, nom, poste, telephone, email):
   <div style="background:linear-gradient(135deg,#7c3aed,#d946ef);height:2px;border-radius:2px;margin-top:14px;"></div>
 </div>"""
 
+
+def send_welcome_email(prenom, nom, email, password):
+    """Envoie l'email de bienvenue avec les identifiants"""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    
+    ZOHO_USER = os.environ.get('ZOHO_SMTP_USER', 'bo@liliwatt.fr')
+    ZOHO_PASS = os.environ.get('ZOHO_SMTP_PASS', '')
+    
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = 'Bienvenue chez LILIWATT — Vos accès email'
+    msg['From'] = f'LILIWATT <{ZOHO_USER}>'
+    msg['To'] = email
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+      <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
+        <h1 style="color:white;font-size:28px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
+        <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:13px;letter-spacing:1px;text-transform:uppercase;">Courtage Énergie B2B &amp; B2C</p>
+      </div>
+      <div style="background:#f5f3ff;padding:32px;border-radius:0 0 12px 12px;">
+        <p style="font-size:16px;color:#1e1b4b;margin-bottom:24px;">Bonjour <strong>{prenom}</strong>,</p>
+        <p style="color:#374151;line-height:1.6;">Bienvenue dans l'équipe LILIWATT ! Voici votre environnement de travail :</p>
+        
+        <div style="background:white;border-radius:10px;padding:24px;margin:24px 0;border-left:4px solid #7c3aed;">
+          <table style="width:100%;font-size:14px;border-collapse:collapse;">
+            <tr>
+              <td style="padding:10px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;width:140px;">Messagerie</td>
+              <td style="padding:10px 0;color:#1e1b4b;font-weight:600;">mail.zoho.eu</td>
+            </tr>
+            <tr style="border-top:1px solid #f0eeff;">
+              <td style="padding:10px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;">Identifiant</td>
+              <td style="padding:10px 0;color:#7c3aed;font-weight:700;">{email}</td>
+            </tr>
+            <tr style="border-top:1px solid #f0eeff;">
+              <td style="padding:10px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;">Mot de passe</td>
+              <td style="padding:10px 0;color:#1e1b4b;font-weight:700;font-size:16px;">{password}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="background:#ede9fe;border-radius:10px;padding:16px;margin-bottom:24px;">
+          <p style="margin:0;font-size:13px;color:#5b21b6;">
+            ⚠️ <strong>Important :</strong> Changez votre mot de passe dès votre première connexion sur <a href="https://mail.zoho.eu" style="color:#7c3aed;">mail.zoho.eu</a>
+          </p>
+        </div>
+
+        <a href="https://mail.zoho.eu" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;padding:14px 32px;border-radius:50px;text-decoration:none;font-weight:700;font-size:14px;">
+          Accéder à ma messagerie
+        </a>
+
+        <hr style="border:1px solid #e9d5ff;margin:32px 0;">
+        <p style="font-size:12px;color:#9ca3af;margin:0;">
+          LILIWATT — LILISTRAT STRATÉGIE SAS<br>
+          59 rue de Ponthieu, Bureau 326 — 75008 Paris<br>
+          <a href="https://liliwatt.fr" style="color:#7c3aed;">www.liliwatt.fr</a>
+        </p>
+      </div>
+    </div>"""
+
+    msg.attach(MIMEText(html, 'html'))
+
+    try:
+        with smtplib.SMTP_SSL('smtp.zoho.eu', 465) as server:
+            server.login(ZOHO_USER, ZOHO_PASS)
+            server.sendmail(ZOHO_USER, email, msg.as_string())
+        print(f"✅ Email bienvenue envoyé à {email}")
+        return True
+    except Exception as e:
+        print(f"⚠️ Erreur email bienvenue : {e}")
+        return False
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
@@ -128,6 +202,9 @@ def create_user():
                     json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True}
                 )
 
+            # Envoyer email de bienvenue
+            send_welcome_email(prenom, nom, email_local, password)
+            
             return jsonify({
                 'success': True,
                 'email': email_local,
