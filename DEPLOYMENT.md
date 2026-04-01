@@ -123,9 +123,10 @@ L'application sera accessible sur: `https://liliwatt-admin.onrender.com`
 ✅ Génération automatique d'emails (prenom.nom@liliwatt.fr)
 ✅ Génération automatique de mots de passe sécurisés (11 caractères: 2 maj, 4 min, 3 chiffres, 2 spéciaux)
 ✅ Normalisation des accents (é→e, à→a, etc.)
+✅ Sauvegarde automatique dans Google Sheets (feuille COMMERCIAUX)
 ✅ Application automatique de signature HTML LILIWATT
 ✅ Email de bienvenue automatique avec identifiants (envoyé depuis bo@liliwatt.fr à l'email personnel)
-✅ SMTP configuré sur port 587 avec STARTTLS (timeout 20s)
+✅ SMTP SSL configuré sur port 465 (timeout 25s)
 ✅ Envoi email en thread séparé pour performance optimale
 ✅ Liste des utilisateurs existants
 ✅ Suppression d'utilisateurs
@@ -156,8 +157,9 @@ Format HTML avec:
 2. Normalisation des accents et espaces
 3. Génération automatique d'un mot de passe sécurisé (11 caractères)
 4. Création du compte Zoho Mail
-5. Application de la signature HTML LILIWATT
-6. Envoi de l'email de bienvenue à l'adresse personnelle avec:
+5. **Sauvegarde dans Google Sheets** (feuille COMMERCIAUX)
+6. Application de la signature HTML LILIWATT
+7. Envoi de l'email de bienvenue à l'adresse personnelle avec:
    - Identifiant Zoho
    - Mot de passe généré
    - Lien vers mail.zoho.eu
@@ -178,10 +180,34 @@ L'envoi de l'email de bienvenue se fait dans un **thread séparé** (daemon) pou
 - Le worker continue l'envoi en arrière-plan
 
 ### SMTP Configuration
-- **Port:** 587 (STARTTLS)
-- **Timeout:** 20 secondes
+- **Port:** 465 (SSL)
+- **Timeout:** 25 secondes
 - **Host:** smtp.zoho.eu
 - Si l'email échoue, l'utilisateur est quand même créé dans Zoho
+
+### Google Sheets Integration
+L'application sauvegarde automatiquement chaque nouvel utilisateur dans Google Sheets:
+
+**Spreadsheet ID:** `1dVBjsqQKxgZ2JQmJ0Q9BvZJRw8YD6aF8hXNvKzLiLiw`
+**Worksheet:** `COMMERCIAUX`
+
+**Colonnes:**
+1. **NOM** - Nom en majuscules
+2. **PRENOM** - Prénom avec première lettre en majuscule
+3. **MDP ZOHO** - Mot de passe généré
+4. **EMAIL** - Adresse email Zoho (prenom.nom@liliwatt.fr)
+5. **POSTE** - Fonction
+6. **DATE** - Date et heure de création (JJ/MM/AAAA HH:MM)
+
+**Service Account:**
+- Email: `liliwatt-sheets@liliwatt.iam.gserviceaccount.com`
+- Fichier: `liliwatt-eddcc0bc9e18.json` (non versionné)
+- Permissions: Éditeur sur le Google Sheet
+
+**Sur Render.com:**
+1. Uploader le fichier JSON via l'interface Render
+2. Placer dans le répertoire racine du projet
+3. L'app le trouvera automatiquement
 
 ### Temps de Réponse Typiques
 - Création utilisateur Zoho: ~2-3 secondes

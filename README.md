@@ -7,6 +7,7 @@ Application d'administration pour gérer les comptes email Zoho des commerciaux 
 - ✅ Création automatique de comptes email Zoho
 - ✅ Génération automatique d'adresses email (prenom.nom@liliwatt.fr)
 - ✅ Génération automatique de mots de passe sécurisés (11 caractères)
+- ✅ Sauvegarde automatique dans Google Sheets (feuille COMMERCIAUX)
 - ✅ Application automatique de la signature LILIWATT avec branding
 - ✅ Email de bienvenue automatique avec identifiants (envoyé à l'email personnel)
 - ✅ Liste et gestion des utilisateurs existants
