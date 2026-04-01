@@ -7,6 +7,7 @@ Application d'administration pour gérer les comptes email Zoho des commerciaux 
 - ✅ Création automatique de comptes email Zoho
 - ✅ Génération automatique d'adresses email (prenom.nom@liliwatt.fr)
 - ✅ Application automatique de la signature LILIWATT avec branding
+- ✅ Email de bienvenue automatique avec identifiants
 - ✅ Liste et gestion des utilisateurs existants
 - ✅ Suppression de comptes utilisateurs
 - ✅ Interface admin sécurisée avec authentification
@@ -43,6 +44,8 @@ L'application sera accessible sur http://localhost:5001
    - `ZOHO_CLIENT_SECRET` : Secret client OAuth Zoho
    - `ZOHO_REFRESH_TOKEN` : Token de rafraîchissement Zoho
    - `ZOHO_ORG_ID` : ID de l'organisation Zoho
+   - `ZOHO_SMTP_USER` : Adresse email d'envoi (bo@liliwatt.fr)
+   - `ZOHO_SMTP_PASS` : Mot de passe SMTP Zoho
 4. Build Command : `pip install -r requirements.txt`
 5. Start Command : `gunicorn app:app`
 

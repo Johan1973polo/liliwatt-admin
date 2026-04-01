@@ -84,6 +84,10 @@ ZOHO_CLIENT_ID=1000.9W93I9JDA3GN47P3ZBAWAEVCQI2RWU
 ZOHO_CLIENT_SECRET=4a13cc8af6573803ea9084dca1931542648d96e4a0
 ZOHO_REFRESH_TOKEN=1000.b405dc6c268231a8f7f827d1898d5011.32fce7278b68d4ded24688514710e322
 ZOHO_ORG_ID=20113501048
+
+# Zoho SMTP (pour emails de bienvenue)
+ZOHO_SMTP_USER=bo@liliwatt.fr
+ZOHO_SMTP_PASS=<mot-de-passe-smtp-zoho>
 ```
 
 ## Déploiement sur Render.com
@@ -119,6 +123,7 @@ L'application sera accessible sur: `https://liliwatt-admin.onrender.com`
 ✅ Génération automatique d'emails (prenom.nom@liliwatt.fr)
 ✅ Normalisation des accents (é→e, à→a, etc.)
 ✅ Application automatique de signature HTML LILIWATT
+✅ Email de bienvenue automatique avec identifiants (envoyé depuis bo@liliwatt.fr)
 ✅ Liste des utilisateurs existants
 ✅ Suppression d'utilisateurs
 ✅ Interface responsive avec branding LILIWATT
