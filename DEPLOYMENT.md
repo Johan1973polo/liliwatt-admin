@@ -121,9 +121,11 @@ L'application sera accessible sur: `https://liliwatt-admin.onrender.com`
 ✅ Authentification admin sécurisée
 ✅ Création automatique de comptes Zoho
 ✅ Génération automatique d'emails (prenom.nom@liliwatt.fr)
+✅ Génération automatique de mots de passe sécurisés (11 caractères: 2 maj, 4 min, 3 chiffres, 2 spéciaux)
 ✅ Normalisation des accents (é→e, à→a, etc.)
 ✅ Application automatique de signature HTML LILIWATT
-✅ Email de bienvenue automatique avec identifiants (envoyé depuis bo@liliwatt.fr)
+✅ Email de bienvenue automatique avec identifiants (envoyé depuis bo@liliwatt.fr à l'email personnel)
+✅ SMTP configuré sur port 587 avec STARTTLS
 ✅ Liste des utilisateurs existants
 ✅ Suppression d'utilisateurs
 ✅ Interface responsive avec branding LILIWATT
@@ -138,6 +140,32 @@ Format HTML avec:
 - Site web: www.liliwatt.fr
 - Adresse: 59 rue de Ponthieu, Bureau 326, 75008 Paris
 - Baseline: "18% d'économies en moyenne"
+
+## Workflow de Création d'Utilisateur
+
+### Formulaire
+1. **Prénom** - Ex: Jean
+2. **Nom** - Ex: Dupont
+3. **Poste** - Ex: Business Developer
+4. **Téléphone** - Ex: 07 00 00 00 00
+5. **Email personnel** - Ex: jean.dupont@gmail.com (pour recevoir les identifiants)
+
+### Process Automatique
+1. Génération automatique de l'email pro: `prenom.nom@liliwatt.fr`
+2. Normalisation des accents et espaces
+3. Génération automatique d'un mot de passe sécurisé (11 caractères)
+4. Création du compte Zoho Mail
+5. Application de la signature HTML LILIWATT
+6. Envoi de l'email de bienvenue à l'adresse personnelle avec:
+   - Identifiant Zoho
+   - Mot de passe généré
+   - Lien vers mail.zoho.eu
+
+### Sécurité Mot de Passe
+- **Longueur:** 11 caractères
+- **Composition:** 2 majuscules + 4 minuscules + 3 chiffres + 2 caractères spéciaux (@#$!%&)
+- **Ordre:** Aléatoire (shuffle)
+- **Exemple:** `Ax3@kpTs#9q`
 
 ## URLs Importantes
 
