@@ -143,30 +143,10 @@ def send_welcome_email(prenom, nom, email, password, email_perso='', account_id_
   </div>
 </div>"""
 
-        # Envoyer via API Zoho Mail
-        # Utiliser l'account_id passé en paramètre ou récupérer via API
-        if account_id_zoho:
-            account_id = account_id_zoho
-        else:
-            account_id = os.environ.get('ZOHO_ACCOUNT_ID', '')
-        
-        # Si toujours pas d'account_id, le récupérer via API
-        if not account_id:
-            acc_r = requests.get(
-                'https://mail.zoho.eu/api/accounts',
-                headers={'Authorization': f'Zoho-oauthtoken {token}'},
-                timeout=15
-            )
-            raw = acc_r.json()
-            # L'API retourne soit {"data": [...]} soit directement une liste
-            if isinstance(raw, list):
-                acc_list = raw
-            else:
-                acc_list = raw.get('data', [])
-            if isinstance(acc_list, list) and acc_list:
-                account_id = acc_list[0].get('accountId', '')
-            elif isinstance(acc_list, dict):
-                account_id = acc_list.get('accountId', '')
+        # Envoyer via API Zoho Mail depuis contact@liliwatt.fr
+        # Toujours utiliser ZOHO_ACCOUNT_ID (contact@liliwatt.fr) pour l'envoi
+        account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+        print(f"📧 Envoi email depuis account_id: {account_id}")
         
         send_r = requests.post(
             f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
