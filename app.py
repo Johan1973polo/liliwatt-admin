@@ -40,7 +40,7 @@ def save_to_sheet(nom, prenom, password, email, poste):
         creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
         client = gspread.authorize(creds)
         
-        sheet = client.open_by_key('1dVBjsqQKxgZ2JQmJ0Q9BvZJRw8YD6aF8hXNvKzLiLiw')
+        sheet = client.open_by_key(os.environ.get('GOOGLE_SHEET_ID', '1dVBjsqQKxgZ2JQmJ0Q9BvZJRw8YD6aF8hXNvKzLiLiw'))
         ws = sheet.worksheet('COMMERCIAUX')
         
         # Ajouter ligne: NOM, PRENOM, MDP ZOHO, EMAIL, POSTE, DATE
