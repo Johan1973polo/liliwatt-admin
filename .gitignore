@@ -14,6 +14,9 @@ build/
 # Environment variables
 .env
 
+# Google Sheets credentials
+liliwatt-eddcc0bc9e18.json
+
 # IDE
 .vscode/
 .idea/

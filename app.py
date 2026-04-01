@@ -3,6 +3,9 @@ import os
 import requests
 import json
 from functools import wraps
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'liliwatt-admin-secret-2026')
@@ -21,6 +24,41 @@ def get_zoho_token():
         'grant_type': 'refresh_token'
     })
     return r.json().get('access_token')
+
+
+
+def save_to_sheet(nom, prenom, password, email, poste):
+    """Enregistre les infos dans Google Sheets"""
+    try:
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        creds_path = 'liliwatt-eddcc0bc9e18.json'
+        
+        if not os.path.exists(creds_path):
+            print(f"⚠️ Fichier credentials non trouvé: {creds_path}")
+            return False
+        
+        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
+        client = gspread.authorize(creds)
+        
+        sheet = client.open_by_key('1dVBjsqQKxgZ2JQmJ0Q9BvZJRw8YD6aF8hXNvKzLiLiw')
+        ws = sheet.worksheet('COMMERCIAUX')
+        
+        # Ajouter ligne: NOM, PRENOM, MDP ZOHO, EMAIL, POSTE, DATE
+        ws.append_row([
+            nom.upper(),
+            prenom.capitalize(),
+            password,
+            email,
+            poste,
+            datetime.now().strftime('%d/%m/%Y %H:%M')
+        ])
+        
+        print(f"✅ Enregistré dans Google Sheets: {prenom} {nom}")
+        return True
+        
+    except Exception as e:
+        print(f"⚠️ Erreur Google Sheets: {e}")
+        return False
 
 def login_required(f):
     @wraps(f)
@@ -126,8 +164,7 @@ def send_welcome_email(prenom, nom, email, password, email_perso=''):
 
     try:
         destinataire = email_perso if email_perso else email
-        with smtplib.SMTP('smtp.zoho.eu', 587, timeout=20) as server:
-            server.starttls()
+        with smtplib.SMTP_SSL('smtp.zoho.eu', 465, timeout=25) as server:
             server.login(ZOHO_USER, ZOHO_PASS)
             server.sendmail(ZOHO_USER, destinataire, msg.as_string())
         print(f"✅ Email bienvenue envoyé à {email}")
@@ -219,6 +256,9 @@ def create_user():
                     json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True}
                 )
 
+            # Enregistrer dans Google Sheets
+            save_to_sheet(nom, prenom, password, email_local, poste)
+            
             # Envoyer email de bienvenue en arrière-plan (thread)
             import threading
             t = threading.Thread(
