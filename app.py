@@ -135,7 +135,7 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
       </table>
     </div>
     <div style="background:#ede9fe;border-radius:10px;padding:16px;margin-bottom:24px;">
-      <p style="margin:0;font-size:13px;color:#5b21b6;">⚠️ <strong>Important :</strong> Changez votre mot de passe dès votre première connexion.</p>
+      <p style="margin:0;font-size:13px;color:#5b21b6;"></p>
     </div>
     <a href="https://mail.zoho.eu" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;padding:14px 32px;border-radius:50px;text-decoration:none;font-weight:700;font-size:14px;">Accéder à ma messagerie</a>
 
