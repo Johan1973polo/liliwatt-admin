@@ -3,8 +3,6 @@ import os
 import requests
 import json
 from functools import wraps
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
 app = Flask(__name__)
@@ -27,37 +25,40 @@ def get_zoho_token():
 
 
 
-def save_to_sheet(nom, prenom, password, email, poste):
-    """Enregistre les infos dans Google Sheets"""
+def save_to_sheet(prenom, nom, email, password, poste):
+    """Enregistre le commercial dans Google Sheets"""
     try:
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds_path = 'liliwatt-eddcc0bc9e18.json'
+        import gspread
+        from google.oauth2.service_account import Credentials
+        import json
+        from datetime import datetime
         
-        if not os.path.exists(creds_path):
-            print(f"⚠️ Fichier credentials non trouvé: {creds_path}")
+        creds_json = os.environ.get('GOOGLE_CREDS_JSON', '')
+        if not creds_json:
+            print("⚠️ GOOGLE_CREDS_JSON non défini")
             return False
         
-        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
-        client = gspread.authorize(creds)
-        
-        sheet = client.open_by_key(os.environ.get('GOOGLE_SHEET_ID', '1dVBjsqQKxgZ2JQmJ0Q9BvZJRw8YD6aF8hXNvKzLiLiw'))
-        ws = sheet.worksheet('COMMERCIAUX')
-        
-        # Ajouter ligne: NOM, PRENOM, MDP ZOHO, EMAIL, POSTE, DATE
+        creds_dict = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=[
+                'https://spreadsheets.google.com/feeds',
+                'https://www.googleapis.com/auth/drive'
+            ]
+        )
+        gc = gspread.authorize(creds)
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.sheet1
         ws.append_row([
             nom.upper(),
             prenom.capitalize(),
-            password,
-            email,
-            poste,
-            datetime.now().strftime('%d/%m/%Y %H:%M')
+            password
         ])
-        
-        print(f"✅ Enregistré dans Google Sheets: {prenom} {nom}")
+        print(f"✅ {nom} {prenom} enregistré dans Google Sheets")
         return True
-        
     except Exception as e:
-        print(f"⚠️ Erreur Google Sheets: {e}")
+        print(f"⚠️ Erreur Google Sheets : {e}")
         return False
 
 def login_required(f):
@@ -152,9 +153,11 @@ def send_welcome_email(prenom, nom, email, password, email_perso=''):
                 headers={'Authorization': f'Zoho-oauthtoken {token}'},
                 timeout=15
             )
-            accounts = acc_r.json().get('data', [])
-            if accounts:
-                account_id = accounts[0].get('accountId', '')
+            acc_data = acc_r.json().get('data', [])
+            if isinstance(acc_data, list) and acc_data:
+                account_id = acc_data[0].get('accountId', '')
+            elif isinstance(acc_data, dict):
+                account_id = acc_data.get('accountId', '')
         
         send_r = requests.post(
             f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
@@ -285,7 +288,7 @@ def create_user():
                 print(f"⚠️ Erreur redirection : {e}")
 
             # Enregistrer dans Google Sheets
-            save_to_sheet(nom, prenom, password, email_local, poste)
+            save_to_sheet(prenom, nom, email_local, password, poste)
             
             # Envoyer email de bienvenue en arrière-plan (thread)
             import threading
