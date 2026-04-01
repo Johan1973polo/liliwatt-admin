@@ -138,6 +138,19 @@ def send_welcome_email(prenom, nom, email, password, email_perso='', account_id_
       <p style="margin:0;font-size:13px;color:#5b21b6;">⚠️ <strong>Important :</strong> Changez votre mot de passe dès votre première connexion.</p>
     </div>
     <a href="https://mail.zoho.eu" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;padding:14px 32px;border-radius:50px;text-decoration:none;font-weight:700;font-size:14px;">Accéder à ma messagerie</a>
+
+    <div style="margin-top:24px;padding:16px;background:#faf5ff;border-radius:10px;border:1px solid #e9d5ff;">
+      <p style="margin:0 0 12px;font-weight:700;color:#1e1b4b;font-size:13px;">📝 Votre signature email personnalisée</p>
+      <p style="margin:0 0 12px;font-size:12px;color:#6b7280;">Copiez ce code dans <a href="https://mail.zoho.eu/zm/#settings/signatures" style="color:#7c3aed;">Paramètres → Signatures</a> :</p>
+      <div style="background:white;border-radius:8px;padding:12px;border:1px solid #e9d5ff;">
+        <strong style="color:#1e1b4b;">{prenom} {nom}</strong><br>
+        <span style="color:#7c3aed;font-size:12px;">{poste} — LILIWATT</span><br><br>
+        Tél : {telephone}<br>
+        Email : {email}<br>
+        Web : www.liliwatt.fr<br>
+        59 rue de Ponthieu, Bureau 326 — 75008 Paris
+      </div>
+    </div>
     <hr style="border:1px solid #e9d5ff;margin:32px 0;">
     <p style="font-size:12px;color:#9ca3af;margin:0;">LILIWATT — LILISTRAT STRATÉGIE SAS<br>59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
   </div>
