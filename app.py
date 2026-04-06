@@ -232,6 +232,7 @@ def create_user():
         telephone = d.get('telephone', '').strip()
         password_input = d.get('password', '').strip()
         email_perso = d.get('email_perso', '').strip()
+        drive_folder_id = d.get('drive_folder_id', '').strip()
         # Générer automatiquement si vide
         password = password_input if password_input else generate_password()
 

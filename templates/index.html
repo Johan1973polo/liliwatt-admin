@@ -78,6 +78,11 @@
         <div class="form-group full" style="background:#f0fdf4;border-radius:10px;padding:14px;font-size:13px;color:#16a34a;">
           🔐 Un mot de passe sécurisé sera généré automatiquement et envoyé par email
         </div>
+        <div class="form-group full">
+          <label>🗂️ Lien Google Drive (dossier vendeur)</label>
+          <input type="text" id="drive_folder_link" placeholder="https://drive.google.com/drive/folders/1ABC...">
+          <small style="color:#9ca3af;font-size:11px;">Colle le lien complet du dossier Drive du vendeur — l'ID sera extrait automatiquement</small>
+        </div>
       </div>
       <br>
       <div style="background:#f5f3ff;border-radius:10px;padding:14px;font-size:13px;color:#7c3aed;margin-bottom:16px;">
@@ -131,6 +136,9 @@ async function createUser() {
   const telephone = document.getElementById('telephone').value.trim();
   const password = '';
   const email_perso = document.getElementById('email_perso').value.trim();
+  const drive_link = document.getElementById('drive_folder_link').value.trim();
+  // Extraire l'ID du lien Drive
+  const drive_folder_id = drive_link.match(/folders\/([a-zA-Z0-9_-]+)/)?.[1] || '';
   const result = document.getElementById('result-creer');
 
   if (!prenom || !nom || !poste || !telephone || !email_perso) {
@@ -144,7 +152,7 @@ async function createUser() {
   const r = await fetch('/api/users', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({prenom, nom, poste, telephone, password, email_perso})
+    body: JSON.stringify({prenom, nom, poste, telephone, password, email_perso, drive_folder_id})
   });
   const data = await r.json();
 
@@ -156,6 +164,7 @@ async function createUser() {
     document.getElementById('poste').value = '';
     document.getElementById('telephone').value = '';
     document.getElementById('password').value = '';
+    document.getElementById('drive_folder_link').value = '';
     updatePreview();
   } else {
     result.className = 'result err';
