@@ -25,7 +25,7 @@ def get_zoho_token():
 
 
 
-def save_to_sheet(prenom, nom, email, password, poste):
+def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id=''):
     """Enregistre le commercial dans Google Sheets"""
     try:
         import gspread
@@ -53,7 +53,10 @@ def save_to_sheet(prenom, nom, email, password, poste):
         ws.append_row([
             nom.upper(),
             prenom.capitalize(),
-            password
+            password,
+            email,
+            poste,
+            drive_folder_id
         ])
         print(f"✅ {nom} {prenom} enregistré dans Google Sheets")
         return True
@@ -304,7 +307,29 @@ def create_user():
                 print(f"⚠️ Erreur redirection : {e}")
 
             # Enregistrer dans Google Sheets
-            save_to_sheet(prenom, nom, email_local, password, poste)
+            save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id)
+        
+        # Créer l'utilisateur dans courtier-energie
+        try:
+            courtier_url = os.environ.get('COURTIER_API_URL', 'https://liliwatt-courtier.onrender.com')
+            admin_token = os.environ.get('COURTIER_ADMIN_TOKEN', '')
+            if admin_token:
+                courtier_r = requests.post(
+                    f'{courtier_url}/api/auth/create-user',
+                    headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
+                    json={
+                        'email': email_local,
+                        'password': password,
+                        'role': 'vendeur',
+                        'drive_folder_id': drive_folder_id
+                    },
+                    timeout=10
+                )
+                print(f"✅ Utilisateur créé dans courtier-energie: {courtier_r.json()}")
+            else:
+                print("⚠️ COURTIER_ADMIN_TOKEN non configuré")
+        except Exception as e:
+            print(f"⚠️ Erreur création courtier-energie: {e}")
             
             # Récupérer account_id depuis la réponse Zoho
             created_account_id = result.get('data', {}).get('accountId', '')
@@ -324,6 +349,29 @@ def create_user():
     except Exception as e:
         import traceback
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
+
+@app.route('/api/users/drive-folder', methods=['GET'])
+@login_required
+def get_drive_folder():
+    email = request.args.get('email', '').strip()
+    if not email:
+        return jsonify({'success': False, 'error': 'Email manquant'})
+    try:
+        creds = ServiceAccountCredentials.from_json_keyfile_name(
+            CREDENTIALS_FILE,
+            ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        )
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        ws = sh.sheet1
+        rows = ws.get_all_values()
+        for row in rows:
+            if len(row) >= 4 and row[3].lower() == email.lower():
+                drive_folder_id = row[5] if len(row) > 5 else ''
+                return jsonify({'success': True, 'drive_folder_id': drive_folder_id})
+        return jsonify({'success': False, 'error': 'Vendeur non trouvé'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/users/<email>', methods=['DELETE'])
 @login_required
