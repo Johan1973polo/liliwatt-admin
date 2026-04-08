@@ -308,35 +308,33 @@ def create_user():
 
             # Enregistrer dans Google Sheets
             save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id)
-        
-        # Créer l'utilisateur dans courtier-energie
-        try:
-            courtier_url = os.environ.get('COURTIER_API_URL', 'https://liliwatt-courtier.onrender.com')
-            admin_token = os.environ.get('COURTIER_ADMIN_TOKEN', '')
-            if admin_token:
-                courtier_r = requests.post(
-                    f'{courtier_url}/api/auth/create-user',
-                    headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
-                    json={
-                        'email': email_local,
-                        'password': password,
-                        'role': 'vendeur',
-                        'drive_folder_id': drive_folder_id
-                    },
-                    timeout=10
-                )
-                print(f"✅ Utilisateur créé dans courtier-energie: {courtier_r.json()}")
-            else:
-                print("⚠️ COURTIER_ADMIN_TOKEN non configuré")
-        except Exception as e:
-            print(f"⚠️ Erreur création courtier-energie: {e}")
-            
-            # Récupérer account_id depuis la réponse Zoho
+
+            # Créer l'utilisateur dans courtier-energie
+            try:
+                courtier_url = os.environ.get('COURTIER_API_URL', 'https://liliwatt-courtier.onrender.com')
+                admin_token = os.environ.get('COURTIER_ADMIN_TOKEN', '')
+                if admin_token:
+                    courtier_r = requests.post(
+                        f'{courtier_url}/api/auth/create-user',
+                        headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
+                        json={
+                            'email': email_local,
+                            'password': password,
+                            'role': 'vendeur',
+                            'drive_folder_id': drive_folder_id
+                        },
+                        timeout=10
+                    )
+                    print(f"✅ Utilisateur créé dans courtier-energie: {courtier_r.json()}")
+                else:
+                    print("⚠️ COURTIER_ADMIN_TOKEN non configuré")
+            except Exception as e:
+                print(f"⚠️ Erreur création courtier-energie: {e}")
+
+            # Envoyer email de bienvenue
             created_account_id = result.get('data', {}).get('accountId', '')
-            
-            # Envoyer email directement (pas de thread)
             send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, created_account_id)
-            
+
             return jsonify({
                 'success': True,
                 'email': email_local,
