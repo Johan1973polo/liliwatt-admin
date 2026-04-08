@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 import os
 import requests
 import json
+import uuid
 from functools import wraps
 from datetime import datetime
 
@@ -25,19 +26,19 @@ def get_zoho_token():
 
 
 
-def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id=''):
+def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', token_rgpd=''):
     """Enregistre le commercial dans Google Sheets"""
     try:
         import gspread
         from google.oauth2.service_account import Credentials
         import json
         from datetime import datetime
-        
+
         creds_json = os.environ.get('GOOGLE_CREDS_JSON', '')
         if not creds_json:
             print("⚠️ GOOGLE_CREDS_JSON non défini")
             return False
-        
+
         creds_dict = json.loads(creds_json)
         creds = Credentials.from_service_account_info(
             creds_dict,
@@ -56,9 +57,11 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id=''):
             password,
             email,
             poste,
-            drive_folder_id
+            drive_folder_id,
+            '',
+            token_rgpd
         ])
-        print(f"✅ {nom} {prenom} enregistré dans Google Sheets")
+        print(f"✅ {nom} {prenom} enregistré dans Google Sheets (token RGPD: {token_rgpd})")
         return True
     except Exception as e:
         print(f"⚠️ Erreur Google Sheets : {e}")
@@ -104,7 +107,7 @@ def generate_password():
     random.shuffle(all_chars)
     return ''.join(all_chars)
 
-def send_welcome_email(prenom, nom, email, password, poste='', telephone='', email_perso='', account_id_zoho=''):
+def send_welcome_email(prenom, nom, email, password, poste='', telephone='', email_perso='', account_id_zoho='', token_rgpd=''):
     """Envoie l'email de bienvenue via API Zoho Mail (pas SMTP)"""
     try:
         destinataire = email_perso if email_perso else email
@@ -153,6 +156,12 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
         Web : www.liliwatt.fr<br>
         59 rue de Ponthieu, Bureau 326 — 75008 Paris
       </div>
+    </div>
+    <div style="margin-top:24px;padding:20px;background:#ede9fe;border-radius:10px;border:1px solid #d8b4fe;">
+      <p style="margin:0 0 12px;font-weight:700;color:#1e1b4b;font-size:13px;">📋 Lien de collecte de factures client</p>
+      <p style="margin:0 0 12px;font-size:12px;color:#6b7280;">Envoyez ce lien à vos clients pour qu'ils transmettent leurs factures directement :</p>
+      <a href="https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}" style="display:inline-block;background:#7c3aed;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;">Lien formulaire client</a>
+      <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;word-break:break-all;">https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}</p>
     </div>
     <hr style="border:1px solid #e9d5ff;margin:32px 0;">
     <p style="font-size:12px;color:#9ca3af;margin:0;">LILIWATT — LILISTRAT STRATÉGIE SAS<br>59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
@@ -306,8 +315,11 @@ def create_user():
             except Exception as e:
                 print(f"⚠️ Erreur redirection : {e}")
 
+            # Générer un token RGPD unique
+            token_rgpd = uuid.uuid4().hex[:12]
+
             # Enregistrer dans Google Sheets
-            save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id)
+            save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id, token_rgpd)
 
             # Créer l'utilisateur dans courtier-energie
             try:
@@ -333,7 +345,7 @@ def create_user():
 
             # Envoyer email de bienvenue
             created_account_id = result.get('data', {}).get('accountId', '')
-            send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, created_account_id)
+            send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, created_account_id, token_rgpd)
 
             return jsonify({
                 'success': True,
