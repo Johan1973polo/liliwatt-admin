@@ -4,7 +4,7 @@ import requests
 import json
 import uuid
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'liliwatt-admin-secret-2026')
@@ -442,23 +442,25 @@ def create_user():
 
             # Créer l'utilisateur dans courtier-energie
             try:
+                import jwt as pyjwt
                 courtier_url = os.environ.get('COURTIER_API_URL', 'https://liliwatt-courtier.onrender.com')
-                admin_token = os.environ.get('COURTIER_ADMIN_TOKEN', '')
-                if admin_token:
-                    courtier_r = requests.post(
-                        f'{courtier_url}/api/auth/create-user',
-                        headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
-                        json={
-                            'email': email_local,
-                            'password': password,
-                            'role': 'vendeur',
-                            'drive_folder_id': drive_folder_id
-                        },
-                        timeout=10
-                    )
-                    print(f"✅ Utilisateur créé dans courtier-energie: {courtier_r.json()}")
-                else:
-                    print("⚠️ COURTIER_ADMIN_TOKEN non configuré")
+                courtier_secret = os.environ.get('COURTIER_JWT_SECRET', 'liliwatt-secret-key-2024')
+                admin_token = pyjwt.encode(
+                    {'id': 'admin_liliwatt', 'email': 'johan.mallet@liliwatt.fr', 'role': 'admin', 'exp': datetime.utcnow() + timedelta(hours=1)},
+                    courtier_secret, algorithm='HS256'
+                )
+                courtier_r = requests.post(
+                    f'{courtier_url}/api/auth/create-user',
+                    headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
+                    json={
+                        'email': email_local,
+                        'password': password,
+                        'role': 'vendeur',
+                        'drive_folder_id': drive_folder_id
+                    },
+                    timeout=10
+                )
+                print(f"✅ Utilisateur créé dans courtier-energie: {courtier_r.json()}")
             except Exception as e:
                 print(f"⚠️ Erreur création courtier-energie: {e}")
 
