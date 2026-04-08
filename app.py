@@ -260,7 +260,7 @@ def create_user():
         result = r.json()
         print(f"Création utilisateur: {result}")
 
-        if result.get('status', {}).get('code') in [200, 201] or 'data' in result:
+        if result.get('status', {}).get('code') in [200, 201, '200', '201'] or 'data' in result:
             account_id = result.get('data', {}).get('accountId', '')
 
             # Appliquer la signature
