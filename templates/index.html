@@ -85,9 +85,10 @@
           🔐 Un mot de passe sécurisé sera généré automatiquement et envoyé par email
         </div>
         <div class="form-group full">
-          <label>🗂️ Lien Google Drive (dossier vendeur)</label>
-          <input type="text" id="drive_folder_link" placeholder="https://drive.google.com/drive/folders/1ABC...">
-          <small style="color:#9ca3af;font-size:11px;">Colle le lien complet du dossier Drive du vendeur — l'ID sera extrait automatiquement</small>
+          <label>🗂️ Dossier Google Drive</label>
+          <input type="hidden" id="drive_folder_id" value="">
+          <button type="button" class="btn" id="btn-drive" onclick="createDriveFolder()" style="margin-top:0;width:100%;">📁 Créer le dossier Drive automatiquement</button>
+          <div id="drive-status" style="display:none;margin-top:8px;font-size:13px;"></div>
         </div>
       </div>
       <br>
@@ -152,6 +153,43 @@ function updatePreview() {
   document.getElementById('preview-email').textContent = p + '.' + n + '@liliwatt.fr';
 }
 
+async function createDriveFolder() {
+  const prenom = document.getElementById('prenom').value.trim();
+  const nom = document.getElementById('nom').value.trim();
+  const btn = document.getElementById('btn-drive');
+  const status = document.getElementById('drive-status');
+  if (!prenom || !nom) {
+    status.style.display = 'block';
+    status.innerHTML = '<span style="color:#ef4444;">Remplissez d\'abord le prénom et le nom.</span>';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '⏳ Création en cours...';
+  status.style.display = 'block';
+  status.innerHTML = '<span style="color:#7c3aed;">Création du dossier Drive...</span>';
+  try {
+    const r = await fetch('/api/create-drive-folder', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prenom, nom})
+    });
+    const data = await r.json();
+    if (data.success) {
+      document.getElementById('drive_folder_id').value = data.drive_folder_id;
+      btn.textContent = '✅ Dossier créé !';
+      status.innerHTML = '✅ <strong>Dossier créé :</strong> ' + prenom + ' ' + nom.toUpperCase() + ' — <a href="' + data.link + '" target="_blank" style="color:#7c3aed;">Ouvrir dans Drive ↗</a>';
+    } else {
+      btn.disabled = false;
+      btn.textContent = '📁 Créer le dossier Drive automatiquement';
+      status.innerHTML = '<span style="color:#ef4444;">Erreur : ' + data.error + '</span>';
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '📁 Créer le dossier Drive automatiquement';
+    status.innerHTML = '<span style="color:#ef4444;">Erreur réseau : ' + e.message + '</span>';
+  }
+}
+
 async function createUser() {
   const prenom = document.getElementById('prenom').value.trim();
   const nom = document.getElementById('nom').value.trim();
@@ -159,9 +197,7 @@ async function createUser() {
   const telephone = document.getElementById('telephone').value.trim();
   const password = '';
   const email_perso = document.getElementById('email_perso').value.trim();
-  const drive_link = document.getElementById('drive_folder_link').value.trim();
-  // Extraire l'ID du lien Drive
-  const drive_folder_id = drive_link.match(/folders\/([a-zA-Z0-9_-]+)/)?.[1] || '';
+  const drive_folder_id = document.getElementById('drive_folder_id').value;
   const result = document.getElementById('result-creer');
 
   if (!prenom || !nom || !poste || !telephone || !email_perso) {
@@ -186,8 +222,11 @@ async function createUser() {
     document.getElementById('nom').value = '';
     document.getElementById('poste').value = '';
     document.getElementById('telephone').value = '';
-    document.getElementById('drive_folder_link').value = '';
+    document.getElementById('drive_folder_id').value = '';
     document.getElementById('referent_email').value = '';
+    document.getElementById('drive-status').style.display = 'none';
+    document.getElementById('btn-drive').disabled = false;
+    document.getElementById('btn-drive').textContent = '📁 Créer le dossier Drive automatiquement';
     updatePreview();
   } else {
     result.className = 'result err';

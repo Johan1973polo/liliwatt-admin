@@ -247,6 +247,59 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+@app.route('/api/create-drive-folder', methods=['POST'])
+@login_required
+def create_drive_folder():
+    try:
+        from googleapiclient.discovery import build
+        from google.oauth2.service_account import Credentials as SACredentials
+        import base64
+
+        d = request.get_json()
+        prenom = d.get('prenom', '').strip()
+        nom = d.get('nom', '').strip()
+        if not prenom or not nom:
+            return jsonify({'success': False, 'error': 'Prénom et nom requis'})
+
+        VENDEURS_PARENT_ID = '1rizhNR8RdZAmpJYEFInksrSW14opa1zp'
+        folder_name = f"{prenom.capitalize()} {nom.upper()}"
+
+        # Charger credentials Drive
+        creds_b64 = os.environ.get('GOOGLE_DRIVE_CREDS_BASE64', '')
+        if creds_b64:
+            creds_dict = json.loads(base64.b64decode(creds_b64))
+        else:
+            with open(os.path.join(os.path.dirname(__file__), 'liliwatt-eddcc0bc9e18.json')) as f:
+                creds_dict = json.load(f)
+
+        creds = SACredentials.from_service_account_info(
+            creds_dict, scopes=['https://www.googleapis.com/auth/drive']
+        )
+        drive = build('drive', 'v3', credentials=creds)
+
+        # Créer le dossier principal du vendeur
+        vendeur_folder = drive.files().create(
+            body={'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [VENDEURS_PARENT_ID]},
+            fields='id', supportsAllDrives=True
+        ).execute()
+        vendeur_id = vendeur_folder['id']
+
+        # Créer les 3 sous-dossiers
+        for sub in ['CLIENT EN ATTENTE', 'CLIENTS SIGNÉS', 'CLIENTS PERDUS']:
+            drive.files().create(
+                body={'name': sub, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [vendeur_id]},
+                fields='id', supportsAllDrives=True
+            ).execute()
+
+        link = f"https://drive.google.com/drive/folders/{vendeur_id}"
+        print(f"✅ Dossier Drive créé : {folder_name} → {vendeur_id}")
+        return jsonify({'success': True, 'drive_folder_id': vendeur_id, 'link': link})
+
+    except Exception as e:
+        import traceback
+        print(f"⚠️ Erreur création dossier Drive : {e}")
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
+
 @app.route('/')
 @login_required
 def index():
