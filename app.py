@@ -26,7 +26,7 @@ def get_zoho_token():
 
 
 
-def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', token_rgpd=''):
+def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', referent_email='', token_rgpd=''):
     """Enregistre le commercial dans Google Sheets"""
     try:
         import gspread
@@ -58,7 +58,7 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', token
             email,
             poste,
             drive_folder_id,
-            '',
+            referent_email,
             token_rgpd
         ])
         print(f"✅ {nom} {prenom} enregistré dans Google Sheets (token RGPD: {token_rgpd})")
@@ -66,6 +66,20 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', token
     except Exception as e:
         print(f"⚠️ Erreur Google Sheets : {e}")
         return False
+
+def get_sheets_client():
+    """Retourne un client gspread authentifié"""
+    import gspread
+    from google.oauth2.service_account import Credentials
+    creds_json = os.environ.get('GOOGLE_CREDS_JSON', '')
+    if not creds_json:
+        return None
+    creds_dict = json.loads(creds_json)
+    creds = Credentials.from_service_account_info(
+        creds_dict,
+        scopes=['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    )
+    return gspread.authorize(creds)
 
 def login_required(f):
     @wraps(f)
@@ -107,7 +121,7 @@ def generate_password():
     random.shuffle(all_chars)
     return ''.join(all_chars)
 
-def send_welcome_email(prenom, nom, email, password, poste='', telephone='', email_perso='', account_id_zoho='', token_rgpd=''):
+def send_welcome_email(prenom, nom, email, password, poste='', telephone='', email_perso='', account_id_zoho='', token_rgpd='', referent_email=''):
     """Envoie l'email de bienvenue via API Zoho Mail (pas SMTP)"""
     try:
         destinataire = email_perso if email_perso else email
@@ -125,6 +139,11 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
             print("⚠️ Token Zoho non obtenu pour email")
             return False
         
+        referent_block = f"""<div style="background:#f0fdf4;border-radius:10px;padding:16px;margin-top:20px;border:1px solid #bbf7d0;">
+      <p style="margin:0;font-size:13px;color:#16a34a;"><strong>Votre référent :</strong> {referent_email}</p>
+      <p style="margin:6px 0 0;font-size:12px;color:#6b7280;">N'hésitez pas à le/la contacter pour toute question.</p>
+    </div>""" if referent_email else ""
+
         html_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
   <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
     <h1 style="color:white;font-size:28px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
@@ -132,21 +151,35 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
   </div>
   <div style="background:#f5f3ff;padding:32px;border-radius:0 0 12px 12px;">
     <p style="font-size:16px;color:#1e1b4b;margin-bottom:24px;">Bonjour <strong>{prenom}</strong>,</p>
-    <p style="color:#374151;line-height:1.6;">Bienvenue dans l'équipe LILIWATT ! Voici votre environnement de travail :</p>
+    <p style="color:#374151;line-height:1.6;">Bienvenue dans l'équipe LILIWATT ! Voici vos accès et outils de travail.</p>
+
     <div style="background:white;border-radius:10px;padding:24px;margin:24px 0;border-left:4px solid #7c3aed;">
+      <p style="margin:0 0 14px;font-weight:700;color:#1e1b4b;font-size:14px;">📧 Messagerie Zoho</p>
       <table style="width:100%;font-size:14px;border-collapse:collapse;">
-        <tr><td style="padding:10px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;width:140px;">Messagerie</td><td style="padding:10px 0;color:#1e1b4b;font-weight:600;">mail.zoho.eu</td></tr>
-        <tr style="border-top:1px solid #f0eeff;"><td style="padding:10px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;">Identifiant</td><td style="padding:10px 0;color:#7c3aed;font-weight:700;">{email}</td></tr>
-        <tr style="border-top:1px solid #f0eeff;"><td style="padding:10px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;">Mot de passe</td><td style="padding:10px 0;color:#1e1b4b;font-weight:700;font-size:16px;">{password}</td></tr>
+        <tr><td style="padding:8px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;width:140px;">Adresse</td><td style="padding:8px 0;color:#7c3aed;font-weight:700;">{email}</td></tr>
+        <tr style="border-top:1px solid #f0eeff;"><td style="padding:8px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;">Mot de passe</td><td style="padding:8px 0;color:#1e1b4b;font-weight:700;font-size:16px;">{password}</td></tr>
+        <tr style="border-top:1px solid #f0eeff;"><td style="padding:8px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;">Accès</td><td style="padding:8px 0;"><a href="https://mail.zoho.eu" style="color:#7c3aed;font-weight:600;text-decoration:none;">mail.zoho.eu</a></td></tr>
       </table>
     </div>
-    <div style="background:#ede9fe;border-radius:10px;padding:16px;margin-bottom:24px;">
-      <p style="margin:0;font-size:13px;color:#5b21b6;"></p>
-    </div>
-    <a href="https://mail.zoho.eu" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;padding:14px 32px;border-radius:50px;text-decoration:none;font-weight:700;font-size:14px;">Accéder à ma messagerie</a>
 
-    <div style="margin-top:24px;padding:16px;background:#faf5ff;border-radius:10px;border:1px solid #e9d5ff;">
-      <p style="margin:0 0 12px;font-weight:700;color:#1e1b4b;font-size:13px;">📝 Votre signature email personnalisée</p>
+    <div style="background:white;border-radius:10px;padding:24px;margin:20px 0;border-left:4px solid #d946ef;">
+      <p style="margin:0 0 14px;font-weight:700;color:#1e1b4b;font-size:14px;">💼 Plateforme Courtier</p>
+      <table style="width:100%;font-size:14px;border-collapse:collapse;">
+        <tr><td style="padding:8px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;width:140px;">Lien</td><td style="padding:8px 0;"><a href="https://liliwatt-courtier.onrender.com" style="color:#7c3aed;font-weight:600;text-decoration:none;">liliwatt-courtier.onrender.com</a></td></tr>
+        <tr style="border-top:1px solid #f0eeff;"><td style="padding:8px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;">Identifiant</td><td style="padding:8px 0;color:#1e1b4b;font-weight:600;">{email}</td></tr>
+        <tr style="border-top:1px solid #f0eeff;"><td style="padding:8px 0;color:#6b7280;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:1px;">Mot de passe</td><td style="padding:8px 0;color:#1e1b4b;font-weight:700;">{password}</td></tr>
+      </table>
+    </div>
+
+    <div style="background:#ede9fe;border-radius:10px;padding:20px;margin:20px 0;border:1px solid #d8b4fe;">
+      <p style="margin:0 0 12px;font-weight:700;color:#1e1b4b;font-size:13px;">📋 Lien de collecte de factures client</p>
+      <p style="margin:0 0 12px;font-size:12px;color:#6b7280;">Envoyez ce lien à vos clients pour qu'ils transmettent leurs factures :</p>
+      <a href="https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}" style="display:inline-block;background:#7c3aed;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;">Lien formulaire client</a>
+      <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;word-break:break-all;">https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}</p>
+    </div>
+
+    <div style="margin-top:20px;padding:16px;background:#faf5ff;border-radius:10px;border:1px solid #e9d5ff;">
+      <p style="margin:0 0 12px;font-weight:700;color:#1e1b4b;font-size:13px;">📝 Votre signature email</p>
       <p style="margin:0 0 12px;font-size:12px;color:#6b7280;">Copiez ce code dans <a href="https://mail.zoho.eu/zm/#settings/signatures" style="color:#7c3aed;">Paramètres → Signatures</a> :</p>
       <div style="background:white;border-radius:8px;padding:12px;border:1px solid #e9d5ff;">
         <strong style="color:#1e1b4b;">{prenom} {nom}</strong><br>
@@ -157,12 +190,13 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
         59 rue de Ponthieu, Bureau 326 — 75008 Paris
       </div>
     </div>
-    <div style="margin-top:24px;padding:20px;background:#ede9fe;border-radius:10px;border:1px solid #d8b4fe;">
-      <p style="margin:0 0 12px;font-weight:700;color:#1e1b4b;font-size:13px;">📋 Lien de collecte de factures client</p>
-      <p style="margin:0 0 12px;font-size:12px;color:#6b7280;">Envoyez ce lien à vos clients pour qu'ils transmettent leurs factures directement :</p>
-      <a href="https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}" style="display:inline-block;background:#7c3aed;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;">Lien formulaire client</a>
-      <p style="margin:10px 0 0;font-size:11px;color:#9ca3af;word-break:break-all;">https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}</p>
+
+    {referent_block}
+
+    <div style="background:#fef3c7;border-radius:10px;padding:16px;margin-top:20px;border:1px solid #fde68a;">
+      <p style="margin:0;font-size:13px;color:#92400e;">📚 <strong>Formation à venir :</strong> vous serez contacté(e) prochainement pour planifier votre session de formation sur les outils LILIWATT.</p>
     </div>
+
     <hr style="border:1px solid #e9d5ff;margin:32px 0;">
     <p style="font-size:12px;color:#9ca3af;margin:0;">LILIWATT — LILISTRAT STRATÉGIE SAS<br>59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
   </div>
@@ -218,6 +252,34 @@ def logout():
 def index():
     return render_template('index.html')
 
+@app.route('/api/referents')
+@login_required
+def get_referents():
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Google Sheets non configuré'})
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+        # Collecter les emails en colonne G (referent_email)
+        referent_emails = set()
+        for row in rows:
+            if len(row) > 6 and row[6].strip() and '@' in row[6]:
+                referent_emails.add(row[6].strip().lower())
+        # Trouver les infos des référents parmi les vendeurs
+        referents = []
+        for row in rows:
+            if len(row) > 3 and row[3].strip().lower() in referent_emails:
+                referents.append({
+                    'email': row[3].strip(),
+                    'nom': row[0].strip(),
+                    'prenom': row[1].strip()
+                })
+        return jsonify({'success': True, 'referents': referents})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/users', methods=['GET'])
 @login_required
 def list_users():
@@ -245,6 +307,7 @@ def create_user():
         password_input = d.get('password', '').strip()
         email_perso = d.get('email_perso', '').strip()
         drive_folder_id = d.get('drive_folder_id', '').strip()
+        referent_email = d.get('referent_email', '').strip()
         # Générer automatiquement si vide
         password = password_input if password_input else generate_password()
 
@@ -319,7 +382,7 @@ def create_user():
             token_rgpd = uuid.uuid4().hex[:12]
 
             # Enregistrer dans Google Sheets
-            save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id, token_rgpd)
+            save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id, referent_email, token_rgpd)
 
             # Créer l'utilisateur dans courtier-energie
             try:
@@ -345,7 +408,7 @@ def create_user():
 
             # Envoyer email de bienvenue
             created_account_id = result.get('data', {}).get('accountId', '')
-            send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, created_account_id, token_rgpd)
+            send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, created_account_id, token_rgpd, referent_email)
 
             return jsonify({
                 'success': True,
