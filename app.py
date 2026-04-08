@@ -264,10 +264,13 @@ def create_drive_folder():
         VENDEURS_PARENT_ID = '1rizhNR8RdZAmpJYEFInksrSW14opa1zp'
         folder_name = f"{prenom.capitalize()} {nom.upper()}"
 
-        # Charger credentials Drive
+        # Charger credentials Drive (3 sources possibles)
         creds_b64 = os.environ.get('GOOGLE_DRIVE_CREDS_BASE64', '')
+        creds_json_env = os.environ.get('GOOGLE_CREDS_JSON', '')
         if creds_b64:
-            creds_dict = json.loads(base64.b64decode(creds_b64))
+            creds_dict = json.loads(base64.b64decode(creds_b64).decode())
+        elif creds_json_env:
+            creds_dict = json.loads(creds_json_env)
         else:
             with open(os.path.join(os.path.dirname(__file__), 'liliwatt-eddcc0bc9e18.json')) as f:
                 creds_dict = json.load(f)
