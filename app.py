@@ -92,23 +92,31 @@ def login_required(f):
     return decorated
 
 def make_signature(prenom, nom, poste, telephone, email):
-    return f"""<div style="font-family:Arial,sans-serif;max-width:480px;">
-  <div style="background:linear-gradient(135deg,#7c3aed,#d946ef);height:4px;border-radius:2px;margin-bottom:16px;"></div>
-  <div style="margin-bottom:12px;">
-    <div style="font-size:16px;font-weight:700;color:#1e1b4b;">{prenom} {nom}</div>
-    <div style="font-size:10px;font-weight:600;color:#7c3aed;letter-spacing:1.5px;text-transform:uppercase;">{poste}</div>
-    <div style="font-size:10px;font-weight:600;color:#7c3aed;letter-spacing:1px;text-transform:uppercase;">LILIWATT — Courtage Énergie B2B &amp; B2C</div>
-  </div>
-  <table style="border-collapse:collapse;font-size:13px;">
-    <tr><td style="padding:3px 12px 3px 0;color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Tél</td><td><a href="tel:{telephone.replace(' ','')}" style="color:#1e1b4b;text-decoration:none;font-weight:600;">{telephone}</a></td></tr>
-    <tr><td style="padding:3px 12px 3px 0;color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Email</td><td><a href="mailto:{email}" style="color:#7c3aed;text-decoration:none;font-weight:600;">{email}</a></td></tr>
-    <tr><td style="padding:3px 12px 3px 0;color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Web</td><td><a href="https://liliwatt.fr" style="color:#7c3aed;text-decoration:none;font-weight:600;">www.liliwatt.fr</a></td></tr>
-    <tr><td style="padding:3px 12px 3px 0;color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;vertical-align:top;">Adresse</td><td style="color:#374151;">59 rue de Ponthieu, Bureau 326<br>75008 Paris</td></tr>
-  </table>
-  <div style="margin:14px 0;height:1px;background:linear-gradient(to right,#7c3aed,#d946ef,transparent);"></div>
-  <div style="font-size:11px;color:#6b7280;">Courtier Énergie B2B &amp; B2C<br><span style="color:#7c3aed;font-weight:700;">18% d'économies en moyenne</span> — Sans engagement • Sans coupure • 18+ fournisseurs comparés</div>
-  <div style="background:linear-gradient(135deg,#7c3aed,#d946ef);height:2px;border-radius:2px;margin-top:14px;"></div>
-</div>"""
+    return f"""<table cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,sans-serif;max-width:480px;">
+  <tr><td colspan="2" style="border-top:4px solid #7c3aed;padding-bottom:12px;"></td></tr>
+  <tr><td colspan="2" style="font-size:16px;font-weight:700;color:#1e1b4b;padding-bottom:2px;">{prenom} {nom}</td></tr>
+  <tr><td colspan="2" style="font-size:10px;font-weight:600;color:#7c3aed;letter-spacing:1.5px;text-transform:uppercase;padding-bottom:2px;">{poste}</td></tr>
+  <tr><td colspan="2" style="font-size:10px;font-weight:600;color:#7c3aed;letter-spacing:1px;text-transform:uppercase;padding-bottom:12px;">LILIWATT &mdash; Courtage &Eacute;nergie B2B &amp; B2C</td></tr>
+  <tr>
+    <td style="padding:3px 12px 3px 0;color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;vertical-align:top;">T&eacute;l</td>
+    <td style="font-size:13px;"><a href="tel:{telephone.replace(' ','')}" style="color:#1e1b4b;text-decoration:none;font-weight:600;">{telephone}</a></td>
+  </tr>
+  <tr>
+    <td style="padding:3px 12px 3px 0;color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;vertical-align:top;">Email</td>
+    <td style="font-size:13px;"><a href="mailto:{email}" style="color:#7c3aed;text-decoration:none;font-weight:600;">{email}</a></td>
+  </tr>
+  <tr>
+    <td style="padding:3px 12px 3px 0;color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;vertical-align:top;">Web</td>
+    <td style="font-size:13px;"><a href="https://liliwatt.fr" style="color:#7c3aed;text-decoration:none;font-weight:600;">www.liliwatt.fr</a></td>
+  </tr>
+  <tr>
+    <td style="padding:3px 12px 3px 0;color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;vertical-align:top;">Adresse</td>
+    <td style="font-size:13px;color:#374151;">59 rue de Ponthieu, Bureau 326<br>75008 Paris</td>
+  </tr>
+  <tr><td colspan="2" style="padding-top:12px;border-bottom:1px solid #7c3aed;"></td></tr>
+  <tr><td colspan="2" style="font-size:11px;color:#6b7280;padding-top:10px;">Courtier &Eacute;nergie B2B &amp; B2C<br><span style="color:#7c3aed;font-weight:700;">18% d'&eacute;conomies en moyenne</span> &mdash; Sans engagement &bull; Sans coupure &bull; 18+ fournisseurs compar&eacute;s</td></tr>
+  <tr><td colspan="2" style="border-bottom:2px solid #7c3aed;padding-top:12px;"></td></tr>
+</table>"""
 
 
 def generate_password():
@@ -504,23 +512,33 @@ def create_user():
                 bo_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
   <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
     <h1 style="color:white;font-size:24px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
-    <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:12px;">Nouveau commercial créé</p>
+    <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:12px;">Nouveau commercial cr&eacute;&eacute;</p>
   </div>
   <div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
-    <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;"><strong>{prenom} {nom}</strong> a été ajouté à l'équipe.</p>
+    <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;"><strong>{prenom} {nom}</strong> a &eacute;t&eacute; ajout&eacute; &agrave; l'&eacute;quipe.</p>
+
+    <div style="background:#fef3c7;border:2px solid #fbbf24;border-radius:10px;padding:20px;margin-bottom:20px;">
+      <p style="margin:0 0 12px;font-weight:700;color:#92400e;font-size:14px;">&#128272; Identifiants Zoho Mail</p>
+      <table style="width:100%;font-size:14px;border-collapse:collapse;">
+        <tr><td style="padding:6px 0;color:#92400e;font-weight:700;width:130px;">Email</td><td style="color:#1e1b4b;font-weight:700;">{email_local}</td></tr>
+        <tr><td style="padding:6px 0;color:#92400e;font-weight:700;">Mot de passe</td><td style="color:#1e1b4b;font-weight:700;font-size:16px;">{password}</td></tr>
+        <tr><td style="padding:6px 0;color:#92400e;font-weight:700;">Connexion</td><td><a href="https://mail.zoho.eu" style="color:#7c3aed;font-weight:700;text-decoration:none;">mail.zoho.eu</a></td></tr>
+      </table>
+    </div>
+
     <div style="background:white;border-radius:10px;padding:20px;margin-bottom:20px;border-left:4px solid #7c3aed;">
       <table style="width:100%;font-size:13px;border-collapse:collapse;">
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;width:130px;">Email</td><td style="color:#7c3aed;font-weight:600;">{email_local}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Poste</td><td style="color:#1e1b4b;">{poste}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Téléphone</td><td style="color:#1e1b4b;">{telephone}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Référent</td><td style="color:#1e1b4b;">{referent_email or '—'}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;width:130px;">Poste</td><td style="color:#1e1b4b;">{poste}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">T&eacute;l&eacute;phone</td><td style="color:#1e1b4b;">{telephone}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">R&eacute;f&eacute;rent</td><td style="color:#1e1b4b;">{referent_email or '&mdash;'}</td></tr>
         <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Lien RGPD</td><td><a href="{rgpd_link}" style="color:#7c3aed;word-break:break-all;">{rgpd_link}</a></td></tr>
         <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Drive</td><td><a href="https://drive.google.com/drive/folders/{drive_folder_id}" style="color:#7c3aed;">Ouvrir le dossier</a></td></tr>
       </table>
     </div>
+
     <div style="background:#ede9fe;border-radius:10px;padding:16px;margin-bottom:16px;">
-      <p style="margin:0 0 8px;font-weight:700;color:#1e1b4b;font-size:13px;">📝 Signature email prête à copier :</p>
-      <div style="background:white;border-radius:8px;padding:12px;border:1px solid #e9d5ff;">{sig_html}</div>
+      <p style="margin:0 0 10px;font-weight:700;color:#1e1b4b;font-size:13px;">&#9999;&#65039; Signature email pr&ecirc;te &agrave; copier dans Zoho :</p>
+      <div style="background:white;border-radius:8px;padding:16px;border:1px solid #e9d5ff;">{sig_html}</div>
     </div>
   </div>
 </div>"""
