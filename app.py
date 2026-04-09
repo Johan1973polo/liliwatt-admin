@@ -444,9 +444,9 @@ def create_user():
             try:
                 import jwt as pyjwt
                 courtier_url = os.environ.get('COURTIER_API_URL', 'https://liliwatt-courtier.onrender.com')
-                courtier_secret = os.environ.get('COURTIER_JWT_SECRET', 'liliwatt-secret-key-2024')
+                courtier_secret = os.environ.get('COURTIER_JWT_SECRET', 'liliwatt-jwt-secret-2026')
                 admin_token = pyjwt.encode(
-                    {'id': 'admin_liliwatt', 'email': 'johan.mallet@liliwatt.fr', 'role': 'admin', 'exp': datetime.utcnow() + timedelta(hours=1)},
+                    {'id': 'admin_liliwatt', 'email': 'johan.mallet@liliwatt.fr', 'role': 'admin', 'exp': datetime.utcnow() + timedelta(hours=2)},
                     courtier_secret, algorithm='HS256'
                 )
                 courtier_r = requests.post(
