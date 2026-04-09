@@ -340,6 +340,62 @@ def update_rgpd_links():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/signature/<token_rgpd>')
+def signature_page(token_rgpd):
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return 'Erreur configuration', 500
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+        vendeur = None
+        for row in rows:
+            if len(row) > 7 and row[7] == token_rgpd and '@' in (row[3] or ''):
+                vendeur = {'nom': row[0], 'prenom': row[1], 'email': row[3], 'poste': row[4], 'telephone': ''}
+                break
+        if not vendeur:
+            return 'Vendeur introuvable.', 404
+        sig_html = make_signature(vendeur['prenom'], vendeur['nom'], vendeur['poste'], vendeur['telephone'], vendeur['email'])
+        return f"""<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signature — {vendeur['prenom']} {vendeur['nom']}</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:'Segoe UI',system-ui,sans-serif;background:#f5f3ff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}}
+.card{{background:#fff;border-radius:16px;padding:40px;max-width:560px;width:100%;box-shadow:0 4px 24px rgba(124,58,237,.1)}}
+h1{{color:#1e1b4b;font-size:20px;margin-bottom:6px}}
+.sub{{color:#6b7280;font-size:13px;margin-bottom:24px}}
+.sig-box{{border:1.5px solid #e9d5ff;border-radius:10px;padding:20px;margin-bottom:20px;background:#faf5ff}}
+.btn{{display:block;width:100%;padding:14px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;transition:transform .15s}}
+.btn:hover{{transform:translateY(-1px)}}
+.msg{{text-align:center;margin-top:12px;font-size:14px;color:#16a34a;font-weight:600;display:none}}
+</style></head><body>
+<div class="card">
+<h1>Signature email de {vendeur['prenom']} {vendeur['nom']}</h1>
+<p class="sub">Cliquez sur le bouton pour copier la signature dans votre presse-papier, puis collez-la dans Zoho Mail &rarr; Param&egrave;tres &rarr; Signatures.</p>
+<div class="sig-box" id="sigBox">{sig_html}</div>
+<button class="btn" onclick="copySig()">&#128203; Copier la signature</button>
+<p class="msg" id="msg">&#10003; Signature copi&eacute;e !</p>
+</div>
+<script>
+async function copySig(){{
+  const box=document.getElementById('sigBox');
+  try{{
+    const blob=new Blob([box.innerHTML],{{type:'text/html'}});
+    await navigator.clipboard.write([new ClipboardItem({{'text/html':blob}})]);
+  }}catch(e){{
+    const r=document.createRange();r.selectNodeContents(box);
+    const s=window.getSelection();s.removeAllRanges();s.addRange(r);
+    document.execCommand('copy');s.removeAllRanges();
+  }}
+  const m=document.getElementById('msg');m.style.display='block';
+  setTimeout(()=>m.style.display='none',3000);
+}}
+</script></body></html>"""
+    except Exception as e:
+        return f'Erreur : {e}', 500
+
 @app.route('/')
 @login_required
 def index():
