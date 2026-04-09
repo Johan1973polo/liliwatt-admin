@@ -261,7 +261,8 @@ def create_drive_folder():
         if not prenom or not nom:
             return jsonify({'success': False, 'error': 'Prénom et nom requis'})
 
-        VENDEURS_PARENT_ID = '1rizhNR8RdZAmpJYEFInksrSW14opa1zp'
+        VENDEURS_PARENT_ID = '157Sol6u32W0loIEv8CmYT3uoDaGyZ7q6'
+        SHARED_DRIVE_ID = '0ACKaJQqRlmwgUk9PVA'
         folder_name = f"{prenom.capitalize()} {nom.upper()}"
 
         # Charger credentials Drive (3 sources possibles)
@@ -280,17 +281,17 @@ def create_drive_folder():
         )
         drive = build('drive', 'v3', credentials=creds)
 
-        # Créer le dossier principal du vendeur
+        # Créer le dossier principal du vendeur dans le Shared Drive
         vendeur_folder = drive.files().create(
-            body={'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [VENDEURS_PARENT_ID]},
+            body={'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [VENDEURS_PARENT_ID], 'driveId': SHARED_DRIVE_ID},
             fields='id', supportsAllDrives=True
         ).execute()
         vendeur_id = vendeur_folder['id']
 
-        # Créer les 3 sous-dossiers
+        # Créer les 3 sous-dossiers dans le Shared Drive
         for sub in ['CLIENT EN ATTENTE', 'CLIENTS SIGNÉS', 'CLIENTS PERDUS']:
             drive.files().create(
-                body={'name': sub, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [vendeur_id]},
+                body={'name': sub, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [vendeur_id], 'driveId': SHARED_DRIVE_ID},
                 fields='id', supportsAllDrives=True
             ).execute()
 
