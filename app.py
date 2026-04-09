@@ -51,6 +51,7 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', refer
         sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
         sh = gc.open_by_key(sheet_id)
         ws = sh.sheet1
+        rgpd_link = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}' if token_rgpd else ''
         ws.append_row([
             nom.upper(),
             prenom.capitalize(),
@@ -59,7 +60,8 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', refer
             poste,
             drive_folder_id,
             referent_email,
-            token_rgpd
+            token_rgpd,
+            rgpd_link
         ])
         print(f"✅ {nom} {prenom} enregistré dans Google Sheets (token RGPD: {token_rgpd})")
         return True
@@ -304,6 +306,32 @@ def create_drive_folder():
         print(f"⚠️ Erreur création dossier Drive : {e}")
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
 
+@app.route('/api/update-rgpd-links')
+@login_required
+def update_rgpd_links():
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Google Sheets non configuré'})
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+        updated = []
+        batch = []
+        for i, row in enumerate(rows):
+            token = row[7] if len(row) > 7 else ''
+            link = row[8] if len(row) > 8 else ''
+            email = row[3] if len(row) > 3 else ''
+            if token and not link and '@' in email:
+                rgpd_link = f'https://liliwatt-courtier.onrender.com/rgpd/{token}'
+                batch.append({'range': f'I{i+1}', 'values': [[rgpd_link]]})
+                updated.append({'email': email, 'link': rgpd_link})
+        if batch:
+            ws.batch_update(batch, value_input_option='RAW')
+        return jsonify({'success': True, 'updated': len(updated), 'details': updated})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/')
 @login_required
 def index():
@@ -468,6 +496,52 @@ def create_user():
             # Envoyer email de bienvenue
             created_account_id = result.get('data', {}).get('accountId', '')
             send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, created_account_id, token_rgpd, referent_email)
+
+            # Notifier bo@liliwatt.fr avec la signature HTML prête à copier
+            try:
+                sig_html = make_signature(prenom, nom, poste, telephone, email_local)
+                rgpd_link = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}'
+                bo_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+  <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
+    <h1 style="color:white;font-size:24px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
+    <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:12px;">Nouveau commercial créé</p>
+  </div>
+  <div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
+    <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;"><strong>{prenom} {nom}</strong> a été ajouté à l'équipe.</p>
+    <div style="background:white;border-radius:10px;padding:20px;margin-bottom:20px;border-left:4px solid #7c3aed;">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;width:130px;">Email</td><td style="color:#7c3aed;font-weight:600;">{email_local}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Poste</td><td style="color:#1e1b4b;">{poste}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Téléphone</td><td style="color:#1e1b4b;">{telephone}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Référent</td><td style="color:#1e1b4b;">{referent_email or '—'}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Lien RGPD</td><td><a href="{rgpd_link}" style="color:#7c3aed;word-break:break-all;">{rgpd_link}</a></td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Drive</td><td><a href="https://drive.google.com/drive/folders/{drive_folder_id}" style="color:#7c3aed;">Ouvrir le dossier</a></td></tr>
+      </table>
+    </div>
+    <div style="background:#ede9fe;border-radius:10px;padding:16px;margin-bottom:16px;">
+      <p style="margin:0 0 8px;font-weight:700;color:#1e1b4b;font-size:13px;">📝 Signature email prête à copier :</p>
+      <div style="background:white;border-radius:8px;padding:12px;border:1px solid #e9d5ff;">{sig_html}</div>
+    </div>
+  </div>
+</div>"""
+                bo_token = get_zoho_token()
+                if bo_token:
+                    account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+                    requests.post(
+                        f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+                        headers={'Authorization': f'Zoho-oauthtoken {bo_token}', 'Content-Type': 'application/json'},
+                        json={
+                            'fromAddress': 'bo@liliwatt.fr',
+                            'toAddress': 'bo@liliwatt.fr',
+                            'subject': f'Nouveau commercial : {prenom} {nom} — {poste}',
+                            'content': bo_body,
+                            'mailFormat': 'html'
+                        },
+                        timeout=15
+                    )
+                    print(f"✅ Notification bo@liliwatt.fr envoyée pour {prenom} {nom}")
+            except Exception as e:
+                print(f"⚠️ Erreur notification bo@: {e}")
 
             return jsonify({
                 'success': True,
