@@ -796,6 +796,61 @@ def list_candidats_phase1():
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
 
+def extract_text_from_file(file_bytes, filename):
+    """Extrait le texte d'un PDF ou Word."""
+    import io
+    text = ''
+    fname = filename.lower()
+    if fname.endswith('.pdf'):
+        import pdfplumber
+        pdf = pdfplumber.open(io.BytesIO(file_bytes))
+        for page in pdf.pages:
+            t = page.extract_text()
+            if t:
+                text += t + '\n'
+        pdf.close()
+    elif fname.endswith('.docx') or fname.endswith('.doc'):
+        from docx import Document
+        doc = Document(io.BytesIO(file_bytes))
+        text = '\n'.join(p.text for p in doc.paragraphs)
+    return text.strip()
+
+def extract_cv_with_gpt(text):
+    """Appelle GPT-4o-mini pour extraire les infos du CV."""
+    import openai
+    client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY', ''))
+    resp = client.chat.completions.create(
+        model='gpt-4o-mini',
+        messages=[
+            {'role': 'system', 'content': 'Extrais ces informations du CV en JSON : nom, prenom, email, telephone, adresse. Réponds UNIQUEMENT en JSON valide.'},
+            {'role': 'user', 'content': text[:4000]}
+        ],
+        temperature=0
+    )
+    raw = resp.choices[0].message.content.strip()
+    if raw.startswith('```'):
+        raw = raw.split('\n', 1)[1].rsplit('```', 1)[0]
+    return json.loads(raw)
+
+def save_cv_to_sheet(data):
+    """Sauvegarde les données extraites dans PHASE 1."""
+    gc = get_sheets_client()
+    sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+    try:
+        ws = sh.worksheet('PHASE 1')
+    except Exception:
+        ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=9)
+        ws.update('A1:I1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION']])
+    date_str = datetime.now().strftime('%d/%m/%Y')
+    ws.append_row([
+        (data.get('nom', '') or '').upper(),
+        data.get('prenom', ''),
+        data.get('email', ''),
+        data.get('telephone', ''),
+        data.get('adresse', ''),
+        'NON CONTACTÉ', '', date_str, ''
+    ])
+
 @app.route('/api/recrutement/upload-cv', methods=['POST'])
 @login_required
 def upload_cv():
@@ -804,68 +859,39 @@ def upload_cv():
             return jsonify({'success': False, 'error': 'Fichier CV requis'})
         f = request.files['cv']
         filename = f.filename.lower()
+        file_bytes = f.read()
 
-        # Extraire le texte
-        text = ''
-        if filename.endswith('.pdf'):
-            import pdfplumber
-            import io
-            pdf = pdfplumber.open(io.BytesIO(f.read()))
-            for page in pdf.pages:
-                t = page.extract_text()
-                if t:
-                    text += t + '\n'
-            pdf.close()
-        elif filename.endswith('.docx'):
-            from docx import Document
-            import io
-            doc = Document(io.BytesIO(f.read()))
-            text = '\n'.join(p.text for p in doc.paragraphs)
-        else:
-            return jsonify({'success': False, 'error': 'Format non supporté (PDF ou Word uniquement)'})
+        # ZIP : extraire et traiter chaque fichier
+        if filename.endswith('.zip'):
+            import zipfile, io
+            results = {'total': 0, 'ok': 0, 'errors': 0}
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                for name in zf.namelist():
+                    if not name.lower().endswith(('.pdf', '.docx', '.doc')):
+                        continue
+                    results['total'] += 1
+                    try:
+                        inner = zf.read(name)
+                        text = extract_text_from_file(inner, name)
+                        if not text:
+                            results['errors'] += 1; continue
+                        data = extract_cv_with_gpt(text)
+                        save_cv_to_sheet(data)
+                        results['ok'] += 1
+                        print(f"📄 ZIP/{name}: {data.get('nom','')} {data.get('prenom','')}")
+                    except Exception as e:
+                        results['errors'] += 1
+                        print(f"⚠️ ZIP/{name}: {e}")
+            return jsonify({'success': True, 'zip': True, **results})
 
-        if not text.strip():
+        # Fichier unique
+        text = extract_text_from_file(file_bytes, filename)
+        if not text:
             return jsonify({'success': False, 'error': 'Impossible d\'extraire le texte du CV'})
 
-        # Appel GPT-4o-mini
-        import openai
-        client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY', ''))
-        resp = client.chat.completions.create(
-            model='gpt-4o-mini',
-            messages=[
-                {'role': 'system', 'content': 'Extrais ces informations du CV en JSON : nom, prenom, email, telephone, adresse. Réponds UNIQUEMENT en JSON valide.'},
-                {'role': 'user', 'content': text[:4000]}
-            ],
-            temperature=0
-        )
-        raw = resp.choices[0].message.content.strip()
-        # Nettoyer le JSON
-        if raw.startswith('```'):
-            raw = raw.split('\n', 1)[1].rsplit('```', 1)[0]
-        data = json.loads(raw)
+        data = extract_cv_with_gpt(text)
         print(f"📄 CV extrait: {data}")
-
-        # Sauvegarder dans PHASE 1
-        gc = get_sheets_client()
-        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
-        try:
-            ws = sh.worksheet('PHASE 1')
-        except Exception:
-            ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=9)
-            ws.update('A1:I1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION']])
-
-        date_str = datetime.now().strftime('%d/%m/%Y')
-        ws.append_row([
-            (data.get('nom', '') or '').upper(),
-            data.get('prenom', ''),
-            data.get('email', ''),
-            data.get('telephone', ''),
-            data.get('adresse', ''),
-            'NON CONTACTÉ',
-            '',
-            date_str,
-            ''
-        ])
+        save_cv_to_sheet(data)
         return jsonify({'success': True, 'data': data})
     except Exception as e:
         import traceback; traceback.print_exc()

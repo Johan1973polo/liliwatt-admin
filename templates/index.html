@@ -143,12 +143,29 @@
       <div id="cvDropZone" style="border:2px dashed #d8b4fe;border-radius:12px;padding:32px;text-align:center;cursor:pointer;background:#faf5ff;transition:all .2s;"
         ondragover="event.preventDefault();this.style.borderColor='#7c3aed';this.style.background='#ede9fe'"
         ondragleave="this.style.borderColor='#d8b4fe';this.style.background='#faf5ff'"
-        ondrop="handleCvDrop(event)" onclick="document.getElementById('cvFileInput').click()">
-        <p style="color:#7c3aed;font-weight:700;font-size:16px;margin:0 0 6px;">Glissez un CV ici</p>
-        <p style="color:#9ca3af;font-size:13px;margin:0;">PDF ou Word — extraction automatique via IA</p>
+        ondrop="handleCvBatchDrop(event)" onclick="document.getElementById('cvFileInput').click()">
+        <p style="color:#7c3aed;font-weight:700;font-size:16px;margin:0 0 6px;">Glissez des CVs ou un dossier ici</p>
+        <p style="color:#9ca3af;font-size:13px;margin:0;">PDF, Word ou ZIP — extraction automatique via IA</p>
       </div>
-      <input type="file" id="cvFileInput" accept=".pdf,.docx" style="display:none" onchange="uploadCv(this.files[0])">
-      <div id="cvSpinner" style="display:none;text-align:center;padding:20px;color:#7c3aed;font-weight:600;">⏳ Extraction en cours...</div>
+      <input type="file" id="cvFileInput" accept=".pdf,.doc,.docx,.zip" multiple style="display:none" onchange="handleCvFiles(this.files)">
+      <div id="cvBatchInfo" style="display:none;margin-top:16px;padding:16px;background:#ede9fe;border-radius:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span id="cvBatchCount" style="font-weight:700;color:#1e1b4b;"></span>
+          <div style="display:flex;gap:6px;">
+            <button id="cvBatchStart" onclick="startBatchProcess()" class="btn" style="font-size:12px;padding:8px 16px;">▶ Lancer l'extraction</button>
+            <button id="cvBatchPause" onclick="togglePause()" style="display:none;font-size:12px;padding:8px 16px;background:#f59e0b;color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;">⏸ Pause</button>
+          </div>
+        </div>
+      </div>
+      <div id="cvProgress" style="display:none;margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span id="cvProgressText" style="font-size:13px;color:#374151;font-weight:600;"></span>
+          <span style="font-size:13px;"><span id="cvOk" style="color:#22c55e;font-weight:700;">0</span> ✅ / <span id="cvErr" style="color:#ef4444;font-weight:700;">0</span> ❌</span>
+        </div>
+        <div style="width:100%;height:8px;background:#ede9fe;border-radius:4px;overflow:hidden;">
+          <div id="cvProgressBar" style="height:100%;width:0;background:linear-gradient(90deg,#7c3aed,#d946ef);border-radius:4px;transition:width .3s;"></div>
+        </div>
+      </div>
       <div id="cvResult" style="display:none;margin-top:16px;"></div>
     </div>
 
@@ -355,35 +372,99 @@ function showRecSub(name) {
   if (name === 'phase1') loadPhase1();
 }
 
-// ===== IMPORT CV =====
-function handleCvDrop(e) { e.preventDefault(); e.currentTarget.style.borderColor='#d8b4fe'; e.currentTarget.style.background='#faf5ff'; const f=[...e.dataTransfer.files].find(f=>f.name.match(/\.(pdf|docx)$/i)); if(f) uploadCv(f); }
+// ===== IMPORT CV BATCH =====
+let cvQueue = [];
+let cvPaused = false;
+let cvProcessing = false;
 
-async function uploadCv(file) {
-  if (!file) return;
-  document.getElementById('cvSpinner').style.display = 'block';
+function handleCvBatchDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor='#d8b4fe';
+  e.currentTarget.style.background='#faf5ff';
+  const items = e.dataTransfer.items;
+  const files = [];
+  // Support dossier via webkitGetAsEntry
+  const entries = [];
+  for (let i = 0; i < items.length; i++) {
+    const entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
+    if (entry) entries.push(entry);
+    else if (items[i].kind === 'file') files.push(items[i].getAsFile());
+  }
+  if (entries.length && entries[0].isDirectory) {
+    readDirEntries(entries[0], collected => { handleCvFiles(collected); });
+  } else {
+    const dropped = [...e.dataTransfer.files];
+    handleCvFiles(dropped);
+  }
+}
+
+function readDirEntries(dirEntry, cb) {
+  const reader = dirEntry.createReader();
+  const all = [];
+  (function read() {
+    reader.readEntries(entries => {
+      if (!entries.length) { cb(all); return; }
+      entries.forEach(e => { if (e.isFile) e.file(f => all.push(f)); });
+      setTimeout(read, 50);
+    });
+  })();
+}
+
+function handleCvFiles(fileList) {
+  const valid = [...fileList].filter(f => /\.(pdf|docx?|zip)$/i.test(f.name));
+  if (!valid.length) { alert('Aucun fichier PDF, Word ou ZIP détecté'); return; }
+  cvQueue = valid;
+  document.getElementById('cvBatchInfo').style.display = 'block';
+  document.getElementById('cvBatchCount').textContent = valid.length + ' fichier(s) détecté(s) — ' +
+    valid.filter(f=>/\.zip$/i.test(f.name)).length + ' ZIP, ' +
+    valid.filter(f=>!/\.zip$/i.test(f.name)).length + ' CVs';
+  document.getElementById('cvBatchStart').style.display = 'inline-block';
+  document.getElementById('cvBatchPause').style.display = 'none';
+  document.getElementById('cvProgress').style.display = 'none';
   document.getElementById('cvResult').style.display = 'none';
-  const fd = new FormData(); fd.append('cv', file);
-  try {
-    const r = await fetch('/api/recrutement/upload-cv', { method: 'POST', body: fd });
-    const data = await r.json();
-    document.getElementById('cvSpinner').style.display = 'none';
-    if (data.success) {
-      const d = data.data;
-      document.getElementById('cvResult').style.display = 'block';
-      document.getElementById('cvResult').innerHTML =
-        '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;margin-bottom:12px;">' +
-        '<p style="margin:0 0 8px;color:#16a34a;font-weight:700;">✅ CV extrait et sauvegardé</p>' +
-        '<table style="font-size:13px;"><tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Nom</td><td>' + (d.nom||'—') + '</td></tr>' +
-        '<tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Prénom</td><td>' + (d.prenom||'—') + '</td></tr>' +
-        '<tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Email</td><td>' + (d.email||'—') + '</td></tr>' +
-        '<tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Tél</td><td>' + (d.telephone||'—') + '</td></tr>' +
-        '<tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Adresse</td><td>' + (d.adresse||'—') + '</td></tr></table></div>';
-    } else {
-      document.getElementById('cvResult').style.display = 'block';
-      document.getElementById('cvResult').innerHTML = '<p style="color:#ef4444;">❌ ' + data.error + '</p>';
-    }
-  } catch(e) { document.getElementById('cvSpinner').style.display='none'; alert('Erreur: '+e.message); }
   document.getElementById('cvFileInput').value = '';
+}
+
+function togglePause() {
+  cvPaused = !cvPaused;
+  document.getElementById('cvBatchPause').textContent = cvPaused ? '▶ Reprendre' : '⏸ Pause';
+  document.getElementById('cvBatchPause').style.background = cvPaused ? '#22c55e' : '#f59e0b';
+}
+
+async function startBatchProcess() {
+  document.getElementById('cvBatchStart').style.display = 'none';
+  document.getElementById('cvBatchPause').style.display = 'inline-block';
+  document.getElementById('cvProgress').style.display = 'block';
+  cvPaused = false; cvProcessing = true;
+  let ok = 0, err = 0, total = cvQueue.length, processed = 0;
+
+  for (let i = 0; i < cvQueue.length; i++) {
+    while (cvPaused) await new Promise(r => setTimeout(r, 300));
+    if (!cvProcessing) break;
+
+    const file = cvQueue[i];
+    document.getElementById('cvProgressText').textContent = 'Traitement ' + (i+1) + '/' + total + ' — ' + file.name;
+    document.getElementById('cvProgressBar').style.width = Math.round(((i+1)/total)*100) + '%';
+
+    const fd = new FormData();
+    fd.append('cv', file);
+    try {
+      const r = await fetch('/api/recrutement/upload-cv', { method: 'POST', body: fd });
+      const data = await r.json();
+      if (data.success) ok++; else err++;
+    } catch(e) { err++; }
+    processed++;
+    document.getElementById('cvOk').textContent = ok;
+    document.getElementById('cvErr').textContent = err;
+  }
+
+  cvProcessing = false;
+  document.getElementById('cvBatchPause').style.display = 'none';
+  document.getElementById('cvProgressText').textContent = 'Terminé !';
+  document.getElementById('cvResult').style.display = 'block';
+  document.getElementById('cvResult').innerHTML =
+    '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;">' +
+    '<p style="margin:0;font-weight:700;color:#16a34a;font-size:15px;">✅ ' + total + ' CVs traités — ' + ok + ' succès / ' + err + ' erreurs</p></div>';
 }
 
 // ===== PHASE 1 =====
