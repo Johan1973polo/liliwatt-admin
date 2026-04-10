@@ -789,9 +789,72 @@ def list_candidats_phase1():
                 'statut': row[5] if len(row) > 5 else 'NON CONTACTÉ',
                 'note': row[6] if len(row) > 6 else '',
                 'date': row[7] if len(row) > 7 else '',
-                'session': row[8] if len(row) > 8 else ''
+                'session': row[8] if len(row) > 8 else '',
+                'lien_cv': row[9] if len(row) > 9 else ''
             })
         return jsonify({'success': True, 'candidats': candidats})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/recrutement/referents-liste')
+@login_required
+def referents_liste():
+    try:
+        gc = get_sheets_client()
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+        refs = []
+        for row in rows:
+            if len(row) > 9 and row[9] in ('referent', 'admin') and '@' in (row[3] or ''):
+                refs.append({'nom': row[0], 'prenom': row[1], 'email': row[3]})
+        return jsonify({'success': True, 'referents': refs})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/recrutement/phase1/envoyer-referent', methods=['POST'])
+@login_required
+def envoyer_referent_phase1():
+    try:
+        d = request.get_json()
+        ref_email = d.get('referent_email', '')
+        candidat = d.get('candidat', {})
+        token = get_zoho_token()
+        if not token:
+            return jsonify({'success': False, 'error': 'Zoho token non obtenu'})
+        mail_html = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+<div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
+<h1 style="color:#fff;font-size:24px;letter-spacing:3px;margin:0;">LILIWATT</h1>
+<p style="color:rgba(255,255,255,.8);font-size:12px;margin:4px 0 0;">Profil candidat à évaluer</p>
+</div>
+<div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
+<p style="font-size:15px;color:#1e1b4b;">Bonjour,</p>
+<p style="color:#374151;line-height:1.7;">Un nouveau profil candidat vous est transmis pour évaluation :</p>
+<div style="background:#fff;border-radius:10px;padding:20px;margin:16px 0;border-left:4px solid #7c3aed;">
+<table style="width:100%;font-size:13px;border-collapse:collapse;">
+<tr><td style="padding:6px 0;color:#6b7280;font-weight:700;width:100px;">Nom</td><td style="color:#1e1b4b;">{candidat.get('prenom','')} {candidat.get('nom','')}</td></tr>
+<tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Email</td><td style="color:#1e1b4b;">{candidat.get('email','')}</td></tr>
+<tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Tél</td><td style="color:#1e1b4b;">{candidat.get('telephone','')}</td></tr>
+<tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Adresse</td><td style="color:#1e1b4b;">{candidat.get('adresse','')}</td></tr>
+</table>
+</div>
+{('<p style="margin:12px 0;"><a href="' + candidat.get('lien_cv','') + '" style="color:#7c3aed;font-weight:600;">📄 Voir le CV</a></p>') if candidat.get('lien_cv') else ''}
+<p style="color:#374151;">Lien session Meet : <a href="https://meet.google.com/tzv-pgjc-und?authuser=0" style="color:#7c3aed;font-weight:600;">Rejoindre</a></p>
+<hr style="border:1px solid #e9d5ff;margin:20px 0;">
+<p style="font-size:11px;color:#9ca3af;">LILIWATT — LILISTRAT STRATÉGIE SAS — 59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
+</div></div>"""
+        account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+        requests.post(
+            f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+            headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+            json={'fromAddress': 'recrutement@liliwatt.fr', 'toAddress': ref_email,
+                  'subject': f"📋 Profil candidat — {candidat.get('prenom','')} {candidat.get('nom','')}",
+                  'content': mail_html, 'mailFormat': 'html'},
+            timeout=15
+        )
+        print(f"✅ Profil envoyé à {ref_email}: {candidat.get('prenom','')} {candidat.get('nom','')}")
+        return jsonify({'success': True})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
@@ -832,15 +895,15 @@ def extract_cv_with_gpt(text):
         raw = raw.split('\n', 1)[1].rsplit('```', 1)[0]
     return json.loads(raw)
 
-def save_cv_to_sheet(data):
+def save_cv_to_sheet(data, lien_cv=''):
     """Sauvegarde les données extraites dans PHASE 1."""
     gc = get_sheets_client()
     sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
     try:
         ws = sh.worksheet('PHASE 1')
     except Exception:
-        ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=9)
-        ws.update('A1:I1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION']])
+        ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=10)
+        ws.update('A1:J1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV']])
     import time
     date_str = datetime.now().strftime('%d/%m/%Y')
     tel = data.get('telephone', '') or ''
@@ -855,7 +918,7 @@ def save_cv_to_sheet(data):
         email,
         tel,
         data.get('adresse', '') or '',
-        'NON CONTACTÉ', '', date_str, ''
+        'NON CONTACTÉ', '', date_str, '', lien_cv
     ]
     for attempt in range(3):
         try:
@@ -868,6 +931,60 @@ def save_cv_to_sheet(data):
             else:
                 raise e
 
+RECRUTEMENT_DRIVE_PARENT = '1eQYZqexJ67EcVPe8rsmKDf6mtASf9yjA'
+
+def upload_cv_to_drive(file_bytes, original_filename, prenom, nom):
+    """Upload le CV original dans Drive et retourne le lien."""
+    try:
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaIoBaseUpload
+        from google.oauth2.service_account import Credentials as SACredentials
+        import base64, io
+
+        creds_b64 = os.environ.get('GOOGLE_DRIVE_CREDS_BASE64', '')
+        creds_json_env = os.environ.get('GOOGLE_CREDS_JSON', '')
+        if creds_b64:
+            creds_dict = json.loads(base64.b64decode(creds_b64).decode())
+        elif creds_json_env:
+            creds_dict = json.loads(creds_json_env)
+        else:
+            with open(os.path.join(os.path.dirname(__file__), 'liliwatt-eddcc0bc9e18.json')) as fl:
+                creds_dict = json.load(fl)
+        creds = SACredentials.from_service_account_info(creds_dict, scopes=['https://www.googleapis.com/auth/drive'])
+        drive = build('drive', 'v3', credentials=creds)
+
+        # Trouver/créer CANDIDATURES EN COURS
+        q = f"'{RECRUTEMENT_DRIVE_PARENT}' in parents and name='CANDIDATURES EN COURS' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        res = drive.files().list(q=q, fields='files(id)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+        if res['files']:
+            attente_id = res['files'][0]['id']
+        else:
+            f2 = drive.files().create(body={'name': 'CANDIDATURES EN COURS', 'mimeType': 'application/vnd.google-apps.folder', 'parents': [RECRUTEMENT_DRIVE_PARENT]}, fields='id', supportsAllDrives=True).execute()
+            attente_id = f2['id']
+
+        # Trouver/créer dossier candidat
+        folder_name = f"{prenom} {nom.upper()}"
+        q2 = f"'{attente_id}' in parents and name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        res2 = drive.files().list(q=q2, fields='files(id)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+        if res2['files']:
+            cand_id = res2['files'][0]['id']
+        else:
+            f3 = drive.files().create(body={'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [attente_id]}, fields='id', supportsAllDrives=True).execute()
+            cand_id = f3['id']
+
+        # Upload le fichier
+        mime = 'application/pdf' if original_filename.lower().endswith('.pdf') else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime)
+        uploaded = drive.files().create(
+            body={'name': original_filename, 'parents': [cand_id], 'mimeType': mime},
+            media_body=media, fields='id, webViewLink', supportsAllDrives=True
+        ).execute()
+        print(f"📁 CV uploadé Drive: {original_filename} → {uploaded.get('webViewLink','')}")
+        return uploaded.get('webViewLink', '')
+    except Exception as e:
+        print(f"⚠️ Erreur upload CV Drive: {e}")
+        return ''
+
 @app.route('/api/recrutement/upload-cv', methods=['POST'])
 @login_required
 def upload_cv():
@@ -875,7 +992,7 @@ def upload_cv():
         if 'cv' not in request.files:
             return jsonify({'success': False, 'error': 'Fichier CV requis'})
         f = request.files['cv']
-        filename = f.filename.lower()
+        filename = f.filename
         file_bytes = f.read()
 
         # ZIP : extraire et traiter chaque fichier
@@ -902,7 +1019,8 @@ def upload_cv():
                             print(f"  ⚠️ Pas de texte extrait: {name}")
                             results['errors'] += 1; continue
                         data = extract_cv_with_gpt(text)
-                        save_cv_to_sheet(data)
+                        lien = upload_cv_to_drive(inner, basename, data.get('prenom', ''), data.get('nom', ''))
+                        save_cv_to_sheet(data, lien)
                         results['ok'] += 1
                         print(f"  ✅ {name}: {data.get('nom','')} {data.get('prenom','')} ({data.get('email','')})")
                     except Exception as e:
@@ -918,8 +1036,9 @@ def upload_cv():
 
         data = extract_cv_with_gpt(text)
         print(f"📄 CV extrait: {data}")
-        save_cv_to_sheet(data)
-        return jsonify({'success': True, 'data': data})
+        lien_cv = upload_cv_to_drive(file_bytes, filename, data.get('prenom', ''), data.get('nom', ''))
+        save_cv_to_sheet(data, lien_cv)
+        return jsonify({'success': True, 'data': data, 'lien_cv': lien_cv})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})

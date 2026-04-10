@@ -204,6 +204,18 @@
       </div>
     </div>
   </div>
+
+  <!-- Modal envoyer à référent -->
+  <div id="modalSendRef" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:16px;padding:32px;max-width:400px;width:90%;margin:auto;margin-top:15vh;">
+      <h3 style="color:#1e1b4b;margin-bottom:16px;">📤 Envoyer à un référent</h3>
+      <select id="refSelect" style="width:100%;padding:10px;border:2px solid #e9d5ff;border-radius:8px;font-size:14px;margin-bottom:16px;"></select>
+      <div style="display:flex;gap:10px;">
+        <button onclick="confirmSendRef()" style="flex:1;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Envoyer</button>
+        <button onclick="document.getElementById('modalSendRef').style.display='none'" style="flex:1;padding:10px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Annuler</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -534,6 +546,8 @@ function renderP1() {
       '<select onchange="changeP1Statut('+c.row+',this.value)" style="padding:3px 6px;border:1.5px solid #e9d5ff;border-radius:6px;font-size:11px;">' +
       ['NON CONTACTÉ','CONTACTÉ','RELANCÉ'].map(s => '<option value="'+s+'"'+(c.statut===s?' selected':'')+'>'+s+'</option>').join('') + '</select>' +
       '<button onclick="openInvite('+c.row+',\''+c.email.replace(/'/g,"\\'")+'\',\''+c.prenom.replace(/'/g,"\\'")+'\','+'\''+c.nom.replace(/'/g,"\\'")+'\''+')" style="padding:4px 8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📧 Inviter</button>' +
+      (c.lien_cv ? '<a href="'+c.lien_cv+'" target="_blank" style="padding:4px 8px;background:#ede9fe;color:#7c3aed;border:none;border-radius:6px;font-size:11px;text-decoration:none;font-weight:600;">📄 CV</a>' : '<span style="padding:4px 8px;background:#f3f4f6;color:#9ca3af;border-radius:6px;font-size:11px;">📄 CV —</span>') +
+      '<button onclick="openSendRef('+JSON.stringify(c).replace(/"/g,'&quot;')+')" style="padding:4px 8px;background:#e0e7ff;color:#2563eb;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📤 Réf.</button>' +
       '</div></div></div>';
   }).join('');
 }
@@ -565,6 +579,33 @@ async function confirmInvite() {
   btn.disabled=false; btn.textContent='Envoyer';
   alert('✅ Invitation envoyée à ' + _inviteData.email);
   setTimeout(loadPhase1, 1500);
+}
+
+// ===== ENVOI REFERENT =====
+let _sendRefCandidat = null;
+
+async function openSendRef(candidat) {
+  _sendRefCandidat = candidat;
+  const sel = document.getElementById('refSelect');
+  sel.innerHTML = '<option value="">Chargement...</option>';
+  document.getElementById('modalSendRef').style.display = 'flex';
+  try {
+    const r = await fetch('/api/recrutement/referents-liste');
+    const data = await r.json();
+    sel.innerHTML = '<option value="">— Sélectionner —</option>' +
+      (data.referents || []).map(ref => '<option value="' + ref.email + '">' + ref.prenom + ' ' + ref.nom + ' (' + ref.email + ')</option>').join('');
+  } catch(e) { sel.innerHTML = '<option value="">Erreur</option>'; }
+}
+
+async function confirmSendRef() {
+  const email = document.getElementById('refSelect').value;
+  if (!email) { alert('Sélectionnez un référent'); return; }
+  const btn = event.target; btn.disabled=true; btn.textContent='⏳...';
+  await fetch('/api/recrutement/phase1/envoyer-referent', { method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({referent_email: email, candidat: _sendRefCandidat}) });
+  document.getElementById('modalSendRef').style.display = 'none';
+  btn.disabled=false; btn.textContent='Envoyer';
+  alert('✅ Profil envoyé à ' + email);
 }
 
 // ===== CANDIDATURES =====
