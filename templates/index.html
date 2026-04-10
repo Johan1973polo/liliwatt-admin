@@ -114,20 +114,72 @@
 
   <!-- Recrutement -->
   <div class="panel" id="tab-recrutement">
-    <div class="card">
+    <!-- Sous-onglets -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button onclick="showRecSub('candidatures')" id="sub-candidatures" style="padding:8px 18px;border-radius:8px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-weight:600;font-size:13px;cursor:pointer;">📋 Candidatures</button>
+      <button onclick="showRecSub('importcv')" id="sub-importcv" style="padding:8px 18px;border-radius:8px;border:2px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:600;font-size:13px;cursor:pointer;">📄 Import CV</button>
+      <button onclick="showRecSub('phase1')" id="sub-phase1" style="padding:8px 18px;border-radius:8px;border:2px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:600;font-size:13px;cursor:pointer;">👥 Profils Phase 1</button>
+    </div>
+
+    <!-- Sub: Candidatures -->
+    <div id="rec-candidatures" class="card">
       <h2 style="display:flex;align-items:center;justify-content:space-between;">
-        <span>👥 Candidatures</span>
-        <button class="btn" onclick="loadCandidats()" style="font-size:12px;padding:8px 16px;">🔄 Actualiser</button>
+        <span>📋 Candidatures</span>
+        <button class="btn" onclick="loadCandidats()" style="font-size:12px;padding:8px 16px;">🔄</button>
       </h2>
       <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
-        <button onclick="filterCandidats('TOUS')" class="filter-btn active" style="padding:6px 14px;border-radius:20px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">TOUS</button>
+        <button onclick="filterCandidats('TOUS')" class="filter-btn" style="padding:6px 14px;border-radius:20px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">TOUS</button>
         <button onclick="filterCandidats('EN COURS')" class="filter-btn" style="padding:6px 14px;border-radius:20px;border:2px solid #f59e0b;background:#fff;color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">EN COURS</button>
         <button onclick="filterCandidats('À RAPPELER')" class="filter-btn" style="padding:6px 14px;border-radius:20px;border:2px solid #3b82f6;background:#fff;color:#3b82f6;font-size:12px;font-weight:600;cursor:pointer;">À RAPPELER</button>
         <button onclick="filterCandidats('VALIDÉ')" class="filter-btn" style="padding:6px 14px;border-radius:20px;border:2px solid #22c55e;background:#fff;color:#22c55e;font-size:12px;font-weight:600;cursor:pointer;">VALIDÉ</button>
         <button onclick="filterCandidats('REFUSÉ')" class="filter-btn" style="padding:6px 14px;border-radius:20px;border:2px solid #ef4444;background:#fff;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer;">REFUSÉ</button>
       </div>
-      <div id="candidats-list" style="font-size:13px;">
-        <div class="loading">Cliquez sur "Actualiser" pour charger les candidats</div>
+      <div id="candidats-list" style="font-size:13px;"><div class="loading">Cliquez sur 🔄</div></div>
+    </div>
+
+    <!-- Sub: Import CV -->
+    <div id="rec-importcv" class="card" style="display:none;">
+      <h2>📄 Import CV</h2>
+      <div id="cvDropZone" style="border:2px dashed #d8b4fe;border-radius:12px;padding:32px;text-align:center;cursor:pointer;background:#faf5ff;transition:all .2s;"
+        ondragover="event.preventDefault();this.style.borderColor='#7c3aed';this.style.background='#ede9fe'"
+        ondragleave="this.style.borderColor='#d8b4fe';this.style.background='#faf5ff'"
+        ondrop="handleCvDrop(event)" onclick="document.getElementById('cvFileInput').click()">
+        <p style="color:#7c3aed;font-weight:700;font-size:16px;margin:0 0 6px;">Glissez un CV ici</p>
+        <p style="color:#9ca3af;font-size:13px;margin:0;">PDF ou Word — extraction automatique via IA</p>
+      </div>
+      <input type="file" id="cvFileInput" accept=".pdf,.docx" style="display:none" onchange="uploadCv(this.files[0])">
+      <div id="cvSpinner" style="display:none;text-align:center;padding:20px;color:#7c3aed;font-weight:600;">⏳ Extraction en cours...</div>
+      <div id="cvResult" style="display:none;margin-top:16px;"></div>
+    </div>
+
+    <!-- Sub: Phase 1 -->
+    <div id="rec-phase1" class="card" style="display:none;">
+      <h2 style="display:flex;align-items:center;justify-content:space-between;">
+        <span>👥 Profils Phase 1</span>
+        <button class="btn" onclick="loadPhase1()" style="font-size:12px;padding:8px 16px;">🔄</button>
+      </h2>
+      <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+        <button onclick="filterP1('TOUS')" style="padding:6px 14px;border-radius:20px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">TOUS</button>
+        <button onclick="filterP1('NON CONTACTÉ')" style="padding:6px 14px;border-radius:20px;border:2px solid #9ca3af;background:#fff;color:#9ca3af;font-size:12px;font-weight:600;cursor:pointer;">NON CONTACTÉ</button>
+        <button onclick="filterP1('CONTACTÉ')" style="padding:6px 14px;border-radius:20px;border:2px solid #22c55e;background:#fff;color:#22c55e;font-size:12px;font-weight:600;cursor:pointer;">CONTACTÉ</button>
+        <button onclick="filterP1('RELANCÉ')" style="padding:6px 14px;border-radius:20px;border:2px solid #f59e0b;background:#fff;color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">RELANCÉ</button>
+      </div>
+      <div id="phase1-list" style="font-size:13px;"><div class="loading">Cliquez sur 🔄</div></div>
+    </div>
+
+    <!-- Modal invitation -->
+    <div id="modalInvite" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:32px;max-width:400px;width:90%;margin:auto;margin-top:15vh;">
+        <h3 style="color:#1e1b4b;margin-bottom:16px;">📧 Inviter à la session</h3>
+        <p id="inviteLabel" style="font-size:13px;color:#6b7280;margin-bottom:12px;"></p>
+        <label style="font-size:12px;font-weight:600;color:#6b7280;">Date</label>
+        <input type="date" id="inviteDate" style="width:100%;padding:10px;border:2px solid #e9d5ff;border-radius:8px;margin-bottom:10px;">
+        <label style="font-size:12px;font-weight:600;color:#6b7280;">Heure</label>
+        <input type="time" id="inviteHeure" value="10:00" style="width:100%;padding:10px;border:2px solid #e9d5ff;border-radius:8px;margin-bottom:16px;">
+        <div style="display:flex;gap:10px;">
+          <button onclick="confirmInvite()" style="flex:1;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Envoyer</button>
+          <button onclick="document.getElementById('modalInvite').style.display='none'" style="flex:1;padding:10px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Annuler</button>
+        </div>
       </div>
     </div>
   </div>
@@ -290,6 +342,116 @@ async function deleteUser(email, name) {
 let allCandidats = [];
 let currentFilter = 'TOUS';
 
+// ===== SOUS-ONGLETS RECRUTEMENT =====
+function showRecSub(name) {
+  ['candidatures','importcv','phase1'].forEach(s => {
+    document.getElementById('rec-' + s).style.display = s === name ? 'block' : 'none';
+    document.getElementById('sub-' + s).style.background = s === name ? '#7c3aed' : '#fff';
+    document.getElementById('sub-' + s).style.color = s === name ? '#fff' : '#7c3aed';
+  });
+  if (name === 'phase1') loadPhase1();
+}
+
+// ===== IMPORT CV =====
+function handleCvDrop(e) { e.preventDefault(); e.currentTarget.style.borderColor='#d8b4fe'; e.currentTarget.style.background='#faf5ff'; const f=[...e.dataTransfer.files].find(f=>f.name.match(/\.(pdf|docx)$/i)); if(f) uploadCv(f); }
+
+async function uploadCv(file) {
+  if (!file) return;
+  document.getElementById('cvSpinner').style.display = 'block';
+  document.getElementById('cvResult').style.display = 'none';
+  const fd = new FormData(); fd.append('cv', file);
+  try {
+    const r = await fetch('/api/recrutement/upload-cv', { method: 'POST', body: fd });
+    const data = await r.json();
+    document.getElementById('cvSpinner').style.display = 'none';
+    if (data.success) {
+      const d = data.data;
+      document.getElementById('cvResult').style.display = 'block';
+      document.getElementById('cvResult').innerHTML =
+        '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;margin-bottom:12px;">' +
+        '<p style="margin:0 0 8px;color:#16a34a;font-weight:700;">✅ CV extrait et sauvegardé</p>' +
+        '<table style="font-size:13px;"><tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Nom</td><td>' + (d.nom||'—') + '</td></tr>' +
+        '<tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Prénom</td><td>' + (d.prenom||'—') + '</td></tr>' +
+        '<tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Email</td><td>' + (d.email||'—') + '</td></tr>' +
+        '<tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Tél</td><td>' + (d.telephone||'—') + '</td></tr>' +
+        '<tr><td style="padding:3px 12px 3px 0;color:#6b7280;font-weight:600;">Adresse</td><td>' + (d.adresse||'—') + '</td></tr></table></div>';
+    } else {
+      document.getElementById('cvResult').style.display = 'block';
+      document.getElementById('cvResult').innerHTML = '<p style="color:#ef4444;">❌ ' + data.error + '</p>';
+    }
+  } catch(e) { document.getElementById('cvSpinner').style.display='none'; alert('Erreur: '+e.message); }
+  document.getElementById('cvFileInput').value = '';
+}
+
+// ===== PHASE 1 =====
+let allP1 = []; let p1Filter = 'TOUS';
+
+async function loadPhase1() {
+  const div = document.getElementById('phase1-list');
+  div.innerHTML = '<div class="loading">Chargement...</div>';
+  try {
+    const r = await fetch('/api/recrutement/candidats-phase1');
+    const data = await r.json();
+    if (!data.success) { div.innerHTML = '<div class="loading">Erreur: '+data.error+'</div>'; return; }
+    allP1 = data.candidats; renderP1();
+  } catch(e) { div.innerHTML = '<div class="loading">Erreur réseau</div>'; }
+}
+
+function filterP1(f) { p1Filter = f; renderP1(); }
+
+function renderP1() {
+  const div = document.getElementById('phase1-list');
+  const list = p1Filter === 'TOUS' ? allP1 : allP1.filter(c => c.statut === p1Filter);
+  if (!list.length) { div.innerHTML = '<div class="loading">Aucun profil</div>'; return; }
+  const sc = {'NON CONTACTÉ':'#9ca3af','CONTACTÉ':'#22c55e','RELANCÉ':'#f59e0b'};
+  div.innerHTML = list.map(c => {
+    const col = sc[c.statut] || '#9ca3af';
+    return '<div style="padding:12px 16px;background:#faf5ff;border-radius:10px;border:1px solid #e9d5ff;margin-bottom:6px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">' +
+      '<div style="flex:1;min-width:200px;"><strong style="color:#1e1b4b;">' + c.prenom + ' ' + c.nom + '</strong> ' +
+      '<span style="font-size:11px;color:#9ca3af;">' + c.email + ' | ' + c.telephone + '</span>' +
+      (c.adresse ? '<br><span style="font-size:11px;color:#6b7280;">' + c.adresse + '</span>' : '') +
+      ' <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:'+col+'18;color:'+col+';font-weight:600;">' + c.statut + '</span>' +
+      (c.session ? ' <span style="font-size:11px;color:#7c3aed;">📅 ' + c.session + '</span>' : '') + '</div>' +
+      '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">' +
+      '<input type="text" value="' + (c.note||'').replace(/"/g,'&quot;') + '" placeholder="Note..." onblur="saveP1Note('+c.row+',this.value)" style="padding:4px 8px;border:1.5px solid #e9d5ff;border-radius:6px;font-size:11px;width:120px;">' +
+      '<select onchange="changeP1Statut('+c.row+',this.value)" style="padding:3px 6px;border:1.5px solid #e9d5ff;border-radius:6px;font-size:11px;">' +
+      ['NON CONTACTÉ','CONTACTÉ','RELANCÉ'].map(s => '<option value="'+s+'"'+(c.statut===s?' selected':'')+'>'+s+'</option>').join('') + '</select>' +
+      '<button onclick="openInvite('+c.row+',\''+c.email.replace(/'/g,"\\'")+'\',\''+c.prenom.replace(/'/g,"\\'")+'\','+'\''+c.nom.replace(/'/g,"\\'")+'\''+')" style="padding:4px 8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📧 Inviter</button>' +
+      '</div></div></div>';
+  }).join('');
+}
+
+async function changeP1Statut(row, statut) {
+  await fetch('/api/recrutement/phase1/statut', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({row,statut}) });
+  setTimeout(loadPhase1, 1000);
+}
+
+async function saveP1Note(row, note) {
+  await fetch('/api/recrutement/phase1/note', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({row,note}) });
+}
+
+let _inviteData = {};
+function openInvite(row, email, prenom, nom) {
+  _inviteData = {row, email, prenom, nom};
+  document.getElementById('inviteLabel').textContent = 'Inviter ' + prenom + ' ' + nom + ' (' + email + ')';
+  document.getElementById('modalInvite').style.display = 'flex';
+}
+
+async function confirmInvite() {
+  const d = document.getElementById('inviteDate').value;
+  const h = document.getElementById('inviteHeure').value;
+  if (!d || !h) { alert('Remplissez date et heure'); return; }
+  const btn = event.target; btn.disabled=true; btn.textContent='⏳...';
+  await fetch('/api/recrutement/phase1/inviter', { method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({row:_inviteData.row, email:_inviteData.email, prenom:_inviteData.prenom, date_session:d, heure_session:h}) });
+  document.getElementById('modalInvite').style.display = 'none';
+  btn.disabled=false; btn.textContent='Envoyer';
+  alert('✅ Invitation envoyée à ' + _inviteData.email);
+  setTimeout(loadPhase1, 1500);
+}
+
+// ===== CANDIDATURES =====
 async function loadCandidats() {
   const div = document.getElementById('candidats-list');
   div.innerHTML = '<div class="loading">Chargement...</div>';

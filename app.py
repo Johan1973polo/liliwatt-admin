@@ -759,6 +759,199 @@ def envoyer_contrat():
         print(f"⚠️ Erreur contrat: {e}")
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
 
+# ===== PHASE 1 — Import CV + Profils =====
+
+@app.route('/api/recrutement/candidats-phase1')
+@login_required
+def list_candidats_phase1():
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'})
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        try:
+            ws = sh.worksheet('PHASE 1')
+        except Exception:
+            ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=9)
+            ws.update('A1:I1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION']])
+        rows = ws.get_all_values()
+        candidats = []
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            if len(row) < 3 or not row[2]:
+                continue
+            candidats.append({
+                'row': i + 1,
+                'nom': row[0], 'prenom': row[1], 'email': row[2],
+                'telephone': row[3] if len(row) > 3 else '',
+                'adresse': row[4] if len(row) > 4 else '',
+                'statut': row[5] if len(row) > 5 else 'NON CONTACTÉ',
+                'note': row[6] if len(row) > 6 else '',
+                'date': row[7] if len(row) > 7 else '',
+                'session': row[8] if len(row) > 8 else ''
+            })
+        return jsonify({'success': True, 'candidats': candidats})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/recrutement/upload-cv', methods=['POST'])
+@login_required
+def upload_cv():
+    try:
+        if 'cv' not in request.files:
+            return jsonify({'success': False, 'error': 'Fichier CV requis'})
+        f = request.files['cv']
+        filename = f.filename.lower()
+
+        # Extraire le texte
+        text = ''
+        if filename.endswith('.pdf'):
+            import pdfplumber
+            import io
+            pdf = pdfplumber.open(io.BytesIO(f.read()))
+            for page in pdf.pages:
+                t = page.extract_text()
+                if t:
+                    text += t + '\n'
+            pdf.close()
+        elif filename.endswith('.docx'):
+            from docx import Document
+            import io
+            doc = Document(io.BytesIO(f.read()))
+            text = '\n'.join(p.text for p in doc.paragraphs)
+        else:
+            return jsonify({'success': False, 'error': 'Format non supporté (PDF ou Word uniquement)'})
+
+        if not text.strip():
+            return jsonify({'success': False, 'error': 'Impossible d\'extraire le texte du CV'})
+
+        # Appel GPT-4o-mini
+        import openai
+        client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY', ''))
+        resp = client.chat.completions.create(
+            model='gpt-4o-mini',
+            messages=[
+                {'role': 'system', 'content': 'Extrais ces informations du CV en JSON : nom, prenom, email, telephone, adresse. Réponds UNIQUEMENT en JSON valide.'},
+                {'role': 'user', 'content': text[:4000]}
+            ],
+            temperature=0
+        )
+        raw = resp.choices[0].message.content.strip()
+        # Nettoyer le JSON
+        if raw.startswith('```'):
+            raw = raw.split('\n', 1)[1].rsplit('```', 1)[0]
+        data = json.loads(raw)
+        print(f"📄 CV extrait: {data}")
+
+        # Sauvegarder dans PHASE 1
+        gc = get_sheets_client()
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        try:
+            ws = sh.worksheet('PHASE 1')
+        except Exception:
+            ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=9)
+            ws.update('A1:I1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION']])
+
+        date_str = datetime.now().strftime('%d/%m/%Y')
+        ws.append_row([
+            (data.get('nom', '') or '').upper(),
+            data.get('prenom', ''),
+            data.get('email', ''),
+            data.get('telephone', ''),
+            data.get('adresse', ''),
+            'NON CONTACTÉ',
+            '',
+            date_str,
+            ''
+        ])
+        return jsonify({'success': True, 'data': data})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/recrutement/phase1/statut', methods=['POST'])
+@login_required
+def update_phase1_statut():
+    try:
+        d = request.get_json()
+        gc = get_sheets_client()
+        ws = gc.open_by_key(RECRUTEMENT_SHEET_ID).worksheet('PHASE 1')
+        ws.update_cell(d['row'], 6, d['statut'])
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/recrutement/phase1/note', methods=['POST'])
+@login_required
+def update_phase1_note():
+    try:
+        d = request.get_json()
+        gc = get_sheets_client()
+        ws = gc.open_by_key(RECRUTEMENT_SHEET_ID).worksheet('PHASE 1')
+        ws.update_cell(d['row'], 7, d['note'])
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/recrutement/phase1/inviter', methods=['POST'])
+@login_required
+def inviter_phase1():
+    try:
+        d = request.get_json()
+        email = d.get('email', '')
+        prenom = d.get('prenom', '')
+        date_session = d.get('date_session', '')
+        heure_session = d.get('heure_session', '')
+        row_num = d.get('row')
+
+        # Envoyer le mail d'invitation
+        mail_html = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+<div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
+<h1 style="color:#fff;font-size:28px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
+<p style="color:rgba(255,255,255,.8);font-size:12px;margin:6px 0 0;">Invitation session de présentation</p>
+</div>
+<div style="background:#f5f3ff;padding:32px;border-radius:0 0 12px 12px;">
+<p style="font-size:16px;color:#1e1b4b;">Bonjour <strong>{prenom}</strong>,</p>
+<p style="color:#374151;line-height:1.7;">Suite à notre échange, nous avons le plaisir de vous inviter à rejoindre notre session de présentation LILIWATT.</p>
+<div style="background:#fff;border-radius:10px;padding:24px;margin:24px 0;border-left:4px solid #7c3aed;">
+<table style="width:100%;font-size:14px;border-collapse:collapse;">
+<tr><td style="padding:8px 0;color:#6b7280;font-weight:700;width:100px;">Date</td><td style="color:#1e1b4b;font-weight:700;">{date_session}</td></tr>
+<tr><td style="padding:8px 0;color:#6b7280;font-weight:700;">Heure</td><td style="color:#1e1b4b;font-weight:700;">{heure_session}</td></tr>
+</table>
+</div>
+<a href="https://meet.google.com/tzv-pgjc-und?authuser=0" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#d946ef);color:#fff;padding:14px 32px;border-radius:50px;text-decoration:none;font-weight:700;font-size:14px;">Rejoindre la session Google Meet</a>
+<p style="color:#374151;margin-top:20px;line-height:1.7;">À très bientôt !</p>
+<p style="color:#6b7280;font-size:13px;">L'équipe LILIWATT<br>recrutement@liliwatt.fr</p>
+<hr style="border:1px solid #e9d5ff;margin:24px 0;">
+<p style="font-size:11px;color:#9ca3af;">LILIWATT — LILISTRAT STRATÉGIE SAS — 59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
+</div></div>"""
+
+        token = get_zoho_token()
+        if token:
+            account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+            requests.post(
+                f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+                headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                json={'fromAddress': 'recrutement@liliwatt.fr', 'toAddress': email,
+                      'subject': f'Invitation session LILIWATT — {date_session} à {heure_session}',
+                      'content': mail_html, 'mailFormat': 'html'},
+                timeout=15
+            )
+            print(f"✅ Invitation envoyée à {email}")
+
+        # Mettre à jour Sheets
+        gc = get_sheets_client()
+        ws = gc.open_by_key(RECRUTEMENT_SHEET_ID).worksheet('PHASE 1')
+        ws.update_cell(row_num, 6, 'CONTACTÉ')
+        ws.update_cell(row_num, 9, f'{date_session} {heure_session}')
+
+        return jsonify({'success': True})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/users/<email>', methods=['DELETE'])
 @login_required
 def delete_user(email):
