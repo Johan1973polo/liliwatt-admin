@@ -841,15 +841,32 @@ def save_cv_to_sheet(data):
     except Exception:
         ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=9)
         ws.update('A1:I1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION']])
+    import time
     date_str = datetime.now().strftime('%d/%m/%Y')
-    ws.append_row([
+    tel = data.get('telephone', '') or ''
+    if isinstance(tel, list):
+        tel = ' / '.join(str(t) for t in tel)
+    email = data.get('email', '') or ''
+    if isinstance(email, list):
+        email = email[0] if email else ''
+    row_data = [
         (data.get('nom', '') or '').upper(),
-        data.get('prenom', ''),
-        data.get('email', ''),
-        data.get('telephone', ''),
-        data.get('adresse', ''),
+        data.get('prenom', '') or '',
+        email,
+        tel,
+        data.get('adresse', '') or '',
         'NON CONTACTÉ', '', date_str, ''
-    ])
+    ]
+    for attempt in range(3):
+        try:
+            ws.append_row(row_data)
+            break
+        except Exception as e:
+            if attempt < 2:
+                print(f"⚠️ Sheets retry {attempt+1}/3: {e}")
+                time.sleep(2)
+            else:
+                raise e
 
 @app.route('/api/recrutement/upload-cv', methods=['POST'])
 @login_required
