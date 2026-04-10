@@ -683,6 +683,9 @@ def list_candidats():
             })
         return jsonify({'success': True, 'candidats': candidats})
     except Exception as e:
+        import traceback
+        print(f"⚠️ Erreur candidats: {e}")
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/recrutement/statut', methods=['POST'])
