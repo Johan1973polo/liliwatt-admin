@@ -866,22 +866,32 @@ def upload_cv():
             import zipfile, io
             results = {'total': 0, 'ok': 0, 'errors': 0}
             with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
-                for name in zf.namelist():
-                    if not name.lower().endswith(('.pdf', '.docx', '.doc')):
+                all_names = zf.namelist()
+                print(f"📦 ZIP ouvert: {len(all_names)} entrées")
+                for name in all_names:
+                    # Ignorer fichiers cachés macOS et dossiers
+                    basename = name.split('/')[-1]
+                    if basename.startswith('.') or basename.startswith('__') or not basename:
                         continue
+                    if not basename.lower().endswith(('.pdf', '.docx', '.doc')):
+                        print(f"  ⏭️ Ignoré (format): {name}")
+                        continue
+                    print(f"  📄 Trouvé: {name} ({zf.getinfo(name).file_size} octets)")
                     results['total'] += 1
                     try:
                         inner = zf.read(name)
-                        text = extract_text_from_file(inner, name)
+                        text = extract_text_from_file(inner, basename)
                         if not text:
+                            print(f"  ⚠️ Pas de texte extrait: {name}")
                             results['errors'] += 1; continue
                         data = extract_cv_with_gpt(text)
                         save_cv_to_sheet(data)
                         results['ok'] += 1
-                        print(f"📄 ZIP/{name}: {data.get('nom','')} {data.get('prenom','')}")
+                        print(f"  ✅ {name}: {data.get('nom','')} {data.get('prenom','')} ({data.get('email','')})")
                     except Exception as e:
                         results['errors'] += 1
-                        print(f"⚠️ ZIP/{name}: {e}")
+                        print(f"  ❌ {name}: {e}")
+            print(f"📦 ZIP terminé: {results['total']} traités, {results['ok']} ok, {results['errors']} erreurs")
             return jsonify({'success': True, 'zip': True, **results})
 
         # Fichier unique
