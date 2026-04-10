@@ -48,6 +48,7 @@
   <div class="tabs">
     <div class="tab active" onclick="showTab('creer')">+ Créer un commercial</div>
     <div class="tab" onclick="showTab('gerer')">Gérer les commerciaux</div>
+    <div class="tab" onclick="showTab('recrutement')">👥 Recrutement</div>
   </div>
 
   <!-- Créer -->
@@ -110,15 +111,37 @@
       </div>
     </div>
   </div>
+
+  <!-- Recrutement -->
+  <div class="panel" id="tab-recrutement">
+    <div class="card">
+      <h2 style="display:flex;align-items:center;justify-content:space-between;">
+        <span>👥 Candidatures</span>
+        <button class="btn" onclick="loadCandidats()" style="font-size:12px;padding:8px 16px;">🔄 Actualiser</button>
+      </h2>
+      <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+        <button onclick="filterCandidats('TOUS')" class="filter-btn active" style="padding:6px 14px;border-radius:20px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">TOUS</button>
+        <button onclick="filterCandidats('EN COURS')" class="filter-btn" style="padding:6px 14px;border-radius:20px;border:2px solid #f59e0b;background:#fff;color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">EN COURS</button>
+        <button onclick="filterCandidats('À RAPPELER')" class="filter-btn" style="padding:6px 14px;border-radius:20px;border:2px solid #3b82f6;background:#fff;color:#3b82f6;font-size:12px;font-weight:600;cursor:pointer;">À RAPPELER</button>
+        <button onclick="filterCandidats('VALIDÉ')" class="filter-btn" style="padding:6px 14px;border-radius:20px;border:2px solid #22c55e;background:#fff;color:#22c55e;font-size:12px;font-weight:600;cursor:pointer;">VALIDÉ</button>
+        <button onclick="filterCandidats('REFUSÉ')" class="filter-btn" style="padding:6px 14px;border-radius:20px;border:2px solid #ef4444;background:#fff;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer;">REFUSÉ</button>
+      </div>
+      <div id="candidats-list" style="font-size:13px;">
+        <div class="loading">Cliquez sur "Actualiser" pour charger les candidats</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    t.classList.toggle('active', (i === 0 && name === 'creer') || (i === 1 && name === 'gerer'));
+    const tabs = ['creer','gerer','recrutement'];
+    t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'recrutement') loadCandidats();
 }
 
 function normalize(s) {
@@ -261,6 +284,82 @@ async function deleteUser(email, name) {
   const data = await r.json();
   if (data.success) { alert('Utilisateur supprimé.'); loadUsers(); }
   else alert('Erreur : ' + data.error);
+}
+
+// ===== RECRUTEMENT =====
+let allCandidats = [];
+let currentFilter = 'TOUS';
+
+async function loadCandidats() {
+  const div = document.getElementById('candidats-list');
+  div.innerHTML = '<div class="loading">Chargement...</div>';
+  try {
+    const r = await fetch('/api/recrutement/candidats');
+    const data = await r.json();
+    if (!data.success) { div.innerHTML = '<div class="loading">Erreur: ' + data.error + '</div>'; return; }
+    allCandidats = data.candidats;
+    renderCandidats();
+  } catch(e) { div.innerHTML = '<div class="loading">Erreur réseau</div>'; }
+}
+
+function filterCandidats(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.style.background = '#fff';
+    b.style.color = b.style.borderColor;
+  });
+  event.target.style.background = event.target.style.borderColor;
+  event.target.style.color = '#fff';
+  renderCandidats();
+}
+
+function renderCandidats() {
+  const div = document.getElementById('candidats-list');
+  const filtered = currentFilter === 'TOUS' ? allCandidats : allCandidats.filter(c => c.statut === currentFilter);
+  if (!filtered.length) { div.innerHTML = '<div class="loading">Aucun candidat</div>'; return; }
+
+  const statusColors = { 'EN COURS': '#f59e0b', 'À RAPPELER': '#3b82f6', 'VALIDÉ': '#22c55e', 'REFUSÉ': '#ef4444' };
+
+  div.innerHTML = filtered.map(c => {
+    const sc = statusColors[c.statut] || '#9ca3af';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:12px 16px;background:#faf5ff;border-radius:10px;border:1px solid #e9d5ff;margin-bottom:6px;">' +
+      '<div style="flex:1;min-width:200px;">' +
+      '<strong style="color:#1e1b4b;">' + c.prenom + ' ' + c.nom + '</strong> ' +
+      '<span style="color:#9ca3af;font-size:11px;">' + c.email + ' | ' + c.telephone + '</span><br>' +
+      '<span style="font-size:11px;color:#6b7280;">' + c.date + '</span> ' +
+      '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:' + sc + '18;color:' + sc + ';font-weight:600;">' + c.statut + '</span> ' +
+      (c.referant ? '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#ede9fe;color:#7c3aed;font-weight:600;">Réf: ' + c.referant + '</span>' : '') +
+      '</div>' +
+      '<div style="display:flex;gap:4px;flex-wrap:wrap;">' +
+      (c.drive_link ? '<a href="' + c.drive_link + '" target="_blank" style="padding:4px 8px;background:#ede9fe;color:#7c3aed;border:none;border-radius:6px;font-size:11px;text-decoration:none;font-weight:600;">📁 Drive</a>' : '') +
+      '<select onchange="changeStatut(' + c.row + ',this.value)" style="padding:3px 6px;border:1.5px solid #e9d5ff;border-radius:6px;font-size:11px;color:#374151;">' +
+      ['EN COURS','À RAPPELER','VALIDÉ','REFUSÉ'].map(s => '<option value="' + s + '"' + (c.statut === s ? ' selected' : '') + '>' + s + '</option>').join('') +
+      '</select>' +
+      '<button onclick="genContrat(\'' + c.email + '\')" style="padding:4px 8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 Contrats</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+async function changeStatut(row, statut) {
+  await fetch('/api/recrutement/statut', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ row, statut }) });
+  setTimeout(loadCandidats, 1000);
+}
+
+async function genContrat(email) {
+  if (!confirm('Générer les contrats pré-remplis pour ' + email + ' ?')) return;
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '⏳...';
+  try {
+    const r = await fetch('/api/recrutement/envoyer-contrat', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
+    const data = await r.json();
+    if (data.success) {
+      alert('✅ ' + data.files.length + ' contrat(s) générés !\nOuvrir le dossier Drive ?');
+      window.open(data.drive_link, '_blank');
+    } else {
+      alert('❌ Erreur: ' + data.error);
+    }
+  } catch(e) { alert('❌ Erreur réseau'); }
+  btn.disabled = false; btn.textContent = '📄 Contrats';
 }
 </script>
 </body>

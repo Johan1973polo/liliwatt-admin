@@ -653,6 +653,109 @@ def get_drive_folder():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+RECRUTEMENT_SHEET_ID = '11A-aJIqtm0JZ01lU43GpWudWDNFtknIr-4sYgYD-6ck'
+
+@app.route('/api/recrutement/candidats')
+@login_required
+def list_candidats():
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'})
+        ws = gc.open_by_key(RECRUTEMENT_SHEET_ID).sheet1
+        rows = ws.get_all_values()
+        candidats = []
+        for i, row in enumerate(rows):
+            if i == 0 or not row[2] or '@' not in row[2]:
+                continue
+            candidats.append({
+                'row': i + 1,
+                'nom': row[0] if len(row) > 0 else '',
+                'prenom': row[1] if len(row) > 1 else '',
+                'email': row[2] if len(row) > 2 else '',
+                'telephone': row[3] if len(row) > 3 else '',
+                'siren': row[4] if len(row) > 4 else '',
+                'qualite': row[5] if len(row) > 5 else '',
+                'date': row[6] if len(row) > 6 else '',
+                'drive_link': row[7] if len(row) > 7 else '',
+                'statut': row[8] if len(row) > 8 else 'EN COURS',
+                'referant': row[10] if len(row) > 10 else ''
+            })
+        return jsonify({'success': True, 'candidats': candidats})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/recrutement/statut', methods=['POST'])
+@login_required
+def update_statut_candidat():
+    try:
+        d = request.get_json()
+        row_num = d.get('row')
+        statut = d.get('statut', '')
+        gc = get_sheets_client()
+        ws = gc.open_by_key(RECRUTEMENT_SHEET_ID).sheet1
+        ws.update_cell(row_num, 9, statut)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/recrutement/referant', methods=['POST'])
+@login_required
+def update_referant_candidat():
+    try:
+        d = request.get_json()
+        row_num = d.get('row')
+        referant = d.get('referant', '')
+        gc = get_sheets_client()
+        ws = gc.open_by_key(RECRUTEMENT_SHEET_ID).sheet1
+        ws.update_cell(row_num, 11, referant)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/recrutement/envoyer-contrat', methods=['POST'])
+@login_required
+def envoyer_contrat():
+    try:
+        from generate_contrats import generate_contrats
+        d = request.get_json()
+        email = d.get('email', '').strip()
+        if not email:
+            return jsonify({'success': False, 'error': 'Email requis'})
+
+        gc = get_sheets_client()
+        ws = gc.open_by_key(RECRUTEMENT_SHEET_ID).sheet1
+        rows = ws.get_all_values()
+        candidat = None
+        for row in rows:
+            if len(row) > 2 and row[2].lower() == email.lower():
+                candidat = {'nom': row[0], 'prenom': row[1], 'email': row[2],
+                           'siren': row[4] if len(row) > 4 else '',
+                           'qualite': row[5] if len(row) > 5 else '',
+                           'drive_link': row[7] if len(row) > 7 else ''}
+                break
+        if not candidat:
+            return jsonify({'success': False, 'error': 'Candidat non trouvé'})
+
+        # Extraire le folder ID du lien Drive
+        import re
+        match = re.search(r'folders/([a-zA-Z0-9_-]+)', candidat['drive_link'])
+        if not match:
+            return jsonify({'success': False, 'error': 'Dossier Drive non trouvé'})
+        folder_id = match.group(1)
+
+        print(f"📄 Génération contrats pour {candidat['prenom']} {candidat['nom']}")
+        files = generate_contrats(
+            candidat['prenom'], candidat['nom'],
+            candidat['siren'], candidat['qualite'], folder_id
+        )
+        print(f"✅ {len(files)} contrat(s) générés")
+        return jsonify({'success': True, 'files': files, 'drive_link': candidat['drive_link']})
+    except Exception as e:
+        import traceback
+        print(f"⚠️ Erreur contrat: {e}")
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
+
 @app.route('/api/users/<email>', methods=['DELETE'])
 @login_required
 def delete_user(email):
