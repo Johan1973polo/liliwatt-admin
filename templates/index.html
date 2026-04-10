@@ -36,6 +36,7 @@
   .loading { text-align: center; color: #7c3aed; font-size: 14px; padding: 20px; }
   .bar { height: 3px; background: linear-gradient(135deg, #7c3aed, #d946ef); border-radius: 0 0 0 0; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 <div class="bar"></div>
@@ -372,29 +373,26 @@ function showRecSub(name) {
   if (name === 'phase1') loadPhase1();
 }
 
-// ===== IMPORT CV BATCH =====
+// ===== IMPORT CV BATCH (ZIP parallèle) =====
 let cvQueue = [];
 let cvPaused = false;
 let cvProcessing = false;
+let cvOkCount = 0, cvErrCount = 0, cvTotalCount = 0, cvDoneCount = 0;
 
 function handleCvBatchDrop(e) {
   e.preventDefault();
   e.currentTarget.style.borderColor='#d8b4fe';
   e.currentTarget.style.background='#faf5ff';
   const items = e.dataTransfer.items;
-  const files = [];
-  // Support dossier via webkitGetAsEntry
   const entries = [];
   for (let i = 0; i < items.length; i++) {
     const entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
     if (entry) entries.push(entry);
-    else if (items[i].kind === 'file') files.push(items[i].getAsFile());
   }
   if (entries.length && entries[0].isDirectory) {
-    readDirEntries(entries[0], collected => { handleCvFiles(collected); });
+    readDirEntries(entries[0], collected => handleCvFiles(collected));
   } else {
-    const dropped = [...e.dataTransfer.files];
-    handleCvFiles(dropped);
+    handleCvFiles([...e.dataTransfer.files]);
   }
 }
 
@@ -410,14 +408,35 @@ function readDirEntries(dirEntry, cb) {
   })();
 }
 
-function handleCvFiles(fileList) {
-  const valid = [...fileList].filter(f => /\.(pdf|docx?|zip)$/i.test(f.name));
-  if (!valid.length) { alert('Aucun fichier PDF, Word ou ZIP détecté'); return; }
-  cvQueue = valid;
+async function handleCvFiles(fileList) {
+  const files = [...fileList];
+  const cvFiles = [];
+  const zipFiles = files.filter(f => /\.zip$/i.test(f.name));
+  const directFiles = files.filter(f => /\.(pdf|docx?)$/i.test(f.name));
+
+  // Extraire les ZIP côté navigateur avec JSZip
+  for (const zf of zipFiles) {
+    try {
+      document.getElementById('cvBatchInfo').style.display = 'block';
+      document.getElementById('cvBatchCount').innerHTML = '📦 Extraction du ZIP <strong>' + zf.name + '</strong>...';
+      const zip = await JSZip.loadAsync(zf);
+      for (const [path, entry] of Object.entries(zip.files)) {
+        if (entry.dir) continue;
+        const base = path.split('/').pop();
+        if (base.startsWith('.') || base.startsWith('__')) continue;
+        if (!/\.(pdf|docx?)$/i.test(base)) continue;
+        const blob = await entry.async('blob');
+        cvFiles.push(new File([blob], base, { type: blob.type || 'application/octet-stream' }));
+      }
+    } catch(e) { console.error('Erreur ZIP:', e); }
+  }
+
+  cvFiles.push(...directFiles);
+  if (!cvFiles.length) { alert('Aucun CV (PDF/Word) trouvé'); return; }
+
+  cvQueue = cvFiles;
   document.getElementById('cvBatchInfo').style.display = 'block';
-  document.getElementById('cvBatchCount').textContent = valid.length + ' fichier(s) détecté(s) — ' +
-    valid.filter(f=>/\.zip$/i.test(f.name)).length + ' ZIP, ' +
-    valid.filter(f=>!/\.zip$/i.test(f.name)).length + ' CVs';
+  document.getElementById('cvBatchCount').textContent = cvFiles.length + ' CV(s) prêts à traiter';
   document.getElementById('cvBatchStart').style.display = 'inline-block';
   document.getElementById('cvBatchPause').style.display = 'none';
   document.getElementById('cvProgress').style.display = 'none';
@@ -431,31 +450,42 @@ function togglePause() {
   document.getElementById('cvBatchPause').style.background = cvPaused ? '#22c55e' : '#f59e0b';
 }
 
+function updateCvUI() {
+  document.getElementById('cvOk').textContent = cvOkCount;
+  document.getElementById('cvErr').textContent = cvErrCount;
+  document.getElementById('cvProgressBar').style.width = Math.round((cvDoneCount / cvTotalCount) * 100) + '%';
+  document.getElementById('cvProgressText').textContent = 'Traitement ' + cvDoneCount + '/' + cvTotalCount + ' CVs...';
+}
+
+async function processOneCv(file) {
+  while (cvPaused) await new Promise(r => setTimeout(r, 300));
+  const fd = new FormData();
+  fd.append('cv', file);
+  try {
+    const r = await fetch('/api/recrutement/upload-cv', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (data.success) cvOkCount++; else cvErrCount++;
+  } catch(e) { cvErrCount++; }
+  cvDoneCount++;
+  updateCvUI();
+}
+
 async function startBatchProcess() {
   document.getElementById('cvBatchStart').style.display = 'none';
   document.getElementById('cvBatchPause').style.display = 'inline-block';
   document.getElementById('cvProgress').style.display = 'block';
   cvPaused = false; cvProcessing = true;
-  let ok = 0, err = 0, total = cvQueue.length, processed = 0;
+  cvOkCount = 0; cvErrCount = 0; cvDoneCount = 0;
+  cvTotalCount = cvQueue.length;
+  updateCvUI();
 
-  for (let i = 0; i < cvQueue.length; i++) {
-    while (cvPaused) await new Promise(r => setTimeout(r, 300));
+  // Traitement par lots de 5 en parallèle
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < cvQueue.length; i += BATCH_SIZE) {
     if (!cvProcessing) break;
-
-    const file = cvQueue[i];
-    document.getElementById('cvProgressText').textContent = 'Traitement ' + (i+1) + '/' + total + ' — ' + file.name;
-    document.getElementById('cvProgressBar').style.width = Math.round(((i+1)/total)*100) + '%';
-
-    const fd = new FormData();
-    fd.append('cv', file);
-    try {
-      const r = await fetch('/api/recrutement/upload-cv', { method: 'POST', body: fd });
-      const data = await r.json();
-      if (data.success) ok++; else err++;
-    } catch(e) { err++; }
-    processed++;
-    document.getElementById('cvOk').textContent = ok;
-    document.getElementById('cvErr').textContent = err;
+    while (cvPaused) await new Promise(r => setTimeout(r, 300));
+    const batch = cvQueue.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map(f => processOneCv(f)));
   }
 
   cvProcessing = false;
@@ -464,7 +494,7 @@ async function startBatchProcess() {
   document.getElementById('cvResult').style.display = 'block';
   document.getElementById('cvResult').innerHTML =
     '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;">' +
-    '<p style="margin:0;font-weight:700;color:#16a34a;font-size:15px;">✅ ' + total + ' CVs traités — ' + ok + ' succès / ' + err + ' erreurs</p></div>';
+    '<p style="margin:0;font-weight:700;color:#16a34a;font-size:15px;">✅ ' + cvTotalCount + ' CVs traités — ' + cvOkCount + ' succès / ' + cvErrCount + ' erreurs</p></div>';
 }
 
 // ===== PHASE 1 =====
