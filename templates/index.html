@@ -37,6 +37,7 @@
   .bar { height: 3px; background: linear-gradient(135deg, #7c3aed, #d946ef); border-radius: 0 0 0 0; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>if(typeof JSZip==='undefined'){document.write('<scr'+'ipt src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"><\/scr'+'ipt>');}</script>
 </head>
 <body>
 <div class="bar"></div>
@@ -207,6 +208,8 @@
 </div>
 
 <script>
+if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } else { console.log('✅ JSZip OK', JSZip.version); }
+
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
     const tabs = ['creer','gerer','recrutement'];
