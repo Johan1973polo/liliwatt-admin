@@ -1124,6 +1124,198 @@ def inviter_phase1():
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
 
+# ===== SUIVI DES VENTES =====
+SUIVI_CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'suivi_config.json')
+
+def get_suivi_sheet_id():
+    if os.path.exists(SUIVI_CONFIG_FILE):
+        with open(SUIVI_CONFIG_FILE) as f:
+            return json.load(f).get('sheet_id', '')
+    return os.environ.get('SUIVI_VENTES_SHEET_ID', '')
+
+SUIVI_HEADERS = ['REF_VENTE','REF_CLIENT','VENDEUR','REFERENT','PERIODE_PROD','DATE_DEBUT_CONTRAT',
+    'DATE_FIN_CONTRAT','TYPE','PDL_PCE','FOURNISSEUR','MONTANT_HT','COMMISSION_VENDEUR',
+    'COMMISSION_REFERENT','MARGE_SOCIETE','STATUT_PAIEMENT','DATE_PAIEMENT_1','DATE_PAIEMENT_2',
+    'NOM_CLIENT','SEGMENT']
+
+@app.route('/api/suivi-ventes/init-sheet')
+@login_required
+def init_suivi_sheet():
+    try:
+        from googleapiclient.discovery import build
+        from google.oauth2.service_account import Credentials as SACredentials
+        import base64
+
+        creds_b64 = os.environ.get('GOOGLE_DRIVE_CREDS_BASE64', '')
+        creds_json_env = os.environ.get('GOOGLE_CREDS_JSON', '')
+        if creds_b64:
+            creds_dict = json.loads(base64.b64decode(creds_b64).decode())
+        elif creds_json_env:
+            creds_dict = json.loads(creds_json_env)
+        else:
+            with open(os.path.join(os.path.dirname(__file__), 'liliwatt-eddcc0bc9e18.json')) as f:
+                creds_dict = json.load(f)
+
+        creds = SACredentials.from_service_account_info(creds_dict,
+            scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
+        sheets = build('sheets', 'v4', credentials=creds)
+
+        body = {
+            'properties': {'title': 'SUIVI DES VENTES LILIWATT'},
+            'sheets': [{'properties': {'title': 'Ventes', 'frozenRowCount': 1}}]
+        }
+        created = sheets.spreadsheets().create(body=body, fields='spreadsheetId,spreadsheetUrl').execute()
+        sheet_id = created['spreadsheetId']
+        sheet_url = created['spreadsheetUrl']
+
+        # En-têtes
+        sheets.spreadsheets().values().update(
+            spreadsheetId=sheet_id, range='A1:S1', valueInputOption='RAW',
+            body={'values': [SUIVI_HEADERS]}
+        ).execute()
+
+        # Formule marge auto colonne N (=K-L-M) à partir de la ligne 2
+        # Format en-tête violet
+        requests_body = [
+            {'repeatCell': {
+                'range': {'sheetId': 0, 'startRowIndex': 0, 'endRowIndex': 1},
+                'cell': {'userEnteredFormat': {
+                    'backgroundColor': {'red': 0.118, 'green': 0.106, 'blue': 0.294},
+                    'textFormat': {'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}, 'bold': True, 'fontSize': 10}
+                }},
+                'fields': 'userEnteredFormat(backgroundColor,textFormat)'
+            }}
+        ]
+        sheets.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={'requests': requests_body}).execute()
+
+        # Sauvegarder config
+        with open(SUIVI_CONFIG_FILE, 'w') as f:
+            json.dump({'sheet_id': sheet_id, 'sheet_url': sheet_url}, f)
+
+        print(f"✅ Sheet Suivi Ventes créé: {sheet_id}")
+        return jsonify({'success': True, 'sheet_id': sheet_id, 'sheet_url': sheet_url})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/suivi-ventes/ajouter', methods=['POST'])
+@login_required
+def ajouter_vente():
+    try:
+        d = request.get_json()
+        sheet_id = get_suivi_sheet_id()
+        if not sheet_id:
+            return jsonify({'success': False, 'error': 'Sheet non initialisé'})
+
+        gc = get_sheets_client()
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.sheet1
+
+        # Générer réf auto
+        now = datetime.now()
+        rows = ws.get_all_values()
+        count = len(rows)
+        ref = f"LW-{now.strftime('%Y%m')}-{count:03d}"
+
+        montant = float(d.get('montant_ht', 0) or 0)
+        comm_v = float(d.get('commission_vendeur', 0) or 0)
+        comm_r = float(d.get('commission_referent', 0) or 0)
+        marge = montant - comm_v - comm_r
+
+        row_data = [
+            ref, d.get('ref_client', ''), d.get('vendeur', ''), d.get('referent', ''),
+            d.get('periode_prod', ''), d.get('date_debut_contrat', ''), d.get('date_fin_contrat', ''),
+            d.get('type_energie', ''), d.get('pdl_pce', ''), d.get('fournisseur', ''),
+            montant, comm_v, comm_r, marge,
+            d.get('statut_paiement', ''), d.get('date_paiement_1', ''), d.get('date_paiement_2', ''),
+            d.get('nom_client', ''), d.get('segment', '')
+        ]
+
+        import time
+        for attempt in range(3):
+            try:
+                ws.append_row(row_data, value_input_option='RAW')
+                break
+            except Exception:
+                if attempt < 2: time.sleep(2)
+                else: raise
+
+        print(f"✅ Vente ajoutée: {ref} — {d.get('nom_client','')} — {montant}€")
+        return jsonify({'success': True, 'ref': ref})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/suivi-ventes/liste')
+@login_required
+def liste_ventes():
+    try:
+        sheet_id = get_suivi_sheet_id()
+        if not sheet_id:
+            return jsonify({'success': False, 'error': 'Sheet non initialisé'})
+        gc = get_sheets_client()
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return jsonify({'success': True, 'ventes': [], 'totaux': {'comm_vendeur': 0, 'comm_referent': 0, 'marge': 0}})
+
+        vendeur_filter = request.args.get('vendeur', '')
+        periode_filter = request.args.get('periode', '')
+        fournisseur_filter = request.args.get('fournisseur', '')
+
+        ventes = []
+        total_cv, total_cr, total_m = 0, 0, 0
+        for row in rows[1:]:
+            if len(row) < 14: continue
+            if vendeur_filter and row[2] != vendeur_filter: continue
+            if periode_filter and row[4] != periode_filter: continue
+            if fournisseur_filter and row[9] != fournisseur_filter: continue
+            cv = float(row[11] or 0); cr = float(row[12] or 0); m = float(row[13] or 0)
+            total_cv += cv; total_cr += cr; total_m += m
+            ventes.append({
+                'ref': row[0], 'ref_client': row[1], 'vendeur': row[2], 'referent': row[3],
+                'periode_prod': row[4], 'date_debut': row[5], 'date_fin': row[6],
+                'type': row[7], 'pdl_pce': row[8], 'fournisseur': row[9],
+                'montant_ht': row[10], 'comm_vendeur': cv, 'comm_referent': cr, 'marge': m,
+                'statut_paiement': row[14] if len(row) > 14 else '',
+                'date_p1': row[15] if len(row) > 15 else '', 'date_p2': row[16] if len(row) > 16 else '',
+                'nom_client': row[17] if len(row) > 17 else '', 'segment': row[18] if len(row) > 18 else ''
+            })
+        return jsonify({'success': True, 'ventes': ventes, 'totaux': {'comm_vendeur': total_cv, 'comm_referent': total_cr, 'marge': total_m}})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/suivi-ventes/export-vendeur')
+@login_required
+def export_vendeur():
+    try:
+        sheet_id = get_suivi_sheet_id()
+        email = request.args.get('vendeur', '')
+        periode = request.args.get('periode', '')
+        if not sheet_id or not email:
+            return jsonify({'success': False, 'error': 'Params manquants'})
+        gc = get_sheets_client()
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+
+        # Colonnes export : A-L + R,S (pas O=marge)
+        export_cols = [0,1,2,3,4,5,6,7,8,9,10,11,12,17,18]
+        header = [SUIVI_HEADERS[i] for i in export_cols if i < len(SUIVI_HEADERS)]
+        csv_lines = [','.join(header)]
+        for row in rows[1:]:
+            if len(row) < 14: continue
+            if row[2] != email: continue
+            if periode and row[4] != periode: continue
+            vals = [str(row[i]) if i < len(row) else '' for i in export_cols]
+            csv_lines.append(','.join(f'"{v}"' for v in vals))
+
+        from flask import Response
+        csv_content = '\n'.join(csv_lines)
+        return Response(csv_content, mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment;filename=export_{email}_{periode or "all"}.csv'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/users/<email>', methods=['DELETE'])
 @login_required
 def delete_user(email):

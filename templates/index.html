@@ -50,6 +50,7 @@
     <div class="tab active" onclick="showTab('creer')">+ Créer un commercial</div>
     <div class="tab" onclick="showTab('gerer')">Gérer les commerciaux</div>
     <div class="tab" onclick="showTab('recrutement')">👥 Recrutement</div>
+    <div class="tab" onclick="showTab('ventes')">💰 Suivi ventes</div>
   </div>
 
   <!-- Créer -->
@@ -216,6 +217,75 @@
       </div>
     </div>
   </div>
+
+  <!-- Suivi Ventes -->
+  <div class="panel" id="tab-ventes">
+    <div class="card">
+      <h2 style="display:flex;align-items:center;justify-content:space-between;">
+        <span>💰 Suivi des ventes</span>
+        <div style="display:flex;gap:6px;">
+          <button onclick="document.getElementById('venteForm').style.display=document.getElementById('venteForm').style.display==='none'?'block':'none'" class="btn" style="font-size:12px;padding:8px 16px;">+ Saisir</button>
+          <button onclick="loadVentes()" class="btn" style="font-size:12px;padding:8px 16px;">🔄</button>
+          <button onclick="initSuiviSheet()" style="font-size:12px;padding:6px 12px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;cursor:pointer;">⚙️ Init</button>
+        </div>
+      </h2>
+
+      <!-- Formulaire saisie -->
+      <div id="venteForm" style="display:none;background:#faf5ff;border-radius:12px;padding:20px;margin-bottom:20px;border:1.5px solid #e9d5ff;">
+        <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
+          <div class="form-group"><label>Réf client</label><input type="text" id="v_ref_client"></div>
+          <div class="form-group"><label>Nom client</label><input type="text" id="v_nom_client"></div>
+          <div class="form-group"><label>Vendeur</label><select id="v_vendeur"><option value="">Chargement...</option></select></div>
+          <div class="form-group"><label>Référent</label><select id="v_referent"><option value="">Aucun</option></select></div>
+          <div class="form-group"><label>Période production</label><input type="month" id="v_periode"></div>
+          <div class="form-group"><label>Segment</label><select id="v_segment"><option>C5-BASE</option><option>C5-HPHC</option><option>C4</option><option>C2</option><option>GAZ</option></select></div>
+          <div class="form-group"><label>Date début contrat</label><input type="date" id="v_date_debut"></div>
+          <div class="form-group"><label>Date fin contrat</label><input type="date" id="v_date_fin"></div>
+          <div class="form-group"><label>Type</label>
+            <div style="display:flex;gap:10px;margin-top:4px;">
+              <label style="font-size:13px;"><input type="radio" name="v_type" value="Électricité" checked> ⚡ Élec</label>
+              <label style="font-size:13px;"><input type="radio" name="v_type" value="Gaz"> 🔥 Gaz</label>
+            </div>
+          </div>
+          <div class="form-group"><label>PDL / PCE</label><input type="text" id="v_pdl"></div>
+          <div class="form-group"><label>Fournisseur</label><input type="text" id="v_fournisseur"></div>
+          <div class="form-group"><label>Montant total HT (€)</label><input type="number" step="0.01" id="v_montant" oninput="calcMarge()"></div>
+          <div class="form-group"><label>Commission vendeur (€)</label><input type="number" step="0.01" id="v_comm_v" oninput="calcMarge()"></div>
+          <div class="form-group"><label>Commission référent (€)</label><input type="number" step="0.01" id="v_comm_r" value="0" oninput="calcMarge()"></div>
+          <div class="form-group"><label>Marge société (€)</label><input type="text" id="v_marge" readonly style="background:#f3f4f6;font-weight:700;color:#22c55e;"></div>
+          <div class="form-group"><label>Statut paiement</label>
+            <select id="v_statut_p" onchange="document.getElementById('v_dates_p').style.display=this.value==='50-50'?'flex':'none'">
+              <option value="100%">100%</option><option value="50-50">50-50</option>
+            </select>
+          </div>
+          <div class="form-group" id="v_dates_p" style="display:none;gap:8px;">
+            <div><label>1er paiement</label><input type="date" id="v_date_p1"></div>
+            <div><label>2ème paiement</label><input type="date" id="v_date_p2"></div>
+          </div>
+        </div>
+        <button onclick="ajouterVente()" class="btn" style="margin-top:12px;width:100%;">💾 Enregistrer la vente</button>
+        <div id="venteResult" style="margin-top:8px;"></div>
+      </div>
+
+      <!-- Filtres -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+        <select id="vf_vendeur" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
+          <option value="">Tous vendeurs</option>
+        </select>
+        <input type="month" id="vf_periode" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
+        <input type="text" id="vf_fournisseur" placeholder="Fournisseur" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;width:120px;">
+        <button onclick="exportVendeur()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📥 Export CSV</button>
+      </div>
+
+      <!-- Tableau -->
+      <div id="ventes-list" style="font-size:12px;overflow-x:auto;"><div class="loading">Cliquez sur 🔄</div></div>
+      <div id="ventes-totaux" style="display:none;margin-top:12px;display:flex;gap:16px;flex-wrap:wrap;">
+        <div style="background:#ede9fe;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Comm. vendeurs</span><br><strong id="tot_cv" style="color:#7c3aed;font-size:16px;">0€</strong></div>
+        <div style="background:#e0e7ff;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Comm. référents</span><br><strong id="tot_cr" style="color:#2563eb;font-size:16px;">0€</strong></div>
+        <div style="background:#f0fdf4;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Marge société</span><br><strong id="tot_m" style="color:#22c55e;font-size:16px;">0€</strong></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -223,12 +293,13 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement'];
+    const tabs = ['creer','gerer','recrutement','ventes'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'recrutement') loadCandidats();
+  if (name === 'ventes') { loadVenteVendeurs(); loadVentes(); }
 }
 
 function normalize(s) {
@@ -606,6 +677,110 @@ async function confirmSendRef() {
   document.getElementById('modalSendRef').style.display = 'none';
   btn.disabled=false; btn.textContent='Envoyer';
   alert('✅ Profil envoyé à ' + email);
+}
+
+// ===== SUIVI VENTES =====
+function calcMarge() {
+  const m = parseFloat(document.getElementById('v_montant').value||0);
+  const cv = parseFloat(document.getElementById('v_comm_v').value||0);
+  const cr = parseFloat(document.getElementById('v_comm_r').value||0);
+  document.getElementById('v_marge').value = (m - cv - cr).toFixed(2) + ' €';
+}
+
+async function initSuiviSheet() {
+  if (!confirm('Créer le Google Sheet "SUIVI DES VENTES LILIWATT" ?')) return;
+  const r = await fetch('/api/suivi-ventes/init-sheet');
+  const d = await r.json();
+  if (d.success) { alert('✅ Sheet créé !\n' + d.sheet_url); window.open(d.sheet_url, '_blank'); }
+  else alert('❌ ' + d.error);
+}
+
+async function loadVenteVendeurs() {
+  try {
+    const r = await fetch('/api/vendeurs');
+    const d = await r.json();
+    const vendeurs = d.vendeurs || [];
+    ['v_vendeur','vf_vendeur'].forEach(id => {
+      const sel = document.getElementById(id);
+      const first = id === 'vf_vendeur' ? '<option value="">Tous vendeurs</option>' : '<option value="">Sélectionner</option>';
+      sel.innerHTML = first + vendeurs.map(v => '<option value="'+v.email+'">'+v.nom+'</option>').join('');
+    });
+    const refSel = document.getElementById('v_referent');
+    refSel.innerHTML = '<option value="">Aucun</option>' + vendeurs.filter(v=>v.role==='referent'||v.role==='admin').map(v => '<option value="'+v.email+'">'+v.nom+'</option>').join('');
+  } catch(e) {}
+}
+
+async function ajouterVente() {
+  const type = document.querySelector('input[name=v_type]:checked')?.value || 'Électricité';
+  const body = {
+    ref_client: document.getElementById('v_ref_client').value,
+    nom_client: document.getElementById('v_nom_client').value,
+    vendeur: document.getElementById('v_vendeur').value,
+    referent: document.getElementById('v_referent').value,
+    periode_prod: document.getElementById('v_periode').value,
+    date_debut_contrat: document.getElementById('v_date_debut').value,
+    date_fin_contrat: document.getElementById('v_date_fin').value,
+    type_energie: type,
+    pdl_pce: document.getElementById('v_pdl').value,
+    fournisseur: document.getElementById('v_fournisseur').value,
+    montant_ht: document.getElementById('v_montant').value,
+    commission_vendeur: document.getElementById('v_comm_v').value,
+    commission_referent: document.getElementById('v_comm_r').value,
+    segment: document.getElementById('v_segment').value,
+    statut_paiement: document.getElementById('v_statut_p').value,
+    date_paiement_1: document.getElementById('v_date_p1')?.value || '',
+    date_paiement_2: document.getElementById('v_date_p2')?.value || ''
+  };
+  const r = await fetch('/api/suivi-ventes/ajouter', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const d = await r.json();
+  const res = document.getElementById('venteResult');
+  if (d.success) {
+    res.innerHTML = '<p style="color:#22c55e;font-weight:600;">✅ Vente ' + d.ref + ' enregistrée</p>';
+    setTimeout(loadVentes, 1000);
+  } else {
+    res.innerHTML = '<p style="color:#ef4444;">❌ ' + d.error + '</p>';
+  }
+}
+
+async function loadVentes() {
+  const div = document.getElementById('ventes-list');
+  div.innerHTML = '<div class="loading">Chargement...</div>';
+  const params = new URLSearchParams();
+  const vf = document.getElementById('vf_vendeur')?.value; if (vf) params.set('vendeur', vf);
+  const pf = document.getElementById('vf_periode')?.value; if (pf) params.set('periode', pf);
+  const ff = document.getElementById('vf_fournisseur')?.value; if (ff) params.set('fournisseur', ff);
+  try {
+    const r = await fetch('/api/suivi-ventes/liste?' + params);
+    const d = await r.json();
+    if (!d.success) { div.innerHTML = '<div class="loading">Erreur: '+d.error+'</div>'; return; }
+    if (!d.ventes.length) { div.innerHTML = '<div class="loading">Aucune vente</div>'; return; }
+    div.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:#1e1b4b;color:#fff;"><tr>' +
+      '<th style="padding:6px 8px;text-align:left;">Réf</th><th style="padding:6px 8px;">Client</th><th style="padding:6px 8px;">Vendeur</th><th style="padding:6px 8px;">Type</th><th style="padding:6px 8px;">Fournisseur</th><th style="padding:6px 8px;">Montant</th><th style="padding:6px 8px;">Comm.V</th><th style="padding:6px 8px;">Comm.R</th><th style="padding:6px 8px;">Marge</th><th style="padding:6px 8px;">Statut</th>' +
+      '</tr></thead><tbody>' +
+      d.ventes.map(v => '<tr style="border-bottom:1px solid #ede9fe;">' +
+        '<td style="padding:6px 8px;font-weight:600;color:#7c3aed;">' + v.ref + '</td>' +
+        '<td style="padding:6px 8px;">' + (v.nom_client||v.ref_client) + '</td>' +
+        '<td style="padding:6px 8px;">' + v.vendeur.split('@')[0] + '</td>' +
+        '<td style="padding:6px 8px;">' + (v.type==='Gaz'?'🔥':'⚡') + '</td>' +
+        '<td style="padding:6px 8px;">' + v.fournisseur + '</td>' +
+        '<td style="padding:6px 8px;font-weight:600;">' + v.montant_ht + '€</td>' +
+        '<td style="padding:6px 8px;color:#7c3aed;">' + v.comm_vendeur + '€</td>' +
+        '<td style="padding:6px 8px;color:#2563eb;">' + v.comm_referent + '€</td>' +
+        '<td style="padding:6px 8px;color:#22c55e;font-weight:700;">' + v.marge.toFixed(2) + '€</td>' +
+        '<td style="padding:6px 8px;">' + v.statut_paiement + '</td></tr>'
+      ).join('') + '</tbody></table>';
+    document.getElementById('tot_cv').textContent = d.totaux.comm_vendeur.toFixed(2) + '€';
+    document.getElementById('tot_cr').textContent = d.totaux.comm_referent.toFixed(2) + '€';
+    document.getElementById('tot_m').textContent = d.totaux.marge.toFixed(2) + '€';
+    document.getElementById('ventes-totaux').style.display = 'flex';
+  } catch(e) { div.innerHTML = '<div class="loading">Erreur réseau</div>'; }
+}
+
+function exportVendeur() {
+  const v = document.getElementById('vf_vendeur').value;
+  const p = document.getElementById('vf_periode').value;
+  if (!v) { alert('Sélectionnez un vendeur'); return; }
+  window.open('/api/suivi-ventes/export-vendeur?vendeur=' + encodeURIComponent(v) + '&periode=' + encodeURIComponent(p||''), '_blank');
 }
 
 // ===== CANDIDATURES =====
