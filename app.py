@@ -1231,10 +1231,18 @@ def ajouter_vente():
         comm_r = float(d.get('commission_referent', 0) or 0)
         marge = montant - comm_v - comm_r
 
+        # Normaliser le type
+        type_val = (d.get('type_energie', '') or '').strip()
+        if 'gaz' in type_val.lower():
+            type_val = 'Gaz'
+        elif 'lec' in type_val.lower():
+            type_val = 'Électricité'
+        print(f"📝 Vente type: {type_val} (reçu: {d.get('type_energie','')})")
+
         row_data = [
             ref, d.get('ref_client', ''), d.get('societe', ''), d.get('vendeur', ''), d.get('referent', ''),
             d.get('periode_prod', ''), d.get('date_debut_contrat', ''), d.get('date_fin_contrat', ''),
-            d.get('type_energie', ''), d.get('pdl_pce', ''), d.get('fournisseur', ''),
+            type_val, d.get('pdl_pce', ''), d.get('fournisseur', ''),
             montant, comm_v, comm_r, marge,
             d.get('statut_paiement', ''), d.get('date_paiement_1', ''), d.get('date_paiement_2', ''),
             d.get('segment', ''), d.get('nom_client', ''), d.get('prenom_client', ''),

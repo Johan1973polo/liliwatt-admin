@@ -823,7 +823,14 @@ async function loadVentes() {
     const d = await r.json();
     if (!d.success) { div.innerHTML = '<div class="loading">Erreur: '+d.error+'</div>'; return; }
     let filtered = d.ventes;
-    if (tf) filtered = filtered.filter(v => (v.type||'').toLowerCase() === tf.toLowerCase());
+    if (tf) {
+      const tfl = tf.toLowerCase();
+      filtered = filtered.filter(v => {
+        const vt = (v.type||'').toLowerCase();
+        if (tfl.includes('gaz')) return vt.includes('gaz');
+        return vt.includes('lec') || vt.includes('élec');
+      });
+    }
     if (sgf) filtered = filtered.filter(v => (v.segment||'').startsWith(sgf));
     _allVentes = filtered;
     // Recalculate totaux for filtered
@@ -930,21 +937,30 @@ function exportPdfVendeur() {
   doc.save('facturation_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
 }
 
-// 2. PDF RÉFÉRENT — commission sur ventes de son équipe
+// 2. PDF RÉFÉRENT — ses propres ventes + commissions équipe
 function exportPdfReferent() {
   const refEmail = document.getElementById('vf_ref_pdf').value;
   if (!refEmail) { alert('Sélectionnez un référent dans le dropdown'); return; }
-  const ventes = _allVentes.filter(v => v.referent === refEmail);
-  if (!ventes.length) { alert('Aucune vente avec ce référent'); return; }
   const nom = emailToNom(refEmail);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
   pdfHeader(doc, 'Commission référent — ' + nom, getPeriodeLabel());
 
   let totCr = 0;
-  const rows = ventes.map(v => { totCr+=v.comm_referent; return [v.ref, v.societe||'', emailToNom(v.vendeur), typeLabel(v.type), v.fournisseur||'', v.periode_prod||'', v.comm_referent.toFixed(2)+' €']; });
+  // Ses propres ventes (VENDEUR = refEmail)
+  const propres = _allVentes.filter(v => v.vendeur === refEmail);
+  // Ventes de son équipe (REFERENT = refEmail, VENDEUR != refEmail)
+  const equipe = _allVentes.filter(v => v.referent === refEmail && v.vendeur !== refEmail);
+  const toutes = [...propres, ...equipe];
+  if (!toutes.length) { alert('Aucune vente pour ce référent'); return; }
+
+  const rows = toutes.map(v => {
+    const cr = v.vendeur === refEmail ? v.comm_vendeur : v.comm_referent;
+    totCr += cr;
+    return [v.ref, v.societe||'', emailToNom(v.vendeur), typeLabel(v.type), v.fournisseur||'', v.periode_prod||'', cr.toFixed(2)+' €'];
+  });
   rows.push(['', '', '', '', '', 'TOTAL À FACTURER', totCr.toFixed(2)+' €']);
-  pdfTable(doc, ['Réf','Société','Vendeur','Type','Fournisseur','Période','Comm. référent'], rows);
+  pdfTable(doc, ['Réf','Société','Vendeur','Type','Fournisseur','Période','Commission'], rows);
   pdfFooter(doc);
   doc.save('commission_referent_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
 }
