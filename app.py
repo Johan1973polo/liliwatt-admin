@@ -6,6 +6,14 @@ import uuid
 from functools import wraps
 from datetime import datetime, timedelta
 
+def parse_float(val):
+    if not val:
+        return 0.0
+    try:
+        return float(str(val).replace(',', '.').replace(' ', '').replace('\u202f', ''))
+    except:
+        return 0.0
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'liliwatt-admin-secret-2026')
 
@@ -1226,11 +1234,6 @@ def ajouter_vente():
         count = len(rows)
         ref = f"LW-{now.strftime('%Y%m')}-{count:03d}"
 
-        def parse_float(val):
-            if not val:
-                return 0.0
-            return float(str(val).replace(',', '.').replace(' ', '').replace('\u202f', ''))
-
         montant = parse_float(d.get('montant_ht'))
         comm_v = parse_float(d.get('commission_vendeur'))
         comm_r = parse_float(d.get('commission_referent'))
@@ -1313,7 +1316,7 @@ def liste_ventes():
             if search:
                 haystack = ' '.join([g(row,2),g(row,19),g(row,20),g(row,21),g(row,22)]).lower()
                 if search not in haystack: continue
-            cv = float(g(row,12) or 0); cr = float(g(row,13) or 0); m = float(g(row,14) or 0)
+            cv = parse_float(g(row,12)); cr = parse_float(g(row,13)); m = parse_float(g(row,14))
             total_cv += cv; total_cr += cr; total_m += m
             ventes.append({
                 'ref': g(row,0), 'ref_client': g(row,1), 'societe': g(row,2),
