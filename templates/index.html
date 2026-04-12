@@ -317,11 +317,7 @@
         </select>
         <input type="text" id="vf_fournisseur" placeholder="Fournisseur" oninput="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;width:120px;">
         <button onclick="exportVendeur()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📥 CSV</button>
-        <select id="vf_ref_pdf" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
-          <option value="">Réf. PDF...</option>
-        </select>
-        <button onclick="exportPdfVendeur()" style="padding:6px 12px;background:#d946ef;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📄 Vendeur</button>
-        <button onclick="exportPdfReferent()" style="padding:6px 12px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📄 Référent</button>
+        <button onclick="exportPdfRecap()" style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📋 Récapitulatif</button>
         <button onclick="exportPdfAdmin()" style="padding:6px 12px;background:#1e1b4b;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📄 Admin</button>
       </div>
 
@@ -761,12 +757,11 @@ async function loadVenteVendeurs() {
     });
     const refSel = document.getElementById('v_referent');
     refSel.innerHTML = '<option value="">Aucun</option>' + vendeurs.filter(v=>v.role==='referent'||v.role==='admin').map(v => '<option value="'+v.email+'">'+(v.prenom||'')+' '+v.nom+'</option>').join('');
-    // Charger les vrais référents pour le PDF
+    // Charger les vrais référents
     try {
       const r2 = await fetch('/api/referents-avec-equipe');
       const d2 = await r2.json();
-      const refPdf = document.getElementById('vf_ref_pdf');
-      refPdf.innerHTML = '<option value="">Référent PDF...</option>' + (d2.referents||[]).map(r => '<option value="'+r.email+'">'+r.prenom+' '+r.nom+'</option>').join('');
+      _referentEmails = new Set((d2.referents||[]).map(r => r.email));
     } catch(e2) {}
   } catch(e) {}
 }
@@ -931,38 +926,43 @@ function getPeriodeLabel() {
 function typeLabel(t) { return (t||'').toLowerCase().includes('gaz') ? 'Gaz' : 'Élec'; }
 function emailToNom(e) { return (e||'').split('@')[0].replace('.',' ').split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' '); }
 
-// 1. PDF VENDEUR — Appel à facturation
-function exportPdfVendeur() {
-  const vendeur = document.getElementById('vf_vendeur').value;
-  if (!vendeur) { alert('Sélectionnez un vendeur dans le filtre'); return; }
+let _referentEmails = new Set();
+
+// Récapitulatif intelligent — vendeur ou référent selon le profil
+function exportPdfRecap() {
+  const email = document.getElementById('vf_vendeur').value;
+  if (!email) { alert('Sélectionnez un vendeur ou référent dans le filtre'); return; }
+  if (_referentEmails.has(email)) {
+    _exportPdfReferent(email);
+  } else {
+    _exportPdfVendeur(email);
+  }
+}
+
+function _exportPdfVendeur(vendeur) {
   const ventes = _allVentes.filter(v => v.vendeur === vendeur);
   if (!ventes.length) { alert('Aucune vente pour ce vendeur'); return; }
   const nom = emailToNom(vendeur);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-  pdfHeader(doc, 'Appel à facturation — ' + nom, getPeriodeLabel());
+  pdfHeader(doc, 'Récapitulatif des ventes — ' + nom, getPeriodeLabel());
 
   let totC = 0;
   const rows = ventes.map(v => { totC+=v.comm_vendeur; return [v.ref, v.societe||'', typeLabel(v.type), v.pdl_pce||'', v.fournisseur||'', v.periode_prod||'', v.comm_vendeur.toFixed(2)+' €']; });
   rows.push(['', '', '', '', '', 'TOTAL À FACTURER', totC.toFixed(2)+' €']);
   pdfTable(doc, ['Réf','Société','Type','PDL/PCE','Fournisseur','Période','Votre commission'], rows);
   pdfFooter(doc);
-  doc.save('facturation_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
+  doc.save('recap_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
 }
 
-// 2. PDF RÉFÉRENT — ses propres ventes + commissions équipe
-function exportPdfReferent() {
-  const refEmail = document.getElementById('vf_ref_pdf').value;
-  if (!refEmail) { alert('Sélectionnez un référent dans le dropdown'); return; }
+function _exportPdfReferent(refEmail) {
   const nom = emailToNom(refEmail);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-  pdfHeader(doc, 'Commission référent — ' + nom, getPeriodeLabel());
+  pdfHeader(doc, 'Récapitulatif des ventes — ' + nom + ' (Référent)', getPeriodeLabel());
 
   let totCr = 0;
-  // Ses propres ventes (VENDEUR = refEmail)
   const propres = _allVentes.filter(v => v.vendeur === refEmail);
-  // Ventes de son équipe (REFERENT = refEmail, VENDEUR != refEmail)
   const equipe = _allVentes.filter(v => v.referent === refEmail && v.vendeur !== refEmail);
   const toutes = [...propres, ...equipe];
   if (!toutes.length) { alert('Aucune vente pour ce référent'); return; }
@@ -975,7 +975,7 @@ function exportPdfReferent() {
   rows.push(['', '', '', '', '', 'TOTAL À FACTURER', totCr.toFixed(2)+' €']);
   pdfTable(doc, ['Réf','Société','Vendeur','Type','Fournisseur','Période','Commission'], rows);
   pdfFooter(doc);
-  doc.save('commission_referent_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
+  doc.save('recap_referent_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
 }
 
 // 3. PDF ADMIN — toutes colonnes + marge
