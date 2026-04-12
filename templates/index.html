@@ -304,7 +304,9 @@
         </select>
         <input type="text" id="vf_fournisseur" placeholder="Fournisseur" oninput="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;width:120px;">
         <button onclick="exportVendeur()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📥 CSV</button>
-        <button onclick="exportPDF()" style="padding:6px 12px;background:#fecaca;color:#dc2626;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📄 PDF</button>
+        <button onclick="exportPdfVendeur()" style="padding:6px 12px;background:#d946ef;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📄 Vendeur</button>
+        <button onclick="exportPdfReferent()" style="padding:6px 12px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📄 Référent</button>
+        <button onclick="exportPdfAdmin()" style="padding:6px 12px;background:#1e1b4b;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📄 Admin</button>
       </div>
 
       <!-- Tableau -->
@@ -866,66 +868,99 @@ function exportVendeur() {
   window.open('/api/suivi-ventes/export-vendeur?' + params, '_blank');
 }
 
-function exportPDF() {
-  if (!_allVentes.length) { alert('Aucune vente à exporter'); return; }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-  const annee = document.getElementById('vf_annee')?.value || '';
-  const vendeur = document.getElementById('vf_vendeur')?.value || '';
-  const now = new Date().toLocaleDateString('fr-FR');
-
-  // En-tête
+// ===== PDF HELPERS =====
+function pdfHeader(doc, title, subtitle) {
   doc.setFillColor(30, 27, 75);
-  doc.rect(0, 0, 297, 22, 'F');
+  doc.rect(0, 0, 297, 24, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text('LILIWATT', 10, 12);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Suivi des Ventes' + (annee ? ' — ' + annee : '') + (vendeur ? ' — ' + vendeur.split('@')[0] : ''), 50, 12);
-  doc.text('Export du ' + now, 250, 12);
+  doc.setFontSize(18); doc.setFont('helvetica', 'bold');
+  doc.text('LILIWATT', 10, 13);
+  doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+  doc.text(title, 55, 10);
+  if (subtitle) { doc.setFontSize(9); doc.text(subtitle, 55, 17); }
+  doc.setFontSize(8); doc.text('Export du ' + new Date().toLocaleDateString('fr-FR'), 250, 17);
+}
+function pdfFooter(doc) {
+  const n = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(7); doc.setTextColor(156,163,175); doc.text('LILIWATT — LILISTRAT STRATÉGIE SAS — 59 rue de Ponthieu, Bureau 326 — 75008 Paris', 10, 200); doc.text('Page '+i+'/'+n, 270, 200); }
+}
+function pdfTable(doc, head, body, startY) {
+  doc.autoTable({ head:[head], body, startY: startY||28, theme:'grid', styles:{fontSize:8,cellPadding:2}, headStyles:{fillColor:[30,27,75],textColor:[255,255,255],fontStyle:'bold'}, alternateRowStyles:{fillColor:[243,240,255]}, didParseCell:function(d){ if(d.row.index===body.length-1){d.cell.styles.fontStyle='bold';d.cell.styles.fillColor=[237,233,254];} } });
+}
+function getPeriodeLabel() { const a=document.getElementById('vf_annee')?.value; return a||'Toutes périodes'; }
 
-  // Tableau
-  const headers = [['Réf', 'Société', 'Vendeur', 'Période', 'Type', 'Fournisseur', 'Montant', 'Comm.V', 'Comm.R', 'Statut']];
-  let totMontant = 0, totCv = 0, totCr = 0;
-  const rows = _allVentes.map(v => {
-    totMontant += parseFloat(v.montant_ht || 0);
-    totCv += v.comm_vendeur;
-    totCr += v.comm_referent;
-    return [v.ref, v.societe || '', (v.vendeur||'').split('@')[0], v.periode_prod || '', v.type === 'Gaz' ? 'Gaz' : 'Élec', v.fournisseur || '', v.montant_ht + '€', v.comm_vendeur + '€', v.comm_referent + '€', v.statut_paiement || ''];
-  });
-  // Totaux
-  rows.push(['', '', '', '', '', 'TOTAUX', totMontant.toFixed(2) + '€', totCv.toFixed(2) + '€', totCr.toFixed(2) + '€', '']);
+// 1. PDF VENDEUR — Appel à facturation
+function exportPdfVendeur() {
+  const vendeur = document.getElementById('vf_vendeur').value;
+  if (!vendeur) { alert('Sélectionnez un vendeur'); return; }
+  const ventes = _allVentes.filter(v => v.vendeur === vendeur);
+  if (!ventes.length) { alert('Aucune vente pour ce vendeur'); return; }
+  const nom = (ventes[0].vendeur||'').split('@')[0].replace('.',' ').split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+  pdfHeader(doc, 'Appel à facturation — ' + nom, getPeriodeLabel());
 
-  doc.autoTable({
-    head: headers,
-    body: rows,
-    startY: 26,
-    theme: 'grid',
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [30, 27, 75], textColor: [255, 255, 255], fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [243, 240, 255] },
-    footStyles: { fillColor: [237, 233, 254], fontStyle: 'bold' },
-    didParseCell: function(data) {
-      if (data.row.index === rows.length - 1) {
-        data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.fillColor = [237, 233, 254];
-      }
-    }
-  });
+  let totM = 0, totC = 0;
+  const rows = ventes.map(v => { const m = parseFloat(v.montant_ht||0); totM+=m; totC+=v.comm_vendeur; return [v.ref, v.societe||'', v.type==='Gaz'?'Gaz':'Élec', v.pdl_pce||'', v.fournisseur||'', m.toFixed(2)+' €', v.comm_vendeur.toFixed(2)+' €']; });
+  rows.push(['', '', '', '', 'TOTAL À FACTURER', totM.toFixed(2)+' €', totC.toFixed(2)+' €']);
+  pdfTable(doc, ['Réf','Société','Type','PDL/PCE','Fournisseur','Montant HT','Votre commission'], rows);
+  pdfFooter(doc);
+  doc.save('facturation_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
+}
 
-  // Pied de page
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(7);
-    doc.setTextColor(156, 163, 175);
-    doc.text('LILIWATT — LILISTRAT STRATÉGIE SAS — 59 rue de Ponthieu, Bureau 326 — 75008 Paris', 10, 200);
-    doc.text('Page ' + i + '/' + pageCount, 270, 200);
+// 2. PDF RÉFÉRENT
+function exportPdfReferent() {
+  const vendeur = document.getElementById('vf_vendeur').value;
+  if (!vendeur) { alert('Sélectionnez un référent dans le filtre vendeur'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+  const nom = vendeur.split('@')[0].replace('.',' ').split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+  pdfHeader(doc, 'Appel à facturation Référent — ' + nom, getPeriodeLabel());
+
+  // Section 1 : ses propres ventes
+  const propres = _allVentes.filter(v => v.vendeur === vendeur);
+  let totPropre = 0;
+  if (propres.length) {
+    doc.setFontSize(11); doc.setTextColor(30,27,75); doc.setFont('helvetica','bold');
+    doc.text('Vos ventes directes', 10, 30);
+    const r1 = propres.map(v => { totPropre+=v.comm_vendeur; return [v.ref, v.societe||'', v.type==='Gaz'?'Gaz':'Élec', v.fournisseur||'', parseFloat(v.montant_ht||0).toFixed(2)+' €', v.comm_vendeur.toFixed(2)+' €']; });
+    r1.push(['','','','','Sous-total', totPropre.toFixed(2)+' €']);
+    pdfTable(doc, ['Réf','Société','Type','Fournisseur','Montant','Commission'], r1, 34);
   }
 
-  doc.save('export_ventes_' + (annee || 'all') + '.pdf');
+  // Section 2 : ventes de son équipe (il est référent)
+  const equipe = _allVentes.filter(v => v.referent === vendeur && v.vendeur !== vendeur);
+  let totRef = 0;
+  if (equipe.length) {
+    const y2 = doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : 34;
+    doc.setFontSize(11); doc.setTextColor(30,27,75); doc.setFont('helvetica','bold');
+    doc.text('Commissions référent (équipe)', 10, y2);
+    const r2 = equipe.map(v => { totRef+=v.comm_referent; return [v.ref, v.societe||'', (v.vendeur||'').split('@')[0], v.type==='Gaz'?'Gaz':'Élec', parseFloat(v.montant_ht||0).toFixed(2)+' €', v.comm_referent.toFixed(2)+' €']; });
+    r2.push(['','','','','Sous-total', totRef.toFixed(2)+' €']);
+    pdfTable(doc, ['Réf','Société','Vendeur','Type','Montant','Comm. référent'], r2, y2+4);
+  }
+
+  // Total
+  const yT = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : 50;
+  doc.setFontSize(13); doc.setTextColor(30,27,75); doc.setFont('helvetica','bold');
+  doc.text('Total à facturer : ' + (totPropre+totRef).toFixed(2) + ' €', 10, yT);
+  pdfFooter(doc);
+  doc.save('facturation_referent_'+nom.replace(/ /g,'_')+'.pdf');
+}
+
+// 3. PDF ADMIN — toutes colonnes + marge
+function exportPdfAdmin() {
+  if (!_allVentes.length) { alert('Aucune vente'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+  pdfHeader(doc, 'Suivi des Ventes — Admin', getPeriodeLabel());
+
+  let tM=0, tCv=0, tCr=0, tMg=0;
+  const rows = _allVentes.map(v => { const m=parseFloat(v.montant_ht||0); tM+=m; tCv+=v.comm_vendeur; tCr+=v.comm_referent; tMg+=v.marge; return [v.ref, v.societe||'', (v.vendeur||'').split('@')[0], v.periode_prod||'', v.type==='Gaz'?'Gaz':'Élec', v.fournisseur||'', m.toFixed(2)+'€', v.comm_vendeur.toFixed(2)+'€', v.comm_referent.toFixed(2)+'€', v.marge.toFixed(2)+'€', v.statut_paiement||'']; });
+  rows.push(['','','','','','TOTAUX', tM.toFixed(2)+'€', tCv.toFixed(2)+'€', tCr.toFixed(2)+'€', tMg.toFixed(2)+'€', '']);
+  pdfTable(doc, ['Réf','Société','Vendeur','Période','Type','Fourn.','Montant','Comm.V','Comm.R','Marge','Statut'], rows);
+  pdfFooter(doc);
+  doc.save('admin_ventes_'+getPeriodeLabel()+'.pdf');
 }
 
 // ===== CANDIDATURES =====
