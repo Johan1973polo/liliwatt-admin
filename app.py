@@ -1162,7 +1162,7 @@ def init_suivi_sheet():
 
         body = {
             'properties': {'title': 'SUIVI DES VENTES LILIWATT'},
-            'sheets': [{'properties': {'title': 'Ventes', 'frozenRowCount': 1}}]
+            'sheets': [{'properties': {'title': 'Ventes', 'gridProperties': {'frozenRowCount': 1}}}]
         }
         created = sheets.spreadsheets().create(body=body, fields='spreadsheetId,spreadsheetUrl').execute()
         sheet_id = created['spreadsheetId']
