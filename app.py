@@ -1226,9 +1226,16 @@ def ajouter_vente():
         count = len(rows)
         ref = f"LW-{now.strftime('%Y%m')}-{count:03d}"
 
-        montant = float(d.get('montant_ht', 0) or 0)
-        comm_v = float(d.get('commission_vendeur', 0) or 0)
-        comm_r = float(d.get('commission_referent', 0) or 0)
+        def parse_float(val):
+            if not val:
+                return 0.0
+            return float(str(val).replace(',', '.').replace(' ', '').replace('\u202f', ''))
+
+        montant = parse_float(d.get('montant_ht'))
+        comm_v = parse_float(d.get('commission_vendeur'))
+        comm_r = parse_float(d.get('commission_referent'))
+        vol_elec = parse_float(d.get('volume_elec'))
+        vol_gaz = parse_float(d.get('volume_gaz'))
         marge = montant - comm_v - comm_r
 
         # Normaliser le type
@@ -1247,7 +1254,7 @@ def ajouter_vente():
             d.get('statut_paiement', ''), d.get('date_paiement_1', ''), d.get('date_paiement_2', ''),
             d.get('segment', ''), d.get('nom_client', ''), d.get('prenom_client', ''),
             d.get('tel_client', ''), d.get('email_client', ''),
-            d.get('volume_elec', ''), d.get('volume_gaz', ''), d.get('lien_drive', '')
+            vol_elec, vol_gaz, d.get('lien_drive', '')
         ]
 
         import time
