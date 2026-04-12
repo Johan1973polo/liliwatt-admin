@@ -1289,8 +1289,9 @@ def export_vendeur():
         sheet_id = get_suivi_sheet_id()
         email = request.args.get('vendeur', '')
         periode = request.args.get('periode', '')
-        if not sheet_id or not email:
-            return jsonify({'success': False, 'error': 'Params manquants'})
+        annee = request.args.get('annee', '')
+        if not sheet_id:
+            return jsonify({'success': False, 'error': 'Sheet non initialisé'})
         gc = get_sheets_client()
         ws = gc.open_by_key(sheet_id).sheet1
         rows = ws.get_all_values()
@@ -1301,15 +1302,17 @@ def export_vendeur():
         csv_lines = [','.join(header)]
         for row in rows[1:]:
             if len(row) < 14: continue
-            if row[3] != email: continue
+            if email and row[3] != email: continue
             if periode and row[5] != periode: continue
+            if annee and not row[5].startswith(annee): continue
             vals = [str(row[i]) if i < len(row) else '' for i in export_cols]
             csv_lines.append(','.join(f'"{v}"' for v in vals))
 
         from flask import Response
+        label = email.split('@')[0] if email else 'tous'
         csv_content = '\n'.join(csv_lines)
         return Response(csv_content, mimetype='text/csv',
-            headers={'Content-Disposition': f'attachment;filename=export_{email}_{periode or "all"}.csv'})
+            headers={'Content-Disposition': f'attachment;filename=export_{label}_{annee or periode or "all"}.csv'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 

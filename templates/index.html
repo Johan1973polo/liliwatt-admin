@@ -231,6 +231,7 @@
 
       <!-- Formulaire saisie -->
       <div id="venteForm" style="display:none;background:#faf5ff;border-radius:12px;padding:20px;margin-bottom:20px;border:1.5px solid #e9d5ff;">
+        <button onclick="document.getElementById('venteForm').style.display='none'" style="padding:6px 14px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;margin-bottom:12px;">← Retour</button>
         <h4 style="color:#7c3aed;margin-bottom:12px;">📝 Informations contrat</h4>
         <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
           <div class="form-group"><label>Société *</label><input type="text" id="v_societe" required></div>
@@ -292,6 +293,12 @@
         <select id="vf_annee" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
           <option value="">Toutes années</option>
           <option>2024</option><option>2025</option><option selected>2026</option><option>2027</option><option>2028</option><option>2029</option><option>2030</option><option>2031</option>
+        </select>
+        <select id="vf_type" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
+          <option value="">Tous types</option><option value="Électricité">⚡ Élec</option><option value="Gaz">🔥 Gaz</option>
+        </select>
+        <select id="vf_segment" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
+          <option value="">Tous segments</option><option>C5-BASE</option><option>C5-HPHC</option><option>C4</option><option>C3</option><option>C2</option><option>GAZ</option>
         </select>
         <input type="text" id="vf_fournisseur" placeholder="Fournisseur" oninput="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;width:120px;">
         <button onclick="exportVendeur()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📥 Export CSV</button>
@@ -785,17 +792,25 @@ async function loadVentes() {
   const af = document.getElementById('vf_annee')?.value; if (af) params.set('annee', af);
   const ff = document.getElementById('vf_fournisseur')?.value; if (ff) params.set('fournisseur', ff);
   const sf = document.getElementById('vf_search')?.value; if (sf) params.set('search', sf);
+  const tf = document.getElementById('vf_type')?.value;
+  const sgf = document.getElementById('vf_segment')?.value;
   try {
     const r = await fetch('/api/suivi-ventes/liste?' + params);
     const d = await r.json();
     if (!d.success) { div.innerHTML = '<div class="loading">Erreur: '+d.error+'</div>'; return; }
-    _allVentes = d.ventes;
-    if (!d.ventes.length) { div.innerHTML = '<div class="loading">Aucune vente</div>'; updateTotaux(d.totaux); return; }
+    let filtered = d.ventes;
+    if (tf) filtered = filtered.filter(v => v.type === tf);
+    if (sgf) filtered = filtered.filter(v => (v.segment||'').startsWith(sgf));
+    _allVentes = filtered;
+    // Recalculate totaux for filtered
+    const ft = {nb: filtered.length, comm_vendeur: 0, comm_referent: 0, marge: 0};
+    filtered.forEach(v => { ft.comm_vendeur += v.comm_vendeur; ft.comm_referent += v.comm_referent; ft.marge += v.marge; });
+    if (!filtered.length) { div.innerHTML = '<div class="loading">Aucune vente</div>'; updateTotaux(ft); return; }
     const th = 'padding:6px 8px;text-align:left;';
     div.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:#1e1b4b;color:#fff;"><tr>' +
       '<th style="'+th+'">Réf</th><th style="'+th+'">Société</th><th style="'+th+'">Vendeur</th><th style="'+th+'">Type</th><th style="'+th+'">Fourn.</th><th style="'+th+'">Montant</th><th style="'+th+'">Cv</th><th style="'+th+'">Cr</th><th style="'+th+'">Marge</th><th style="'+th+'">Statut</th>' +
       '</tr></thead><tbody>' +
-      d.ventes.map((v,i) => '<tr onclick="showFiche('+i+')" style="border-bottom:1px solid #ede9fe;cursor:pointer;" onmouseover="this.style.background=\'#faf5ff\'" onmouseout="this.style.background=\'#fff\'">' +
+      filtered.map((v,i) => '<tr onclick="showFiche('+i+')" style="border-bottom:1px solid #ede9fe;cursor:pointer;" onmouseover="this.style.background=\'#faf5ff\'" onmouseout="this.style.background=\'#fff\'">' +
         '<td style="padding:6px 8px;font-weight:600;color:#7c3aed;">' + v.ref + '</td>' +
         '<td style="padding:6px 8px;font-weight:600;">' + (v.societe||v.ref_client||'—') + '</td>' +
         '<td style="padding:6px 8px;">' + (v.vendeur||'').split('@')[0] + '</td>' +
@@ -807,7 +822,7 @@ async function loadVentes() {
         '<td style="padding:6px 8px;color:#22c55e;font-weight:700;">' + v.marge.toFixed(2) + '€</td>' +
         '<td style="padding:6px 8px;">' + (v.statut_paiement||'') + '</td></tr>'
       ).join('') + '</tbody></table>';
-    updateTotaux(d.totaux);
+    updateTotaux(ft);
   } catch(e) { div.innerHTML = '<div class="loading">Erreur réseau</div>'; }
 }
 
@@ -841,9 +856,11 @@ function showFiche(idx) {
 
 function exportVendeur() {
   const v = document.getElementById('vf_vendeur').value;
-  const p = document.getElementById('vf_periode').value;
-  if (!v) { alert('Sélectionnez un vendeur'); return; }
-  window.open('/api/suivi-ventes/export-vendeur?vendeur=' + encodeURIComponent(v) + '&periode=' + encodeURIComponent(p||''), '_blank');
+  const a = document.getElementById('vf_annee').value;
+  const params = new URLSearchParams();
+  if (v) params.set('vendeur', v);
+  if (a) params.set('annee', a);
+  window.open('/api/suivi-ventes/export-vendeur?' + params, '_blank');
 }
 
 // ===== CANDIDATURES =====
