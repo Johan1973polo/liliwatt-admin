@@ -807,6 +807,7 @@ async function ajouterVente() {
 }
 
 let _allVentes = [];
+let _toutesVentes = [];
 async function loadVentes() {
   const div = document.getElementById('ventes-list');
   div.innerHTML = '<div class="loading">Chargement...</div>';
@@ -819,6 +820,8 @@ async function loadVentes() {
   const tf = document.getElementById('vf_type')?.value;
   const sgf = document.getElementById('vf_segment')?.value;
   try {
+    // Charger toutes les ventes sans filtre pour les PDFs
+    fetch('/api/suivi-ventes/liste').then(r=>r.json()).then(d=>{_toutesVentes=d.ventes||[];}).catch(()=>{});
     const r = await fetch('/api/suivi-ventes/liste?' + params);
     const d = await r.json();
     if (!d.success) { div.innerHTML = '<div class="loading">Erreur: '+d.error+'</div>'; return; }
@@ -963,8 +966,8 @@ function _exportPdfReferent(refEmail) {
   pdfHeader(doc, 'Récapitulatif des ventes — ' + nom + ' (Référent)', getPeriodeLabel());
 
   let totCr = 0;
-  const propres = _allVentes.filter(v => (v.vendeur||'').toLowerCase().trim() === ref);
-  const equipe = _allVentes.filter(v => (v.referent||'').toLowerCase().trim() === ref && (v.vendeur||'').toLowerCase().trim() !== ref);
+  const propres = _toutesVentes.filter(v => (v.vendeur||'').toLowerCase().trim() === ref);
+  const equipe = _toutesVentes.filter(v => (v.referent||'').toLowerCase().trim() === ref && (v.vendeur||'').toLowerCase().trim() !== ref);
   const toutes = [...propres, ...equipe];
   console.log('📋 PDF Référent:', refEmail, '| Directes:', propres.length, '| Équipe:', equipe.length, '| Total:', toutes.length);
   if (!toutes.length) { alert('Aucune vente pour ce référent'); return; }
