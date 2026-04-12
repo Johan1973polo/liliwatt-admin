@@ -428,6 +428,30 @@ def list_vendeurs_api():
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/api/referents-avec-equipe')
+@login_required
+def referents_avec_equipe():
+    try:
+        gc = get_sheets_client()
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+        # Collecter les emails en colonne G (vrais référents)
+        ref_emails = set()
+        for row in rows:
+            if len(row) > 6 and row[6].strip() and '@' in row[6]:
+                ref_emails.add(row[6].strip().lower())
+        # Construire la liste avec équipes
+        referents = []
+        for row in rows:
+            if len(row) > 3 and row[3].strip().lower() in ref_emails:
+                email = row[3].strip()
+                equipe = [r[3] for r in rows if len(r) > 6 and r[6].strip().lower() == email.lower() and r[3] != email]
+                referents.append({'email': email, 'nom': row[0], 'prenom': row[1], 'vendeurs': equipe})
+        return jsonify({'success': True, 'referents': referents})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/referents')
 @login_required
 def get_referents():
