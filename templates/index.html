@@ -37,6 +37,8 @@
   .bar { height: 3px; background: linear-gradient(135deg, #7c3aed, #d946ef); border-radius: 0 0 0 0; }
 </style>
 <script src="/static/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 <div class="bar"></div>
@@ -301,7 +303,8 @@
           <option value="">Tous segments</option><option>C5-BASE</option><option>C5-HPHC</option><option>C4</option><option>C3</option><option>C2</option><option>GAZ</option>
         </select>
         <input type="text" id="vf_fournisseur" placeholder="Fournisseur" oninput="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;width:120px;">
-        <button onclick="exportVendeur()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📥 Export CSV</button>
+        <button onclick="exportVendeur()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📥 CSV</button>
+        <button onclick="exportPDF()" style="padding:6px 12px;background:#fecaca;color:#dc2626;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📄 PDF</button>
       </div>
 
       <!-- Tableau -->
@@ -861,6 +864,68 @@ function exportVendeur() {
   if (v) params.set('vendeur', v);
   if (a) params.set('annee', a);
   window.open('/api/suivi-ventes/export-vendeur?' + params, '_blank');
+}
+
+function exportPDF() {
+  if (!_allVentes.length) { alert('Aucune vente à exporter'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const annee = document.getElementById('vf_annee')?.value || '';
+  const vendeur = document.getElementById('vf_vendeur')?.value || '';
+  const now = new Date().toLocaleDateString('fr-FR');
+
+  // En-tête
+  doc.setFillColor(30, 27, 75);
+  doc.rect(0, 0, 297, 22, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('LILIWATT', 10, 12);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Suivi des Ventes' + (annee ? ' — ' + annee : '') + (vendeur ? ' — ' + vendeur.split('@')[0] : ''), 50, 12);
+  doc.text('Export du ' + now, 250, 12);
+
+  // Tableau
+  const headers = [['Réf', 'Société', 'Vendeur', 'Période', 'Type', 'Fournisseur', 'Montant', 'Comm.V', 'Comm.R', 'Statut']];
+  let totMontant = 0, totCv = 0, totCr = 0;
+  const rows = _allVentes.map(v => {
+    totMontant += parseFloat(v.montant_ht || 0);
+    totCv += v.comm_vendeur;
+    totCr += v.comm_referent;
+    return [v.ref, v.societe || '', (v.vendeur||'').split('@')[0], v.periode_prod || '', v.type === 'Gaz' ? 'Gaz' : 'Élec', v.fournisseur || '', v.montant_ht + '€', v.comm_vendeur + '€', v.comm_referent + '€', v.statut_paiement || ''];
+  });
+  // Totaux
+  rows.push(['', '', '', '', '', 'TOTAUX', totMontant.toFixed(2) + '€', totCv.toFixed(2) + '€', totCr.toFixed(2) + '€', '']);
+
+  doc.autoTable({
+    head: headers,
+    body: rows,
+    startY: 26,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [30, 27, 75], textColor: [255, 255, 255], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [243, 240, 255] },
+    footStyles: { fillColor: [237, 233, 254], fontStyle: 'bold' },
+    didParseCell: function(data) {
+      if (data.row.index === rows.length - 1) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [237, 233, 254];
+      }
+    }
+  });
+
+  // Pied de page
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setTextColor(156, 163, 175);
+    doc.text('LILIWATT — LILISTRAT STRATÉGIE SAS — 59 rue de Ponthieu, Bureau 326 — 75008 Paris', 10, 200);
+    doc.text('Page ' + i + '/' + pageCount, 270, 200);
+  }
+
+  doc.save('export_ventes_' + (annee || 'all') + '.pdf');
 }
 
 // ===== CANDIDATURES =====
