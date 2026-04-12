@@ -1279,11 +1279,19 @@ def liste_ventes():
         sheet_id = get_suivi_sheet_id()
         if not sheet_id:
             return jsonify({'success': False, 'error': 'Sheet non initialisé'})
+        print(f"📊 SUIVI SHEET ID: {sheet_id}")
         gc = get_sheets_client()
-        ws = gc.open_by_key(sheet_id).sheet1
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.sheet1
+        print(f"📊 Feuille: {ws.title} | ID feuille: {ws.id}")
         rows = ws.get_all_values()
+        print(f"📊 Nb lignes: {len(rows)}")
+        if rows:
+            print(f"📊 Ligne 1 (en-têtes): {rows[0][:10]}")
+        if len(rows) > 1:
+            print(f"📊 Ligne 2 (1ère donnée): {rows[1][:10]}")
         if len(rows) < 2:
-            return jsonify({'success': True, 'ventes': [], 'totaux': {'comm_vendeur': 0, 'comm_referent': 0, 'marge': 0}})
+            return jsonify({'success': True, 'ventes': [], 'totaux': {'comm_vendeur': 0, 'comm_referent': 0, 'marge': 0, 'nb': 0}})
 
         vendeur_filter = request.args.get('vendeur', '')
         fournisseur_filter = request.args.get('fournisseur', '')
