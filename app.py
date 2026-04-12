@@ -401,6 +401,33 @@ async function copySig(){{
 def index():
     return render_template('index.html')
 
+@app.route('/api/vendeurs')
+@login_required
+def list_vendeurs_api():
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'})
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+        vendeurs = []
+        for row in rows:
+            if len(row) > 3 and '@' in row[3]:
+                statut = row[10] if len(row) > 10 else 'actif'
+                if statut == 'inactif':
+                    continue
+                vendeurs.append({
+                    'nom': row[0],
+                    'prenom': row[1],
+                    'email': row[3],
+                    'role': row[9] if len(row) > 9 else 'vendeur'
+                })
+        return jsonify({'success': True, 'vendeurs': vendeurs})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/referents')
 @login_required
 def get_referents():
@@ -1125,7 +1152,7 @@ def inviter_phase1():
         return jsonify({'success': False, 'error': str(e)})
 
 # ===== SUIVI DES VENTES =====
-SUIVI_VENTES_SHEET_ID = '1Ld1Zl3qVzdVZsyksdfxYfL1LiVcFd5BEbrPV6NYLfcA'
+SUIVI_VENTES_SHEET_ID = os.environ.get('SUIVI_VENTES_SHEET_ID', '1Ld1Zl3qVzdVZsyksdfxYfL1LiVcFd5BEbrPV6NYLfcA')
 
 def get_suivi_sheet_id():
     return SUIVI_VENTES_SHEET_ID
