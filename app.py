@@ -1125,75 +1125,36 @@ def inviter_phase1():
         return jsonify({'success': False, 'error': str(e)})
 
 # ===== SUIVI DES VENTES =====
-SUIVI_CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'suivi_config.json')
+SUIVI_VENTES_SHEET_ID = '1Ld1Zl3qVzdVZsyksdfxYfL1LiVcFd5BEbrPV6NYLfcA'
 
 def get_suivi_sheet_id():
-    if os.path.exists(SUIVI_CONFIG_FILE):
-        with open(SUIVI_CONFIG_FILE) as f:
-            return json.load(f).get('sheet_id', '')
-    return os.environ.get('SUIVI_VENTES_SHEET_ID', '')
+    return SUIVI_VENTES_SHEET_ID
 
-SUIVI_HEADERS = ['REF_VENTE','REF_CLIENT','VENDEUR','REFERENT','PERIODE_PROD','DATE_DEBUT_CONTRAT',
-    'DATE_FIN_CONTRAT','TYPE','PDL_PCE','FOURNISSEUR','MONTANT_HT','COMMISSION_VENDEUR',
-    'COMMISSION_REFERENT','MARGE_SOCIETE','STATUT_PAIEMENT','DATE_PAIEMENT_1','DATE_PAIEMENT_2',
-    'NOM_CLIENT','SEGMENT']
+SUIVI_HEADERS = ['REF','REF_CLIENT','NOM_CLIENT','VENDEUR','REFERENT','PERIODE','DEBUT',
+    'FIN','TYPE','PDL_PCE','FOURNISSEUR','MONTANT','COMM_VENDEUR',
+    'COMM_REFERENT','MARGE','STATUT_PAIEMENT','DATE_P1','DATE_P2','SEGMENT']
 
 @app.route('/api/suivi-ventes/init-sheet')
 @login_required
 def init_suivi_sheet():
     try:
-        from googleapiclient.discovery import build
-        from google.oauth2.service_account import Credentials as SACredentials
-        import base64
+        gc = get_sheets_client()
+        sh = gc.open_by_key(SUIVI_VENTES_SHEET_ID)
+        ws = sh.sheet1
 
-        creds_b64 = os.environ.get('GOOGLE_DRIVE_CREDS_BASE64', '')
-        creds_json_env = os.environ.get('GOOGLE_CREDS_JSON', '')
-        if creds_b64:
-            creds_dict = json.loads(base64.b64decode(creds_b64).decode())
-        elif creds_json_env:
-            creds_dict = json.loads(creds_json_env)
-        else:
-            with open(os.path.join(os.path.dirname(__file__), 'liliwatt-eddcc0bc9e18.json')) as f:
-                creds_dict = json.load(f)
+        # Écrire les en-têtes
+        ws.update('A1:S1', [SUIVI_HEADERS])
 
-        creds = SACredentials.from_service_account_info(creds_dict,
-            scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
-        sheets = build('sheets', 'v4', credentials=creds)
+        # Formater via gspread
+        ws.format('A1:S1', {
+            'backgroundColor': {'red': 0.118, 'green': 0.106, 'blue': 0.294},
+            'textFormat': {'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}, 'bold': True, 'fontSize': 10}
+        })
+        ws.freeze(rows=1)
 
-        body = {
-            'properties': {'title': 'SUIVI DES VENTES LILIWATT'},
-            'sheets': [{'properties': {'title': 'Ventes', 'gridProperties': {'frozenRowCount': 1}}}]
-        }
-        created = sheets.spreadsheets().create(body=body, fields='spreadsheetId,spreadsheetUrl').execute()
-        sheet_id = created['spreadsheetId']
-        sheet_url = created['spreadsheetUrl']
-
-        # En-têtes
-        sheets.spreadsheets().values().update(
-            spreadsheetId=sheet_id, range='A1:S1', valueInputOption='RAW',
-            body={'values': [SUIVI_HEADERS]}
-        ).execute()
-
-        # Formule marge auto colonne N (=K-L-M) à partir de la ligne 2
-        # Format en-tête violet
-        requests_body = [
-            {'repeatCell': {
-                'range': {'sheetId': 0, 'startRowIndex': 0, 'endRowIndex': 1},
-                'cell': {'userEnteredFormat': {
-                    'backgroundColor': {'red': 0.118, 'green': 0.106, 'blue': 0.294},
-                    'textFormat': {'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}, 'bold': True, 'fontSize': 10}
-                }},
-                'fields': 'userEnteredFormat(backgroundColor,textFormat)'
-            }}
-        ]
-        sheets.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={'requests': requests_body}).execute()
-
-        # Sauvegarder config
-        with open(SUIVI_CONFIG_FILE, 'w') as f:
-            json.dump({'sheet_id': sheet_id, 'sheet_url': sheet_url}, f)
-
-        print(f"✅ Sheet Suivi Ventes créé: {sheet_id}")
-        return jsonify({'success': True, 'sheet_id': sheet_id, 'sheet_url': sheet_url})
+        sheet_url = f"https://docs.google.com/spreadsheets/d/{SUIVI_VENTES_SHEET_ID}"
+        print(f"✅ Sheet Suivi Ventes initialisé: {SUIVI_VENTES_SHEET_ID}")
+        return jsonify({'success': True, 'sheet_id': SUIVI_VENTES_SHEET_ID, 'sheet_url': sheet_url})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
