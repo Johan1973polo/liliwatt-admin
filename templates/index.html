@@ -301,6 +301,10 @@
         <select id="vf_vendeur" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
           <option value="">Tous vendeurs</option>
         </select>
+        <select id="vf_mois" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
+          <option value="">Tous mois</option>
+          <option value="01">Janvier</option><option value="02">Février</option><option value="03">Mars</option><option value="04">Avril</option><option value="05">Mai</option><option value="06">Juin</option><option value="07">Juillet</option><option value="08">Août</option><option value="09">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option>
+        </select>
         <select id="vf_annee" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
           <option value="">Toutes années</option>
           <option>2024</option><option>2025</option><option selected>2026</option><option>2027</option><option>2028</option><option>2029</option><option>2030</option><option>2031</option>
@@ -814,6 +818,7 @@ async function loadVentes() {
   const params = new URLSearchParams();
   const vf = document.getElementById('vf_vendeur')?.value; if (vf) params.set('vendeur', vf);
   const af = document.getElementById('vf_annee')?.value; if (af) params.set('annee', af);
+  const mf = document.getElementById('vf_mois')?.value; if (mf) params.set('mois', mf);
   const ff = document.getElementById('vf_fournisseur')?.value; if (ff) params.set('fournisseur', ff);
   const sf = document.getElementById('vf_search')?.value; if (sf) params.set('search', sf);
   const tf = document.getElementById('vf_type')?.value;
@@ -913,7 +918,15 @@ function pdfFooter(doc) {
 function pdfTable(doc, head, body, startY) {
   doc.autoTable({ head:[head], body, startY: startY||28, theme:'grid', styles:{fontSize:8,cellPadding:2}, headStyles:{fillColor:[30,27,75],textColor:[255,255,255],fontStyle:'bold'}, alternateRowStyles:{fillColor:[243,240,255]}, didParseCell:function(d){ if(d.row.index===body.length-1){d.cell.styles.fontStyle='bold';d.cell.styles.fillColor=[237,233,254];} } });
 }
-function getPeriodeLabel() { const a=document.getElementById('vf_annee')?.value; return a||'Toutes périodes'; }
+function getPeriodeLabel() {
+  const a=document.getElementById('vf_annee')?.value||'';
+  const m=document.getElementById('vf_mois')?.value||'';
+  const moisNoms=['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  if (m && a) return moisNoms[parseInt(m)]+' '+a;
+  if (a) return a;
+  if (m) return moisNoms[parseInt(m)];
+  return 'Toutes périodes';
+}
 
 function typeLabel(t) { return (t||'').toLowerCase().includes('gaz') ? 'Gaz' : 'Élec'; }
 function emailToNom(e) { return (e||'').split('@')[0].replace('.',' ').split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' '); }
@@ -930,9 +943,9 @@ function exportPdfVendeur() {
   pdfHeader(doc, 'Appel à facturation — ' + nom, getPeriodeLabel());
 
   let totC = 0;
-  const rows = ventes.map(v => { totC+=v.comm_vendeur; return [v.ref, v.societe||'', typeLabel(v.type), v.pdl_pce||'', v.fournisseur||'', v.periode_prod||'', parseFloat(v.montant_ht||0).toFixed(2)+' €', v.comm_vendeur.toFixed(2)+' €']; });
-  rows.push(['', '', '', '', '', '', 'TOTAL À FACTURER', totC.toFixed(2)+' €']);
-  pdfTable(doc, ['Réf','Société','Type','PDL/PCE','Fournisseur','Période','Montant HT','Votre commission'], rows);
+  const rows = ventes.map(v => { totC+=v.comm_vendeur; return [v.ref, v.societe||'', typeLabel(v.type), v.pdl_pce||'', v.fournisseur||'', v.periode_prod||'', v.comm_vendeur.toFixed(2)+' €']; });
+  rows.push(['', '', '', '', '', 'TOTAL À FACTURER', totC.toFixed(2)+' €']);
+  pdfTable(doc, ['Réf','Société','Type','PDL/PCE','Fournisseur','Période','Votre commission'], rows);
   pdfFooter(doc);
   doc.save('facturation_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
 }

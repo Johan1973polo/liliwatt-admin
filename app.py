@@ -1279,9 +1279,9 @@ def liste_ventes():
             return jsonify({'success': True, 'ventes': [], 'totaux': {'comm_vendeur': 0, 'comm_referent': 0, 'marge': 0}})
 
         vendeur_filter = request.args.get('vendeur', '')
-        periode_filter = request.args.get('periode', '')
         fournisseur_filter = request.args.get('fournisseur', '')
         annee_filter = request.args.get('annee', '')
+        mois_filter = request.args.get('mois', '')
         search = request.args.get('search', '').lower()
 
         def g(row, i): return row[i] if len(row) > i else ''
@@ -1291,9 +1291,10 @@ def liste_ventes():
         for row in rows[1:]:
             if len(row) < 14: continue
             if vendeur_filter and g(row,3) != vendeur_filter: continue
-            if periode_filter and g(row,5) != periode_filter: continue
             if fournisseur_filter and g(row,10) != fournisseur_filter: continue
-            if annee_filter and not g(row,5).startswith(annee_filter): continue
+            periode = g(row,5)
+            if annee_filter and not periode.startswith(annee_filter): continue
+            if mois_filter and len(periode) >= 7 and periode[5:7] != mois_filter: continue
             if search:
                 haystack = ' '.join([g(row,2),g(row,19),g(row,20),g(row,21),g(row,22)]).lower()
                 if search not in haystack: continue
@@ -1303,7 +1304,8 @@ def liste_ventes():
                 'ref': g(row,0), 'ref_client': g(row,1), 'societe': g(row,2),
                 'vendeur': g(row,3), 'referent': g(row,4),
                 'periode_prod': g(row,5), 'date_debut': g(row,6), 'date_fin': g(row,7),
-                'type': g(row,8), 'pdl_pce': g(row,9), 'fournisseur': g(row,10),
+                'type': 'Gaz' if 'gaz' in g(row,18).lower() else g(row,8),
+                'pdl_pce': g(row,9), 'fournisseur': g(row,10),
                 'montant_ht': g(row,11), 'comm_vendeur': cv, 'comm_referent': cr, 'marge': m,
                 'statut_paiement': g(row,15), 'date_p1': g(row,16), 'date_p2': g(row,17),
                 'segment': g(row,18), 'nom_client': g(row,19), 'prenom_client': g(row,20),
