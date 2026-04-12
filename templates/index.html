@@ -226,19 +226,23 @@
         <div style="display:flex;gap:6px;">
           <button onclick="document.getElementById('venteForm').style.display=document.getElementById('venteForm').style.display==='none'?'block':'none'" class="btn" style="font-size:12px;padding:8px 16px;">+ Saisir</button>
           <button onclick="loadVentes()" class="btn" style="font-size:12px;padding:8px 16px;">🔄</button>
-          <button onclick="initSuiviSheet()" style="font-size:12px;padding:6px 12px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;cursor:pointer;">⚙️ Init</button>
         </div>
       </h2>
 
       <!-- Formulaire saisie -->
       <div id="venteForm" style="display:none;background:#faf5ff;border-radius:12px;padding:20px;margin-bottom:20px;border:1.5px solid #e9d5ff;">
+        <h4 style="color:#7c3aed;margin-bottom:12px;">📝 Informations contrat</h4>
         <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
+          <div class="form-group"><label>Société *</label><input type="text" id="v_societe" required></div>
           <div class="form-group"><label>Réf client</label><input type="text" id="v_ref_client"></div>
           <div class="form-group"><label>Nom client</label><input type="text" id="v_nom_client"></div>
+          <div class="form-group"><label>Prénom client</label><input type="text" id="v_prenom_client"></div>
+          <div class="form-group"><label>Tél client</label><input type="tel" id="v_tel_client"></div>
+          <div class="form-group"><label>Email client</label><input type="email" id="v_email_client"></div>
           <div class="form-group"><label>Vendeur</label><select id="v_vendeur"><option value="">Chargement...</option></select></div>
           <div class="form-group"><label>Référent</label><select id="v_referent"><option value="">Aucun</option></select></div>
-          <div class="form-group"><label>Période production</label><input type="month" id="v_periode"></div>
           <div class="form-group"><label>Segment</label><select id="v_segment"><option>C5-BASE</option><option>C5-HPHC</option><option>C4</option><option>C2</option><option>GAZ</option></select></div>
+          <div class="form-group"><label>Période production</label><input type="month" id="v_periode"></div>
           <div class="form-group"><label>Date début contrat</label><input type="date" id="v_date_debut"></div>
           <div class="form-group"><label>Date fin contrat</label><input type="date" id="v_date_fin"></div>
           <div class="form-group"><label>Type</label>
@@ -249,40 +253,62 @@
           </div>
           <div class="form-group"><label>PDL / PCE</label><input type="text" id="v_pdl"></div>
           <div class="form-group"><label>Fournisseur</label><input type="text" id="v_fournisseur"></div>
-          <div class="form-group"><label>Montant total HT (€)</label><input type="number" step="0.01" id="v_montant" oninput="calcMarge()"></div>
-          <div class="form-group"><label>Commission vendeur (€)</label><input type="number" step="0.01" id="v_comm_v" oninput="calcMarge()"></div>
-          <div class="form-group"><label>Commission référent (€)</label><input type="number" step="0.01" id="v_comm_r" value="0" oninput="calcMarge()"></div>
+          <div class="form-group"><label>Volume élec (MWh/an)</label><input type="number" step="0.01" id="v_vol_elec"></div>
+          <div class="form-group"><label>Volume gaz (MWh/an)</label><input type="number" step="0.01" id="v_vol_gaz"></div>
+          <div class="form-group"><label>Lien Drive</label><input type="text" id="v_lien_drive" placeholder="https://drive.google.com/..."></div>
+        </div>
+        <h4 style="color:#7c3aed;margin:16px 0 12px;">💶 Commissions</h4>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;">
+          <div class="form-group"><label>Montant HT (€)</label><input type="number" step="0.01" id="v_montant" oninput="calcMarge()"></div>
+          <div class="form-group"><label>Comm. vendeur (€)</label><input type="number" step="0.01" id="v_comm_v" oninput="calcMarge()"></div>
+          <div class="form-group"><label>Comm. référent (€)</label><input type="number" step="0.01" id="v_comm_r" value="0" oninput="calcMarge()"></div>
           <div class="form-group"><label>Marge société (€)</label><input type="text" id="v_marge" readonly style="background:#f3f4f6;font-weight:700;color:#22c55e;"></div>
           <div class="form-group"><label>Statut paiement</label>
-            <select id="v_statut_p" onchange="document.getElementById('v_dates_p').style.display=this.value==='50-50'?'flex':'none'">
+            <select id="v_statut_p" onchange="document.getElementById('v_dates_p').style.display=this.value==='50-50'?'grid':'none'">
               <option value="100%">100%</option><option value="50-50">50-50</option>
             </select>
           </div>
-          <div class="form-group" id="v_dates_p" style="display:none;gap:8px;">
-            <div><label>1er paiement</label><input type="date" id="v_date_p1"></div>
-            <div><label>2ème paiement</label><input type="date" id="v_date_p2"></div>
-          </div>
+          <div class="form-group"><label>1er paiement</label><input type="date" id="v_date_p1"></div>
+          <div id="v_dates_p" style="display:none;"><div class="form-group"><label>2ème paiement</label><input type="date" id="v_date_p2"></div></div>
         </div>
         <button onclick="ajouterVente()" class="btn" style="margin-top:12px;width:100%;">💾 Enregistrer la vente</button>
         <div id="venteResult" style="margin-top:8px;"></div>
       </div>
 
+      <!-- Dashboard -->
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+        <div style="background:#ede9fe;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Contrats</span><br><strong id="tot_nb" style="color:#1e1b4b;font-size:18px;">0</strong></div>
+        <div style="background:#ede9fe;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Comm. vendeurs</span><br><strong id="tot_cv" style="color:#7c3aed;font-size:16px;">0€</strong></div>
+        <div style="background:#e0e7ff;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Comm. référents</span><br><strong id="tot_cr" style="color:#2563eb;font-size:16px;">0€</strong></div>
+        <div style="background:#f0fdf4;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Marge société</span><br><strong id="tot_m" style="color:#22c55e;font-size:16px;">0€</strong></div>
+      </div>
+
       <!-- Filtres -->
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+        <input type="text" id="vf_search" placeholder="🔍 Rechercher..." oninput="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;width:160px;">
         <select id="vf_vendeur" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
           <option value="">Tous vendeurs</option>
         </select>
-        <input type="month" id="vf_periode" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
-        <input type="text" id="vf_fournisseur" placeholder="Fournisseur" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;width:120px;">
+        <select id="vf_annee" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
+          <option value="">Toutes années</option>
+          <option>2024</option><option>2025</option><option selected>2026</option><option>2027</option><option>2028</option><option>2029</option><option>2030</option><option>2031</option>
+        </select>
+        <input type="text" id="vf_fournisseur" placeholder="Fournisseur" oninput="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;width:120px;">
         <button onclick="exportVendeur()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📥 Export CSV</button>
       </div>
 
       <!-- Tableau -->
       <div id="ventes-list" style="font-size:12px;overflow-x:auto;"><div class="loading">Cliquez sur 🔄</div></div>
-      <div id="ventes-totaux" style="display:none;margin-top:12px;display:flex;gap:16px;flex-wrap:wrap;">
-        <div style="background:#ede9fe;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Comm. vendeurs</span><br><strong id="tot_cv" style="color:#7c3aed;font-size:16px;">0€</strong></div>
-        <div style="background:#e0e7ff;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Comm. référents</span><br><strong id="tot_cr" style="color:#2563eb;font-size:16px;">0€</strong></div>
-        <div style="background:#f0fdf4;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Marge société</span><br><strong id="tot_m" style="color:#22c55e;font-size:16px;">0€</strong></div>
+    </div>
+
+    <!-- Modal fiche client -->
+    <div id="modalFiche" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;">
+      <div style="background:#fff;border-radius:16px;padding:32px;max-width:520px;width:90%;margin:60px auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h3 style="color:#1e1b4b;margin:0;" id="ficheTitle"></h3>
+          <button onclick="document.getElementById('modalFiche').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:#9ca3af;">✕</button>
+        </div>
+        <div id="ficheContent" style="font-size:13px;"></div>
       </div>
     </div>
   </div>
@@ -713,8 +739,12 @@ async function loadVenteVendeurs() {
 async function ajouterVente() {
   const type = document.querySelector('input[name=v_type]:checked')?.value || 'Électricité';
   const body = {
+    societe: document.getElementById('v_societe').value,
     ref_client: document.getElementById('v_ref_client').value,
     nom_client: document.getElementById('v_nom_client').value,
+    prenom_client: document.getElementById('v_prenom_client').value,
+    tel_client: document.getElementById('v_tel_client').value,
+    email_client: document.getElementById('v_email_client').value,
     vendeur: document.getElementById('v_vendeur').value,
     referent: document.getElementById('v_referent').value,
     periode_prod: document.getElementById('v_periode').value,
@@ -727,10 +757,14 @@ async function ajouterVente() {
     commission_vendeur: document.getElementById('v_comm_v').value,
     commission_referent: document.getElementById('v_comm_r').value,
     segment: document.getElementById('v_segment').value,
+    volume_elec: document.getElementById('v_vol_elec')?.value || '',
+    volume_gaz: document.getElementById('v_vol_gaz')?.value || '',
+    lien_drive: document.getElementById('v_lien_drive')?.value || '',
     statut_paiement: document.getElementById('v_statut_p').value,
     date_paiement_1: document.getElementById('v_date_p1')?.value || '',
     date_paiement_2: document.getElementById('v_date_p2')?.value || ''
   };
+  if (!body.societe) { alert('Société obligatoire'); return; }
   const r = await fetch('/api/suivi-ventes/ajouter', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
   const d = await r.json();
   const res = document.getElementById('venteResult');
@@ -742,38 +776,67 @@ async function ajouterVente() {
   }
 }
 
+let _allVentes = [];
 async function loadVentes() {
   const div = document.getElementById('ventes-list');
   div.innerHTML = '<div class="loading">Chargement...</div>';
   const params = new URLSearchParams();
   const vf = document.getElementById('vf_vendeur')?.value; if (vf) params.set('vendeur', vf);
-  const pf = document.getElementById('vf_periode')?.value; if (pf) params.set('periode', pf);
+  const af = document.getElementById('vf_annee')?.value; if (af) params.set('annee', af);
   const ff = document.getElementById('vf_fournisseur')?.value; if (ff) params.set('fournisseur', ff);
+  const sf = document.getElementById('vf_search')?.value; if (sf) params.set('search', sf);
   try {
     const r = await fetch('/api/suivi-ventes/liste?' + params);
     const d = await r.json();
     if (!d.success) { div.innerHTML = '<div class="loading">Erreur: '+d.error+'</div>'; return; }
-    if (!d.ventes.length) { div.innerHTML = '<div class="loading">Aucune vente</div>'; return; }
+    _allVentes = d.ventes;
+    if (!d.ventes.length) { div.innerHTML = '<div class="loading">Aucune vente</div>'; updateTotaux(d.totaux); return; }
+    const th = 'padding:6px 8px;text-align:left;';
     div.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:#1e1b4b;color:#fff;"><tr>' +
-      '<th style="padding:6px 8px;text-align:left;">Réf</th><th style="padding:6px 8px;">Client</th><th style="padding:6px 8px;">Vendeur</th><th style="padding:6px 8px;">Type</th><th style="padding:6px 8px;">Fournisseur</th><th style="padding:6px 8px;">Montant</th><th style="padding:6px 8px;">Comm.V</th><th style="padding:6px 8px;">Comm.R</th><th style="padding:6px 8px;">Marge</th><th style="padding:6px 8px;">Statut</th>' +
+      '<th style="'+th+'">Réf</th><th style="'+th+'">Société</th><th style="'+th+'">Vendeur</th><th style="'+th+'">Type</th><th style="'+th+'">Fourn.</th><th style="'+th+'">Montant</th><th style="'+th+'">Cv</th><th style="'+th+'">Cr</th><th style="'+th+'">Marge</th><th style="'+th+'">Statut</th>' +
       '</tr></thead><tbody>' +
-      d.ventes.map(v => '<tr style="border-bottom:1px solid #ede9fe;">' +
+      d.ventes.map((v,i) => '<tr onclick="showFiche('+i+')" style="border-bottom:1px solid #ede9fe;cursor:pointer;" onmouseover="this.style.background=\'#faf5ff\'" onmouseout="this.style.background=\'#fff\'">' +
         '<td style="padding:6px 8px;font-weight:600;color:#7c3aed;">' + v.ref + '</td>' +
-        '<td style="padding:6px 8px;">' + (v.nom_client||v.ref_client) + '</td>' +
-        '<td style="padding:6px 8px;">' + v.vendeur.split('@')[0] + '</td>' +
+        '<td style="padding:6px 8px;font-weight:600;">' + (v.societe||v.ref_client||'—') + '</td>' +
+        '<td style="padding:6px 8px;">' + (v.vendeur||'').split('@')[0] + '</td>' +
         '<td style="padding:6px 8px;">' + (v.type==='Gaz'?'🔥':'⚡') + '</td>' +
-        '<td style="padding:6px 8px;">' + v.fournisseur + '</td>' +
+        '<td style="padding:6px 8px;">' + (v.fournisseur||'') + '</td>' +
         '<td style="padding:6px 8px;font-weight:600;">' + v.montant_ht + '€</td>' +
         '<td style="padding:6px 8px;color:#7c3aed;">' + v.comm_vendeur + '€</td>' +
         '<td style="padding:6px 8px;color:#2563eb;">' + v.comm_referent + '€</td>' +
         '<td style="padding:6px 8px;color:#22c55e;font-weight:700;">' + v.marge.toFixed(2) + '€</td>' +
-        '<td style="padding:6px 8px;">' + v.statut_paiement + '</td></tr>'
+        '<td style="padding:6px 8px;">' + (v.statut_paiement||'') + '</td></tr>'
       ).join('') + '</tbody></table>';
-    document.getElementById('tot_cv').textContent = d.totaux.comm_vendeur.toFixed(2) + '€';
-    document.getElementById('tot_cr').textContent = d.totaux.comm_referent.toFixed(2) + '€';
-    document.getElementById('tot_m').textContent = d.totaux.marge.toFixed(2) + '€';
-    document.getElementById('ventes-totaux').style.display = 'flex';
+    updateTotaux(d.totaux);
   } catch(e) { div.innerHTML = '<div class="loading">Erreur réseau</div>'; }
+}
+
+function updateTotaux(t) {
+  document.getElementById('tot_nb').textContent = t.nb || 0;
+  document.getElementById('tot_cv').textContent = (t.comm_vendeur||0).toFixed(2) + '€';
+  document.getElementById('tot_cr').textContent = (t.comm_referent||0).toFixed(2) + '€';
+  document.getElementById('tot_m').textContent = (t.marge||0).toFixed(2) + '€';
+}
+
+function showFiche(idx) {
+  const v = _allVentes[idx]; if (!v) return;
+  document.getElementById('ficheTitle').textContent = v.societe || v.ref;
+  const row = (l,val) => val ? '<tr><td style="padding:4px 0;color:#6b7280;font-weight:600;width:130px;">'+l+'</td><td style="color:#1e1b4b;">'+val+'</td></tr>' : '';
+  document.getElementById('ficheContent').innerHTML =
+    '<table style="width:100%;font-size:13px;border-collapse:collapse;">' +
+    row('Réf', v.ref) + row('Société', v.societe) + row('Client', (v.prenom_client||'')+' '+(v.nom_client||'')) +
+    row('Tél', v.tel_client) + row('Email', v.email_client) +
+    row('Vendeur', v.vendeur) + row('Référent', v.referent) +
+    row('Type', v.type) + row('Segment', v.segment) + row('PDL/PCE', v.pdl_pce) +
+    row('Fournisseur', v.fournisseur) + row('Période', v.periode_prod) +
+    row('Début', v.date_debut) + row('Fin', v.date_fin) +
+    row('Montant HT', v.montant_ht+'€') + row('Comm. vendeur', v.comm_vendeur+'€') +
+    row('Comm. référent', v.comm_referent+'€') + row('Marge', '<strong style="color:#22c55e;">'+v.marge.toFixed(2)+'€</strong>') +
+    row('Statut', v.statut_paiement) + row('Vol. élec', v.volume_elec ? v.volume_elec+' MWh' : '') +
+    row('Vol. gaz', v.volume_gaz ? v.volume_gaz+' MWh' : '') +
+    '</table>' +
+    (v.lien_drive ? '<a href="'+v.lien_drive+'" target="_blank" style="display:inline-block;margin-top:12px;padding:8px 16px;background:#ede9fe;color:#7c3aed;border-radius:8px;text-decoration:none;font-weight:600;">📁 Ouvrir Drive</a>' : '');
+  document.getElementById('modalFiche').style.display = 'block';
 }
 
 function exportVendeur() {

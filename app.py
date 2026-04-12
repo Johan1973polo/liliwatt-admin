@@ -1157,9 +1157,11 @@ SUIVI_VENTES_SHEET_ID = os.environ.get('SUIVI_VENTES_SHEET_ID', '1Ld1Zl3qVzdVZsy
 def get_suivi_sheet_id():
     return SUIVI_VENTES_SHEET_ID
 
-SUIVI_HEADERS = ['REF','REF_CLIENT','NOM_CLIENT','VENDEUR','REFERENT','PERIODE','DEBUT',
+SUIVI_HEADERS = ['REF','REF_CLIENT','SOCIETE','VENDEUR','REFERENT','PERIODE','DEBUT',
     'FIN','TYPE','PDL_PCE','FOURNISSEUR','MONTANT','COMM_VENDEUR',
-    'COMM_REFERENT','MARGE','STATUT_PAIEMENT','DATE_P1','DATE_P2','SEGMENT']
+    'COMM_REFERENT','MARGE','STATUT_PAIEMENT','DATE_P1','DATE_P2','SEGMENT',
+    'NOM_CLIENT','PRENOM_CLIENT','TEL_CLIENT','EMAIL_CLIENT',
+    'VOLUME_ELEC_MWH','VOLUME_GAZ_MWH','LIEN_DRIVE']
 
 @app.route('/api/suivi-ventes/init-sheet')
 @login_required
@@ -1168,17 +1170,12 @@ def init_suivi_sheet():
         gc = get_sheets_client()
         sh = gc.open_by_key(SUIVI_VENTES_SHEET_ID)
         ws = sh.sheet1
-
-        # Écrire les en-têtes
-        ws.update('A1:S1', [SUIVI_HEADERS])
-
-        # Formater via gspread
-        ws.format('A1:S1', {
+        ws.update('A1:Z1', [SUIVI_HEADERS])
+        ws.format('A1:Z1', {
             'backgroundColor': {'red': 0.118, 'green': 0.106, 'blue': 0.294},
             'textFormat': {'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}, 'bold': True, 'fontSize': 10}
         })
         ws.freeze(rows=1)
-
         sheet_url = f"https://docs.google.com/spreadsheets/d/{SUIVI_VENTES_SHEET_ID}"
         print(f"✅ Sheet Suivi Ventes initialisé: {SUIVI_VENTES_SHEET_ID}")
         return jsonify({'success': True, 'sheet_id': SUIVI_VENTES_SHEET_ID, 'sheet_url': sheet_url})
@@ -1211,12 +1208,14 @@ def ajouter_vente():
         marge = montant - comm_v - comm_r
 
         row_data = [
-            ref, d.get('ref_client', ''), d.get('vendeur', ''), d.get('referent', ''),
+            ref, d.get('ref_client', ''), d.get('societe', ''), d.get('vendeur', ''), d.get('referent', ''),
             d.get('periode_prod', ''), d.get('date_debut_contrat', ''), d.get('date_fin_contrat', ''),
             d.get('type_energie', ''), d.get('pdl_pce', ''), d.get('fournisseur', ''),
             montant, comm_v, comm_r, marge,
             d.get('statut_paiement', ''), d.get('date_paiement_1', ''), d.get('date_paiement_2', ''),
-            d.get('nom_client', ''), d.get('segment', '')
+            d.get('segment', ''), d.get('nom_client', ''), d.get('prenom_client', ''),
+            d.get('tel_client', ''), d.get('email_client', ''),
+            d.get('volume_elec', ''), d.get('volume_gaz', ''), d.get('lien_drive', '')
         ]
 
         import time
@@ -1250,26 +1249,36 @@ def liste_ventes():
         vendeur_filter = request.args.get('vendeur', '')
         periode_filter = request.args.get('periode', '')
         fournisseur_filter = request.args.get('fournisseur', '')
+        annee_filter = request.args.get('annee', '')
+        search = request.args.get('search', '').lower()
+
+        def g(row, i): return row[i] if len(row) > i else ''
 
         ventes = []
         total_cv, total_cr, total_m = 0, 0, 0
         for row in rows[1:]:
             if len(row) < 14: continue
-            if vendeur_filter and row[2] != vendeur_filter: continue
-            if periode_filter and row[4] != periode_filter: continue
-            if fournisseur_filter and row[9] != fournisseur_filter: continue
-            cv = float(row[11] or 0); cr = float(row[12] or 0); m = float(row[13] or 0)
+            if vendeur_filter and g(row,3) != vendeur_filter: continue
+            if periode_filter and g(row,5) != periode_filter: continue
+            if fournisseur_filter and g(row,10) != fournisseur_filter: continue
+            if annee_filter and not g(row,5).startswith(annee_filter): continue
+            if search:
+                haystack = ' '.join([g(row,2),g(row,19),g(row,20),g(row,21),g(row,22)]).lower()
+                if search not in haystack: continue
+            cv = float(g(row,12) or 0); cr = float(g(row,13) or 0); m = float(g(row,14) or 0)
             total_cv += cv; total_cr += cr; total_m += m
             ventes.append({
-                'ref': row[0], 'ref_client': row[1], 'vendeur': row[2], 'referent': row[3],
-                'periode_prod': row[4], 'date_debut': row[5], 'date_fin': row[6],
-                'type': row[7], 'pdl_pce': row[8], 'fournisseur': row[9],
-                'montant_ht': row[10], 'comm_vendeur': cv, 'comm_referent': cr, 'marge': m,
-                'statut_paiement': row[14] if len(row) > 14 else '',
-                'date_p1': row[15] if len(row) > 15 else '', 'date_p2': row[16] if len(row) > 16 else '',
-                'nom_client': row[17] if len(row) > 17 else '', 'segment': row[18] if len(row) > 18 else ''
+                'ref': g(row,0), 'ref_client': g(row,1), 'societe': g(row,2),
+                'vendeur': g(row,3), 'referent': g(row,4),
+                'periode_prod': g(row,5), 'date_debut': g(row,6), 'date_fin': g(row,7),
+                'type': g(row,8), 'pdl_pce': g(row,9), 'fournisseur': g(row,10),
+                'montant_ht': g(row,11), 'comm_vendeur': cv, 'comm_referent': cr, 'marge': m,
+                'statut_paiement': g(row,15), 'date_p1': g(row,16), 'date_p2': g(row,17),
+                'segment': g(row,18), 'nom_client': g(row,19), 'prenom_client': g(row,20),
+                'tel_client': g(row,21), 'email_client': g(row,22),
+                'volume_elec': g(row,23), 'volume_gaz': g(row,24), 'lien_drive': g(row,25)
             })
-        return jsonify({'success': True, 'ventes': ventes, 'totaux': {'comm_vendeur': total_cv, 'comm_referent': total_cr, 'marge': total_m}})
+        return jsonify({'success': True, 'ventes': ventes, 'totaux': {'comm_vendeur': total_cv, 'comm_referent': total_cr, 'marge': total_m, 'nb': len(ventes)}})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -1286,14 +1295,14 @@ def export_vendeur():
         ws = gc.open_by_key(sheet_id).sheet1
         rows = ws.get_all_values()
 
-        # Colonnes export : A-L + R,S (pas O=marge)
-        export_cols = [0,1,2,3,4,5,6,7,8,9,10,11,12,17,18]
+        # Colonnes export : tout sauf col 14 (MARGE)
+        export_cols = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,15,16,17,18,19,20,21,22,23,24,25]
         header = [SUIVI_HEADERS[i] for i in export_cols if i < len(SUIVI_HEADERS)]
         csv_lines = [','.join(header)]
         for row in rows[1:]:
             if len(row) < 14: continue
-            if row[2] != email: continue
-            if periode and row[4] != periode: continue
+            if row[3] != email: continue
+            if periode and row[5] != periode: continue
             vals = [str(row[i]) if i < len(row) else '' for i in export_cols]
             csv_lines.append(','.join(f'"{v}"' for v in vals))
 
