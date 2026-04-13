@@ -1382,5 +1382,70 @@ def delete_user(email):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+# ===== PROSPECTS MASTER — pagination serveur =====
+import csv as csv_module
+import math
+
+MASTER_CSV = os.environ.get('MASTER_CSV_PATH', os.path.join(os.path.dirname(__file__), 'master_prospects_enrichi.csv'))
+
+def iter_master_csv(filtres):
+    """Générateur : lit le CSV ligne par ligne sans tout charger."""
+    if not os.path.exists(MASTER_CSV):
+        return
+    with open(MASTER_CSV, encoding='utf-8', errors='ignore') as f:
+        reader = csv_module.DictReader(f)
+        for row in reader:
+            # Filtres
+            if filtres.get('segment'):
+                seg = (row.get('typologie_contrat', '') or row.get('segments', '')).upper()
+                if filtres['segment'].upper() not in seg:
+                    continue
+            if filtres.get('statut'):
+                if (row.get('statut', '') or '') != filtres['statut']:
+                    continue
+            if filtres.get('annee_fin'):
+                fin = row.get('date_fin_livraison', '') or ''
+                if filtres['annee_fin'] not in fin:
+                    continue
+            if filtres.get('non_attribues'):
+                if (row.get('vendeur_attribue', '') or '').strip():
+                    continue
+            if filtres.get('search'):
+                hay = ' '.join([row.get('raison_sociale',''), row.get('siren',''), row.get('adresse',''), row.get('signataire',''), row.get('dirigeant','')]).lower()
+                if filtres['search'].lower() not in hay:
+                    continue
+            yield row
+
+@app.route('/api/prospects/master')
+@login_required
+def prospects_master():
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 50))
+        filtres = {
+            'segment': request.args.get('segment', ''),
+            'statut': request.args.get('statut', ''),
+            'annee_fin': request.args.get('annee_fin', ''),
+            'non_attribues': request.args.get('non_attribues', '') == 'true',
+            'search': request.args.get('search', ''),
+        }
+        skip = (page - 1) * per_page
+        results = []
+        total = 0
+        for row in iter_master_csv(filtres):
+            total += 1
+            if total > skip and len(results) < per_page:
+                results.append(row)
+        return jsonify({
+            'success': True,
+            'prospects': results,
+            'total': total,
+            'page': page,
+            'pages': math.ceil(total / per_page) if total else 0
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

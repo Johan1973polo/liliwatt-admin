@@ -52,6 +52,7 @@
     <div class="tab active" onclick="showTab('creer')">+ Créer un commercial</div>
     <div class="tab" onclick="showTab('gerer')">Gérer les commerciaux</div>
     <div class="tab" onclick="showTab('recrutement')">👥 Recrutement</div>
+    <div class="tab" onclick="showTab('attribution')">📋 Attribution</div>
     <div class="tab" onclick="showTab('ventes')">💰 Suivi ventes</div>
   </div>
 
@@ -336,6 +337,33 @@
       </div>
     </div>
   </div>
+
+  <!-- Attribution -->
+  <div class="panel" id="tab-attribution">
+    <div class="card">
+      <h2>📋 Attribution des prospects</h2>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
+        <input type="text" id="att_search" placeholder="🔍 Société, SIREN, adresse..." style="padding:8px 12px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:13px;width:200px;">
+        <select id="att_segment" style="padding:8px 12px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:13px;">
+          <option value="">Tous segments</option>
+          <option>C5</option><option>C4</option><option>C3</option><option>C2</option>
+        </select>
+        <select id="att_statut" style="padding:8px 12px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:13px;">
+          <option value="">Tous statuts</option>
+          <option>Tunnel en cours</option><option>Parcours finalisé</option><option>Signature en cours</option>
+        </select>
+        <select id="att_annee" style="padding:8px 12px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:13px;">
+          <option value="">Toutes années fin</option>
+          <option>2025</option><option>2026</option><option>2027</option><option>2028</option><option>2029</option><option>2030</option>
+        </select>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="att_nonattr"> Non attribués</label>
+        <button onclick="searchAttribution(1)" class="btn" style="font-size:13px;padding:8px 18px;">🔍 Rechercher</button>
+      </div>
+      <div id="att_info" style="font-size:12px;color:#6b7280;margin-bottom:8px;"></div>
+      <div id="att_table" style="font-size:12px;overflow-x:auto;"></div>
+      <div id="att_pagination" style="display:flex;justify-content:center;gap:8px;margin-top:12px;"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -343,7 +371,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes'];
+    const tabs = ['creer','gerer','recrutement','ventes','attribution'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -996,6 +1024,70 @@ function exportPdfAdmin() {
   pdfTable(doc, ['Réf','Société','Vendeur','Période','Type','Fourn.','Montant','Comm.V','Comm.R','Marge','Statut'], rows);
   pdfFooter(doc);
   doc.save('admin_ventes_'+getPeriodeLabel()+'.pdf');
+}
+
+// ===== ATTRIBUTION =====
+let attPage = 1;
+
+async function searchAttribution(page) {
+  attPage = page || 1;
+  const params = new URLSearchParams();
+  params.set('page', attPage);
+  params.set('per_page', 50);
+  const s = document.getElementById('att_search').value; if (s) params.set('search', s);
+  const seg = document.getElementById('att_segment').value; if (seg) params.set('segment', seg);
+  const st = document.getElementById('att_statut').value; if (st) params.set('statut', st);
+  const an = document.getElementById('att_annee').value; if (an) params.set('annee_fin', an);
+  if (document.getElementById('att_nonattr').checked) params.set('non_attribues', 'true');
+
+  document.getElementById('att_table').innerHTML = '<div class="loading">Chargement...</div>';
+  document.getElementById('att_info').textContent = '';
+  document.getElementById('att_pagination').innerHTML = '';
+
+  try {
+    const r = await fetch('/api/prospects/master?' + params);
+    const d = await r.json();
+    if (!d.success) { document.getElementById('att_table').innerHTML = '<p style="color:#ef4444;">'+d.error+'</p>'; return; }
+
+    document.getElementById('att_info').textContent = d.total + ' résultats — Page ' + d.page + '/' + d.pages;
+
+    if (!d.prospects.length) {
+      document.getElementById('att_table').innerHTML = '<div class="loading">Aucun résultat</div>';
+      return;
+    }
+
+    const th = 'padding:6px 8px;text-align:left;';
+    document.getElementById('att_table').innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:#1e1b4b;color:#fff;"><tr>' +
+      '<th style="'+th+'">Société</th><th style="'+th+'">SIREN</th><th style="'+th+'">Contact</th><th style="'+th+'">Tél</th><th style="'+th+'">Segment</th><th style="'+th+'">Fin contrat</th><th style="'+th+'">Statut</th><th style="'+th+'">Attribué</th>' +
+      '</tr></thead><tbody>' +
+      d.prospects.map(p => {
+        const contact = p.signataire || p.dirigeant || '—';
+        const tel = p.tel_signataire || '—';
+        const seg = p.typologie_contrat || p.segments || '—';
+        const fin = p.date_fin_livraison || '—';
+        const statut = p.statut || '—';
+        const attr = p.vendeur_attribue || '';
+        const sc = statut === 'Parcours finalisé' ? '#22c55e' : statut === 'Signature en cours' ? '#f59e0b' : '#9ca3af';
+        return '<tr style="border-bottom:1px solid #f3f0ff;" onmouseover="this.style.background=\'#faf5ff\'" onmouseout="this.style.background=\'#fff\'">' +
+          '<td style="padding:6px 8px;font-weight:600;color:#1e1b4b;">' + (p.raison_sociale||'—') + '</td>' +
+          '<td style="padding:6px 8px;color:#6b7280;">' + (p.siren||'') + '</td>' +
+          '<td style="padding:6px 8px;">' + contact + '</td>' +
+          '<td style="padding:6px 8px;color:#7c3aed;font-weight:600;">' + tel + '</td>' +
+          '<td style="padding:6px 8px;"><span class="badge" style="background:'+sc+'18;color:'+sc+'">' + seg + '</span></td>' +
+          '<td style="padding:6px 8px;">' + fin + '</td>' +
+          '<td style="padding:6px 8px;"><span style="font-size:10px;padding:2px 7px;border-radius:10px;background:'+sc+'18;color:'+sc+';font-weight:600;">' + statut + '</span></td>' +
+          '<td style="padding:6px 8px;color:' + (attr?'#22c55e':'#9ca3af') + ';">' + (attr ? attr.split('@')[0] : '—') + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody></table>';
+
+    // Pagination
+    let pag = '';
+    if (d.page > 1) pag += '<button onclick="searchAttribution('+(d.page-1)+')" style="padding:6px 14px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;cursor:pointer;font-weight:600;">← Précédent</button>';
+    pag += '<span style="padding:6px 14px;font-size:13px;color:#374151;">Page ' + d.page + ' / ' + d.pages + '</span>';
+    if (d.page < d.pages) pag += '<button onclick="searchAttribution('+(d.page+1)+')" style="padding:6px 14px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Suivant →</button>';
+    document.getElementById('att_pagination').innerHTML = pag;
+
+  } catch(e) { document.getElementById('att_table').innerHTML = '<p style="color:#ef4444;">Erreur réseau</p>'; }
 }
 
 // ===== CANDIDATURES =====
