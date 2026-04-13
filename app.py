@@ -1447,5 +1447,139 @@ def prospects_master():
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
 
+# ===== PROSPECTION ADMIN =====
+PROSPECTION_SHEET_ID = '1JFEAXFZbdvf40yDWZGVnuEgUN15XdOAx6WgqL69-AMA'
+
+@app.route('/api/prospection/scraper', methods=['POST'])
+@login_required
+def prospection_scraper():
+    try:
+        import subprocess
+        d = request.get_json()
+        ville = d.get('ville', '').strip()
+        secteurs = d.get('secteurs', [])
+        if not ville or not secteurs:
+            return jsonify({'success': False, 'error': 'Ville et secteurs requis'})
+
+        script = os.path.join(os.path.dirname(__file__), '..', 'scraper_google_places.py')
+        if not os.path.exists(script):
+            script = '/Users/strategyglobal/Desktop/scraper_google_places.py'
+
+        details = []
+        total = 0
+        for secteur in secteurs:
+            try:
+                result = subprocess.run(
+                    ['python3', script, secteur, ville],
+                    capture_output=True, text=True, timeout=120,
+                    cwd=os.path.dirname(script)
+                )
+                output = result.stdout + result.stderr
+                # Parse le résultat
+                trouves = 0
+                ajoutes = 0
+                for line in output.split('\n'):
+                    if 'trouvés' in line:
+                        import re
+                        m = re.search(r'(\d+) trouvés', line)
+                        if m: trouves = int(m.group(1))
+                    if 'nouvelles lignes' in line:
+                        m = re.search(r'(\d+) nouvelles', line)
+                        if m: ajoutes = int(m.group(1))
+                details.append({'secteur': secteur, 'trouves': trouves, 'ajoutes': ajoutes})
+                total += ajoutes
+                print(f"🎯 Scraping {secteur}/{ville}: {trouves} trouvés, {ajoutes} ajoutés")
+            except subprocess.TimeoutExpired:
+                details.append({'secteur': secteur, 'trouves': 0, 'ajoutes': 0, 'error': 'timeout'})
+            except Exception as e:
+                details.append({'secteur': secteur, 'trouves': 0, 'ajoutes': 0, 'error': str(e)})
+
+        return jsonify({'success': True, 'total_ajoutes': total, 'details': details})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/prospection/leads-ohm')
+@login_required
+def prospection_leads_ohm():
+    try:
+        gc = get_sheets_client()
+        sh = gc.open_by_key(PROSPECTION_SHEET_ID)
+        try:
+            ws = sh.worksheet('LEADS OHM')
+        except Exception:
+            return jsonify({'success': True, 'prospects': []})
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return jsonify({'success': True, 'prospects': []})
+
+        headers = rows[0]
+        seg_f = request.args.get('segment', '')
+        annee_f = request.args.get('annee_fin', '')
+        statut_f = request.args.get('statut', '')
+        non_attr = request.args.get('non_attribues', '') == 'true'
+        per_page = int(request.args.get('per_page', 20))
+
+        def g(row, name):
+            idx = headers.index(name) if name in headers else -1
+            return row[idx] if idx >= 0 and idx < len(row) else ''
+
+        prospects = []
+        for i, row in enumerate(rows[1:], start=2):
+            if seg_f:
+                s = g(row, 'segments') or g(row, 'typologie_contrat') or ''
+                if seg_f.upper() not in s.upper(): continue
+            if annee_f and annee_f not in (g(row, 'date_fin_livraison') or ''): continue
+            if statut_f and (g(row, 'statut') or '') != statut_f: continue
+            if non_attr and (g(row, 'vendeur_attribue') or '').strip(): continue
+            obj = {'_row': i}
+            for j, h in enumerate(headers):
+                obj[h] = row[j] if j < len(row) else ''
+            prospects.append(obj)
+            if len(prospects) >= per_page: break
+
+        return jsonify({'success': True, 'prospects': prospects})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/prospection/attribuer-leads', methods=['POST'])
+@login_required
+def attribuer_leads():
+    try:
+        d = request.get_json()
+        rows_list = d.get('rows', [])
+        email_vendeur = d.get('email_vendeur', '')
+        if not rows_list or not email_vendeur:
+            return jsonify({'success': False, 'error': 'Rows et email requis'})
+
+        gc = get_sheets_client()
+        sh = gc.open_by_key(PROSPECTION_SHEET_ID)
+        try:
+            ws = sh.worksheet('LEADS OHM')
+        except Exception:
+            return jsonify({'success': False, 'error': 'Feuille LEADS OHM non trouvée'})
+
+        headers = ws.row_values(1)
+        col_idx = -1
+        for i, h in enumerate(headers):
+            if 'vendeur_attribue' in h.lower():
+                col_idx = i + 1
+                break
+        if col_idx < 0:
+            col_idx = len(headers) + 1
+            ws.update_cell(1, col_idx, 'vendeur_attribue')
+
+        import time
+        for row_num in rows_list:
+            ws.update_cell(row_num, col_idx, email_vendeur)
+            time.sleep(0.3)
+
+        print(f"✅ {len(rows_list)} leads attribués à {email_vendeur}")
+        return jsonify({'success': True, 'nb': len(rows_list)})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

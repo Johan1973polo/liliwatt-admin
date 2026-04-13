@@ -54,6 +54,7 @@
     <div class="tab" onclick="showTab('recrutement')">👥 Recrutement</div>
     <div class="tab" onclick="showTab('attribution')">📋 Attribution</div>
     <div class="tab" onclick="showTab('ventes')">💰 Suivi ventes</div>
+    <div class="tab" onclick="showTab('prospection')">🎯 Prospection</div>
   </div>
 
   <!-- Créer -->
@@ -364,6 +365,56 @@
       <div id="att_pagination" style="display:flex;justify-content:center;gap:8px;margin-top:12px;"></div>
     </div>
   </div>
+
+  <!-- Prospection Admin -->
+  <div class="panel" id="tab-prospection">
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button onclick="showProSub('scraper')" id="prosub-scraper" style="padding:8px 18px;border-radius:8px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-weight:600;font-size:13px;cursor:pointer;">⚡ Recharger BASE BRUTE</button>
+      <button onclick="showProSub('leads')" id="prosub-leads" style="padding:8px 18px;border-radius:8px;border:2px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:600;font-size:13px;cursor:pointer;">⭐ Attribuer LEADS OHM</button>
+    </div>
+
+    <!-- Sub: Scraper -->
+    <div id="pro-scraper" class="card">
+      <h2>⚡ Recharger BASE BRUTE</h2>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="form-group"><label>Ville</label><input type="text" id="pro_ville" placeholder="Paris, Lyon, Marseille..."></div>
+        <div class="form-group"><label>Département</label><input type="text" id="pro_dept" placeholder="75, 69, 13..."></div>
+      </div>
+      <label style="font-size:12px;font-weight:600;color:#6b7280;margin:12px 0 8px;display:block;">Secteurs</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="restaurant" checked> Restaurant</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="hotel" checked> Hôtel</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="boulangerie" checked> Boulangerie</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="laverie"> Laverie</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="garage"> Garage</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="salle_sport"> Salle de sport</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="spa_bien_etre"> Spa</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="bar_discoteque"> Bar/Disco</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="camping"> Camping</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="supermarche"> Supermarché</label>
+      </div>
+      <button onclick="lancerScraping()" class="btn" style="width:100%;">⚡ Lancer le scraping</button>
+      <div id="pro_result" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- Sub: Leads -->
+    <div id="pro-leads" class="card" style="display:none;">
+      <h2>⭐ Attribuer LEADS OHM</h2>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
+        <div class="form-group"><label>Vendeur cible</label><select id="pro_vendeur"><option value="">Sélectionner</option></select></div>
+        <div class="form-group"><label>Segment</label><select id="pro_segment"><option value="">Tous</option><option>C2</option><option>C3</option><option>C4</option><option>C5</option><option>GAZ</option></select></div>
+        <div class="form-group"><label>Année fin</label><select id="pro_annee"><option value="">Toutes</option><option>2025</option><option>2026</option><option>2027</option><option>2028</option><option>2029</option></select></div>
+        <div class="form-group"><label>Statut OHM</label><select id="pro_statut_ohm"><option value="">Tous</option><option>Tunnel en cours</option><option>Parcours finalisé</option></select></div>
+        <div class="form-group"><label>Quota (max)</label><input type="number" id="pro_quota" value="20" max="50"></div>
+        <div class="form-group" style="align-self:end;"><label style="font-size:12px;"><input type="checkbox" id="pro_nonattr" checked> Non attribués uniquement</label></div>
+      </div>
+      <button onclick="searchLeadsOhm()" class="btn" style="margin:12px 0;width:100%;">🔍 Rechercher</button>
+      <div id="pro_leads_result" style="font-size:12px;overflow-x:auto;"></div>
+      <div id="pro_leads_action" style="margin-top:12px;display:none;">
+        <button onclick="attribuerLeads()" class="btn btn-pink" id="btnAttribuer" style="width:100%;"></button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -371,7 +422,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','attribution'];
+    const tabs = ['creer','gerer','recrutement','ventes','attribution','prospection'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -1024,6 +1075,88 @@ function exportPdfAdmin() {
   pdfTable(doc, ['Réf','Société','Vendeur','Période','Type','Fourn.','Montant','Comm.V','Comm.R','Marge','Statut'], rows);
   pdfFooter(doc);
   doc.save('admin_ventes_'+getPeriodeLabel()+'.pdf');
+}
+
+// ===== PROSPECTION ADMIN =====
+function showProSub(n) {
+  ['scraper','leads'].forEach(s=>{
+    document.getElementById('pro-'+s).style.display=s===n?'block':'none';
+    document.getElementById('prosub-'+s).style.background=s===n?'#7c3aed':'#fff';
+    document.getElementById('prosub-'+s).style.color=s===n?'#fff':'#7c3aed';
+  });
+  if(n==='leads') loadProVendeurs();
+}
+
+async function lancerScraping() {
+  const ville = document.getElementById('pro_ville').value.trim();
+  if (!ville) { alert('Ville requise'); return; }
+  const secteurs = [...document.querySelectorAll('.pro_secteur:checked')].map(c => c.value);
+  if (!secteurs.length) { alert('Sélectionnez au moins un secteur'); return; }
+  const div = document.getElementById('pro_result');
+  div.innerHTML = '<p style="color:#7c3aed;">⏳ Scraping en cours...</p>';
+  try {
+    const r = await fetch('/api/prospection/scraper', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ville, secteurs }) });
+    const d = await r.json();
+    if (d.success) {
+      div.innerHTML = '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;"><p style="margin:0;color:#16a34a;font-weight:700;">✅ ' + d.total_ajoutes + ' nouveaux contacts ajoutés dans BASE BRUTE</p>' +
+        d.details.map(x => '<p style="margin:4px 0 0;font-size:12px;color:#6b7280;">' + x.secteur + ' : ' + x.ajoutes + ' ajoutés / ' + x.trouves + ' trouvés</p>').join('') + '</div>';
+    } else { div.innerHTML = '<p style="color:#ef4444;">❌ ' + d.error + '</p>'; }
+  } catch(e) { div.innerHTML = '<p style="color:#ef4444;">Erreur réseau</p>'; }
+}
+
+async function loadProVendeurs() {
+  try {
+    const r = await fetch('/api/vendeurs');
+    const d = await r.json();
+    const sel = document.getElementById('pro_vendeur');
+    sel.innerHTML = '<option value="">Sélectionner</option>' + (d.vendeurs||[]).map(v => '<option value="'+v.email+'">'+(v.prenom||'')+' '+v.nom+'</option>').join('');
+  } catch(e) {}
+}
+
+let _leadsResults = [];
+async function searchLeadsOhm() {
+  const div = document.getElementById('pro_leads_result');
+  div.innerHTML = '<p style="color:#9ca3af;">Chargement...</p>';
+  const params = new URLSearchParams();
+  const seg = document.getElementById('pro_segment').value; if(seg) params.set('segment', seg);
+  const an = document.getElementById('pro_annee').value; if(an) params.set('annee_fin', an);
+  const st = document.getElementById('pro_statut_ohm').value; if(st) params.set('statut', st);
+  if(document.getElementById('pro_nonattr').checked) params.set('non_attribues', 'true');
+  params.set('per_page', document.getElementById('pro_quota').value || '20');
+  try {
+    const r = await fetch('/api/prospection/leads-ohm?' + params);
+    const d = await r.json();
+    _leadsResults = d.prospects || [];
+    if (!_leadsResults.length) { div.innerHTML = '<p style="color:#9ca3af;">Aucun lead trouvé</p>'; document.getElementById('pro_leads_action').style.display='none'; return; }
+    div.innerHTML = '<table style="width:100%;border-collapse:collapse;"><thead style="background:#1e1b4b;color:#fff;"><tr><th style="padding:6px 8px;"><input type="checkbox" onchange="toggleAllLeads(this.checked)"></th><th style="padding:6px 8px;text-align:left;">Société</th><th style="padding:6px 8px;">Segment</th><th style="padding:6px 8px;">Fin contrat</th><th style="padding:6px 8px;">Volume</th><th style="padding:6px 8px;">Statut</th></tr></thead><tbody>' +
+      _leadsResults.map((p,i) => '<tr style="border-bottom:1px solid #f3f0ff;"><td style="padding:6px 8px;"><input type="checkbox" class="lead_cb" data-idx="'+i+'" checked></td><td style="padding:6px 8px;font-weight:600;">'+(p.raison_sociale||'—')+'</td><td style="padding:6px 8px;">'+(p.segments||p.typologie_contrat||'—')+'</td><td style="padding:6px 8px;">'+(p.date_fin_livraison||'—')+'</td><td style="padding:6px 8px;">'+(p.volume_total||'—')+'</td><td style="padding:6px 8px;">'+(p.statut||'—')+'</td></tr>').join('') +
+      '</tbody></table>';
+    document.getElementById('pro_leads_action').style.display='block';
+    updateAttribBtn();
+  } catch(e) { div.innerHTML = '<p style="color:#ef4444;">Erreur</p>'; }
+}
+
+function toggleAllLeads(checked) { document.querySelectorAll('.lead_cb').forEach(c => c.checked = checked); updateAttribBtn(); }
+function updateAttribBtn() {
+  const n = document.querySelectorAll('.lead_cb:checked').length;
+  const v = document.getElementById('pro_vendeur').value;
+  document.getElementById('btnAttribuer').textContent = '✅ Attribuer ' + n + ' leads' + (v ? ' à ' + v.split('@')[0] : '');
+}
+
+async function attribuerLeads() {
+  const vendeur = document.getElementById('pro_vendeur').value;
+  if (!vendeur) { alert('Sélectionnez un vendeur cible'); return; }
+  const indices = [...document.querySelectorAll('.lead_cb:checked')].map(c => parseInt(c.dataset.idx));
+  const rows = indices.map(i => _leadsResults[i]._row);
+  if (!rows.length) { alert('Sélectionnez des leads'); return; }
+  const btn = document.getElementById('btnAttribuer'); btn.disabled=true; btn.textContent='⏳...';
+  try {
+    const r = await fetch('/api/prospection/attribuer-leads', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ rows, email_vendeur: vendeur }) });
+    const d = await r.json();
+    if (d.success) alert('✅ ' + d.nb + ' leads attribués à ' + vendeur.split('@')[0]);
+    else alert('❌ ' + d.error);
+  } catch(e) { alert('Erreur réseau'); }
+  btn.disabled=false; updateAttribBtn();
 }
 
 // ===== ATTRIBUTION =====
