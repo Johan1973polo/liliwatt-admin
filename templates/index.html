@@ -501,13 +501,18 @@ async function loadUsers() {
   if (!data.users.length) { list.innerHTML = '<div class="loading">Aucun utilisateur trouvé</div>'; return; }
   list.innerHTML = data.users.map(u => {
     const email = u.primaryEmailAddress || (Array.isArray(u.emailAddress) ? u.emailAddress[0]?.mailId : u.emailAddress) || '';
+    const name = u.displayName || u.firstName + ' ' + u.lastName;
     return `
-    <div class="user-item">
+    <div class="user-item" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin-bottom:8px;background:#f9fafb;border-radius:10px;">
       <div class="user-info">
-        <strong>${u.displayName || u.firstName + ' ' + u.lastName}</strong>
-        <span>${email}</span>
+        <strong>${name}</strong>
+        <span style="color:#6b7280;font-size:13px;margin-left:8px;">${email}</span>
       </div>
-      <button class="btn btn-danger" onclick="deleteUser('${email}', '${u.displayName || ''}')">Supprimer</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button onclick="promoteUser('${email}', 'referent')" style="background:#3b82f6;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;">⬆️ Référent</button>
+        <button onclick="promoteUser('${email}', 'vendeur')" style="background:#f97316;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;">⬇️ Vendeur</button>
+        <button class="btn btn-danger" onclick="deleteUser('${email}', '${name}')" style="font-size:12px;padding:4px 10px;">Supprimer</button>
+      </div>
     </div>
   `;
   }).join('');
@@ -519,6 +524,23 @@ async function deleteUser(email, name) {
   const data = await r.json();
   if (data.success) { alert('Utilisateur supprimé.'); loadUsers(); }
   else alert('Erreur : ' + data.error);
+}
+
+async function promoteUser(email, role) {
+  const label = role === 'referent' ? 'référent' : 'vendeur';
+  if(!confirm(`Promouvoir ${email} en ${label} sur tous les systèmes (Sheets + CRM + Prospection) ?`)) return;
+  const r = await fetch('/api/promote-vendeur', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({email, role})
+  });
+  const data = await r.json();
+  if(data.success) {
+    alert(`✅ ${email} promu ${label} sur Courtier, Prospection et CRM !`);
+    loadUsers();
+  } else {
+    alert('❌ Erreur: ' + (data.error || 'Inconnue'));
+  }
 }
 
 // ===== RECRUTEMENT =====

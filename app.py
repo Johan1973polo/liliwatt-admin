@@ -616,6 +616,34 @@ def create_user():
             except Exception as e:
                 print(f"⚠️ Erreur création courtier-energie: {e}")
 
+            # Créer l'utilisateur dans le CRM LILIWATT (Neon/Vercel)
+            try:
+                CRM_URL = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+                CRM_API_KEY = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+                lien_rgpd = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}'
+                # Numéro courtier auto
+                courtier_number = get_next_courtier_number()
+                crm_r = requests.post(
+                    f'{CRM_URL}/api/crm/create-user',
+                    headers={'X-API-Key': CRM_API_KEY, 'Content-Type': 'application/json'},
+                    json={
+                        'email': email_local,
+                        'firstName': prenom,
+                        'lastName': nom,
+                        'role': 'VENDEUR',
+                        'password': password,
+                        'referentEmail': referent_email,
+                        'token_rgpd': token_rgpd,
+                        'lien_rgpd': lien_rgpd,
+                        'zoho_password': password,
+                        'courtierNumber': courtier_number
+                    },
+                    timeout=10
+                )
+                print(f"✅ CRM LILIWATT: {crm_r.status_code} — {crm_r.json()}")
+            except Exception as e:
+                print(f"⚠️ Erreur CRM LILIWATT: {e}")
+
             # Envoyer email de bienvenue
             created_account_id = result.get('data', {}).get('accountId', '')
             send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, created_account_id, token_rgpd, referent_email)
@@ -1717,6 +1745,104 @@ def attribuer_leads():
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
+
+def get_next_courtier_number():
+    """Génère le prochain numéro de courtier auto-incrémenté"""
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        creds_json = os.environ.get('GOOGLE_CREDS_JSON', '')
+        if not creds_json:
+            return None
+        creds_dict = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=[
+            'https://spreadsheets.google.com/feeds',
+            'https://www.googleapis.com/auth/drive'
+        ])
+        gc = gspread.authorize(creds)
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.sheet1
+        all_values = ws.get_all_values()
+        numbers = []
+        for row in all_values[1:]:
+            if len(row) > 11 and row[11].strip().isdigit():
+                numbers.append(int(row[11]))
+        next_num = max(numbers, default=46) + 1
+        print(f"📊 Prochain numéro courtier: {next_num}")
+        return next_num
+    except Exception as e:
+        print(f"⚠️ Erreur numéro courtier: {e}")
+        return None
+
+
+def update_role_in_sheets(email, new_role, sheet_id):
+    """Met à jour le rôle d'un utilisateur dans un Google Sheet"""
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        creds_json = os.environ.get('GOOGLE_CREDS_JSON', '')
+        if not creds_json:
+            return False
+        creds_dict = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=[
+            'https://spreadsheets.google.com/feeds',
+            'https://www.googleapis.com/auth/drive'
+        ])
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.sheet1
+        all_values = ws.get_all_values()
+        for i, row in enumerate(all_values):
+            if len(row) > 3 and row[3].lower() == email.lower():
+                # Colonne J = index 10 (0-based) = rôle
+                ws.update_cell(i + 1, 10, new_role)
+                print(f'✅ Sheets mis à jour: {email} → {new_role} (sheet {sheet_id[:8]}...)')
+                return True
+        print(f'⚠️ Email {email} non trouvé dans sheet {sheet_id[:8]}...')
+        return False
+    except Exception as e:
+        print(f'❌ Sheets error: {e}')
+        return False
+
+
+@app.route('/api/promote-vendeur', methods=['POST'])
+@login_required
+def promote_vendeur():
+    data = request.get_json()
+    email = data.get('email')
+    new_role = data.get('role')  # 'vendeur' ou 'referent'
+
+    if not email or new_role not in ['vendeur', 'referent']:
+        return jsonify({'error': 'Paramètres invalides'}), 400
+
+    # 1. Google Sheets MDP ZOHO
+    sheets_id = os.environ.get('GOOGLE_SHEET_ID', '')
+    if sheets_id:
+        update_role_in_sheets(email, new_role, sheets_id)
+
+    # 2. CRM Neon (Vercel)
+    crm_role = 'REFERENT' if new_role == 'referent' else 'VENDEUR'
+    CRM_URL = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+    CRM_API_KEY = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+    try:
+        crm_res = requests.post(
+            f'{CRM_URL}/api/crm/promote',
+            headers={'X-API-Key': CRM_API_KEY, 'Content-Type': 'application/json'},
+            json={'email': email, 'role': crm_role},
+            timeout=10
+        )
+        print(f'CRM promote: {crm_res.status_code} — {crm_res.text}')
+    except Exception as e:
+        print(f'CRM promote error: {e}')
+
+    # 3. Sheets Prospection
+    master_sheet_id = os.environ.get('MASTER_SHEET_ID', '')
+    if master_sheet_id:
+        update_role_in_sheets(email, new_role, master_sheet_id)
+
+    return jsonify({'success': True, 'email': email, 'role': new_role})
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
