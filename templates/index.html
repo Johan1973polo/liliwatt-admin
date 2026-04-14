@@ -52,9 +52,8 @@
     <div class="tab active" onclick="showTab('creer')">+ Créer un commercial</div>
     <div class="tab" onclick="showTab('gerer')">Gérer les commerciaux</div>
     <div class="tab" onclick="showTab('recrutement')">👥 Recrutement</div>
-    <div class="tab" onclick="showTab('attribution')">📋 Attribution</div>
     <div class="tab" onclick="showTab('ventes')">💰 Suivi ventes</div>
-    <div class="tab" onclick="showTab('prospection')">🎯 Prospection</div>
+    <div class="tab" onclick="showTab('premium')">💎 Base Premium</div>
   </div>
 
   <!-- Créer -->
@@ -339,80 +338,28 @@
     </div>
   </div>
 
-  <!-- Attribution -->
-  <div class="panel" id="tab-attribution">
+  <!-- Base Premium -->
+  <div class="panel" id="tab-premium">
     <div class="card">
-      <h2>📋 Attribution des prospects</h2>
-      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
-        <input type="text" id="att_search" placeholder="🔍 Société, SIREN, adresse..." style="padding:8px 12px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:13px;width:200px;">
-        <select id="att_segment" style="padding:8px 12px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:13px;">
-          <option value="">Tous segments</option>
-          <option>C5</option><option>C4</option><option>C3</option><option>C2</option>
-        </select>
-        <select id="att_statut" style="padding:8px 12px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:13px;">
-          <option value="">Tous statuts</option>
-          <option>Tunnel en cours</option><option>Parcours finalisé</option><option>Signature en cours</option>
-        </select>
-        <select id="att_annee" style="padding:8px 12px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:13px;">
-          <option value="">Toutes années fin</option>
-          <option>2025</option><option>2026</option><option>2027</option><option>2028</option><option>2029</option><option>2030</option>
-        </select>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="att_nonattr"> Non attribués</label>
-        <button onclick="searchAttribution(1)" class="btn" style="font-size:13px;padding:8px 18px;">🔍 Rechercher</button>
+      <h2>💎 Attribution Base Premium</h2>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;" id="bp_stats"></div>
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+        <select id="bp_vendeur" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;"><option value="">Vendeur cible...</option></select>
+        <select id="bp_segment" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;"><option value="">Segment</option><option>C2</option><option>C3</option><option>C4</option><option>C5</option><option>GAZ</option></select>
+        <select id="bp_score" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;"><option value="">Score</option><option value="3">>3</option><option value="5">>5</option><option value="7">>7</option><option value="8">>8</option></select>
+        <select id="bp_statut" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;"><option value="">Statut</option><option>Tunnel en cours</option><option>Parcours finalisé</option></select>
+        <select id="bp_annee" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;"><option value="">Année fin</option><option>2025</option><option>2026</option><option>2027</option><option>2028</option><option>2029</option></select>
+        <label style="font-size:11px;display:flex;align-items:center;gap:3px;"><input type="checkbox" id="bp_sign"> Signataire</label>
+        <label style="font-size:11px;display:flex;align-items:center;gap:3px;"><input type="checkbox" id="bp_email"> Email</label>
+        <label style="font-size:11px;display:flex;align-items:center;gap:3px;"><input type="checkbox" id="bp_nonattr" checked> Non attr.</label>
+        <button onclick="searchBP(1)" class="btn btn-sm">🔍</button>
       </div>
-      <div id="att_info" style="font-size:12px;color:#6b7280;margin-bottom:8px;"></div>
-      <div id="att_table" style="font-size:12px;overflow-x:auto;"></div>
-      <div id="att_pagination" style="display:flex;justify-content:center;gap:8px;margin-top:12px;"></div>
-    </div>
-  </div>
-
-  <!-- Prospection Admin -->
-  <div class="panel" id="tab-prospection">
-    <div style="display:flex;gap:8px;margin-bottom:16px;">
-      <button onclick="showProSub('scraper')" id="prosub-scraper" style="padding:8px 18px;border-radius:8px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-weight:600;font-size:13px;cursor:pointer;">⚡ Recharger BASE BRUTE</button>
-      <button onclick="showProSub('leads')" id="prosub-leads" style="padding:8px 18px;border-radius:8px;border:2px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:600;font-size:13px;cursor:pointer;">⭐ Attribuer LEADS OHM</button>
-    </div>
-
-    <!-- Sub: Scraper -->
-    <div id="pro-scraper" class="card">
-      <h2>⚡ Recharger BASE BRUTE</h2>
-      <div class="form-grid" style="grid-template-columns:1fr 1fr;">
-        <div class="form-group"><label>Ville</label><input type="text" id="pro_ville" placeholder="Paris, Lyon, Marseille..."></div>
-        <div class="form-group"><label>Département</label><input type="text" id="pro_dept" placeholder="75, 69, 13..."></div>
+      <div id="bp_info" style="font-size:12px;color:#6b7280;margin-bottom:6px;"></div>
+      <div id="bp_table" style="font-size:11px;overflow-x:auto;"></div>
+      <div id="bp_action" style="display:none;margin-top:10px;">
+        <button onclick="attribBP()" class="btn btn-pink" id="bp_btn" style="width:100%;"></button>
       </div>
-      <label style="font-size:12px;font-weight:600;color:#6b7280;margin:12px 0 8px;display:block;">Secteurs</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="restaurant" checked> Restaurant</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="hotel" checked> Hôtel</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="boulangerie" checked> Boulangerie</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="laverie"> Laverie</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="garage"> Garage</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="salle_sport"> Salle de sport</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="spa_bien_etre"> Spa</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="bar_discoteque"> Bar/Disco</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="camping"> Camping</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;padding:6px 10px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;cursor:pointer;"><input type="checkbox" class="pro_secteur" value="supermarche"> Supermarché</label>
-      </div>
-      <button onclick="lancerScraping()" class="btn" style="width:100%;">⚡ Lancer le scraping</button>
-      <div id="pro_result" style="margin-top:12px;"></div>
-    </div>
-
-    <!-- Sub: Leads -->
-    <div id="pro-leads" class="card" style="display:none;">
-      <h2>⭐ Attribuer LEADS OHM</h2>
-      <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
-        <div class="form-group"><label>Vendeur cible</label><select id="pro_vendeur"><option value="">Sélectionner</option></select></div>
-        <div class="form-group"><label>Segment</label><select id="pro_segment"><option value="">Tous</option><option>C2</option><option>C3</option><option>C4</option><option>C5</option><option>GAZ</option></select></div>
-        <div class="form-group"><label>Année fin</label><select id="pro_annee"><option value="">Toutes</option><option>2025</option><option>2026</option><option>2027</option><option>2028</option><option>2029</option></select></div>
-        <div class="form-group"><label>Statut OHM</label><select id="pro_statut_ohm"><option value="">Tous</option><option>Tunnel en cours</option><option>Parcours finalisé</option></select></div>
-        <div class="form-group"><label>Quota (max)</label><input type="number" id="pro_quota" value="20" max="50"></div>
-        <div class="form-group" style="align-self:end;"><label style="font-size:12px;"><input type="checkbox" id="pro_nonattr" checked> Non attribués uniquement</label></div>
-      </div>
-      <button onclick="searchLeadsOhm()" class="btn" style="margin:12px 0;width:100%;">🔍 Rechercher</button>
-      <div id="pro_leads_result" style="font-size:12px;overflow-x:auto;"></div>
-      <div id="pro_leads_action" style="margin-top:12px;display:none;">
-        <button onclick="attribuerLeads()" class="btn btn-pink" id="btnAttribuer" style="width:100%;"></button>
-      </div>
+      <div id="bp_pag" style="display:flex;justify-content:center;gap:8px;margin-top:10px;"></div>
     </div>
   </div>
 </div>
@@ -422,13 +369,14 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','attribution','prospection'];
+    const tabs = ['creer','gerer','recrutement','ventes','premium'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'recrutement') loadCandidats();
   if (name === 'ventes') { loadVenteVendeurs(); loadVentes(); }
+  if (name === 'premium') { loadBPStats(); loadBPVendeurs(); }
 }
 
 function normalize(s) {
@@ -1077,7 +1025,102 @@ function exportPdfAdmin() {
   doc.save('admin_ventes_'+getPeriodeLabel()+'.pdf');
 }
 
-// ===== PROSPECTION ADMIN =====
+// ===== BASE PREMIUM =====
+async function loadBPStats() {
+  try {
+    const r = await fetch('/api/base-premium/stats');
+    const d = await r.json();
+    if (!d.success) return;
+    const s = d.stats;
+    let html = '<div style="background:#ede9fe;padding:10px 16px;border-radius:8px;"><span style="font-size:11px;color:#6b7280;">Total</span><br><strong style="color:#1e1b4b;font-size:18px;">'+s.total+'</strong></div>' +
+      '<div style="background:#f0fdf4;padding:10px 16px;border-radius:8px;"><span style="font-size:11px;color:#6b7280;">Attribués</span><br><strong style="color:#22c55e;font-size:18px;">'+s.attribues+'</strong></div>' +
+      '<div style="background:#eff6ff;padding:10px 16px;border-radius:8px;"><span style="font-size:11px;color:#6b7280;">Disponibles</span><br><strong style="color:#2563eb;font-size:18px;">'+s.disponibles+'</strong></div>';
+    (s.par_vendeur||[]).forEach(v => { html += '<div style="background:#faf5ff;padding:6px 12px;border-radius:8px;font-size:12px;"><strong style="color:#7c3aed;">'+v.prenom+' '+v.nom+'</strong> <span style="color:#6b7280;">'+v.nb_contacts+'</span></div>'; });
+    document.getElementById('bp_stats').innerHTML = html;
+  } catch(e) {}
+}
+
+async function loadBPVendeurs() {
+  try {
+    const r = await fetch('/api/vendeurs');
+    const d = await r.json();
+    document.getElementById('bp_vendeur').innerHTML = '<option value="">Vendeur cible...</option>' + (d.vendeurs||[]).map(v => '<option value="'+v.email+'">'+(v.prenom||'')+' '+v.nom+'</option>').join('');
+  } catch(e) {}
+}
+
+let _bpLeads = [], _bpPage = 1;
+async function searchBP(page) {
+  _bpPage = page || 1;
+  const div = document.getElementById('bp_table');
+  div.innerHTML = '<p style="color:#9ca3af;">Chargement...</p>';
+  const p = new URLSearchParams();
+  p.set('page', _bpPage); p.set('per_page', '50');
+  const seg = document.getElementById('bp_segment').value; if (seg) p.set('segment', seg);
+  const sc = document.getElementById('bp_score').value; if (sc) p.set('score_min', sc);
+  const st = document.getElementById('bp_statut').value; if (st) p.set('statut_ohm', st);
+  const an = document.getElementById('bp_annee').value; if (an) p.set('annee_fin', an);
+  if (document.getElementById('bp_sign').checked) p.set('has_signataire', 'true');
+  if (document.getElementById('bp_email').checked) p.set('has_email', 'true');
+  if (document.getElementById('bp_nonattr').checked) p.set('non_attribues', 'true');
+  try {
+    const r = await fetch('/api/base-premium/liste?' + p);
+    const d = await r.json();
+    _bpLeads = d.prospects || [];
+    document.getElementById('bp_info').textContent = d.total + ' résultats — Page ' + d.page + '/' + d.pages;
+    if (!_bpLeads.length) { div.innerHTML = '<p style="color:#9ca3af;">Aucun lead</p>'; document.getElementById('bp_action').style.display='none'; return; }
+    const th = 'padding:4px 6px;text-align:left;font-size:10px;';
+    div.innerHTML = '<table style="width:100%;border-collapse:collapse;"><thead style="background:#1e1b4b;color:#fff;"><tr>' +
+      '<th style="'+th+'"><input type="checkbox" onchange="bpToggle(this.checked)"></th><th style="'+th+'">Société</th><th style="'+th+'">SIREN</th><th style="'+th+'">Score</th><th style="'+th+'">Statut</th><th style="'+th+'">Signataire</th><th style="'+th+'">Email</th><th style="'+th+'">Segment</th><th style="'+th+'">PDL</th><th style="'+th+'">Fin</th><th style="'+th+'">Attribué</th></tr></thead><tbody>' +
+      _bpLeads.map((l,i) => {
+        const attr = (l.vendeur_attribue||'').trim();
+        return '<tr style="border-bottom:1px solid #f3f0ff;cursor:pointer;" onmouseover="this.style.background=\'#faf5ff\'" onmouseout="this.style.background=\'#fff\'">' +
+          '<td style="padding:4px 6px;"><input type="checkbox" class="bp_cb" data-idx="'+i+'"'+(attr?'':' checked')+'></td>' +
+          '<td style="padding:4px 6px;font-weight:600;">'+(l.raison_sociale||'—')+'</td>' +
+          '<td style="padding:4px 6px;color:#6b7280;">'+(l.siren||'')+'</td>' +
+          '<td style="padding:4px 6px;">'+(l.score||'—')+'</td>' +
+          '<td style="padding:4px 6px;font-size:10px;">'+(l.statut||'—')+'</td>' +
+          '<td style="padding:4px 6px;">'+(l.signataire||'—')+'</td>' +
+          '<td style="padding:4px 6px;font-size:10px;">'+(l.email_signataire||'—')+'</td>' +
+          '<td style="padding:4px 6px;">'+(l.segments||l.typologie_contrat||'—')+'</td>' +
+          '<td style="padding:4px 6px;">'+(l.nb_pdl||'—')+'</td>' +
+          '<td style="padding:4px 6px;">'+(l.date_fin_livraison||'—')+'</td>' +
+          '<td style="padding:4px 6px;color:'+(attr?'#22c55e':'#9ca3af')+';">'+(attr?attr.split('@')[0]:'—')+'</td></tr>';
+      }).join('') + '</tbody></table>';
+    document.getElementById('bp_action').style.display = 'block';
+    bpUpdBtn();
+    // Pagination
+    let pg = '';
+    if (d.page > 1) pg += '<button class="btn btn-sm" onclick="searchBP('+(d.page-1)+')">←</button> ';
+    pg += 'Page '+d.page+'/'+d.pages+' ';
+    if (d.page < d.pages) pg += '<button class="btn btn-sm" onclick="searchBP('+(d.page+1)+')">→</button>';
+    document.getElementById('bp_pag').innerHTML = pg;
+  } catch(e) { div.innerHTML = '<p style="color:#ef4444;">Erreur</p>'; }
+}
+
+function bpToggle(c) { document.querySelectorAll('.bp_cb').forEach(x => x.checked = c); bpUpdBtn(); }
+function bpUpdBtn() {
+  const n = Math.min(document.querySelectorAll('.bp_cb:checked').length, 20);
+  const v = document.getElementById('bp_vendeur').value;
+  document.getElementById('bp_btn').textContent = '💎 Attribuer ' + n + ' contacts' + (v ? ' à ' + v.split('@')[0] : '');
+}
+
+async function attribBP() {
+  const v = document.getElementById('bp_vendeur').value;
+  if (!v) { alert('Sélectionnez un vendeur'); return; }
+  const checked = [...document.querySelectorAll('.bp_cb:checked')].slice(0, 20);
+  const rows = checked.map(c => _bpLeads[parseInt(c.dataset.idx)]._row);
+  if (!rows.length) { alert('Sélectionnez des contacts'); return; }
+  const btn = document.getElementById('bp_btn'); btn.disabled = true; btn.textContent = '⏳...';
+  try {
+    const r = await fetch('/api/base-premium/attribuer', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ rows, vendeur_email: v }) });
+    const d = await r.json();
+    if (d.success) { alert('✅ ' + d.attribues + ' contacts attribués'); loadBPStats(); searchBP(_bpPage); }
+    else alert('❌ ' + d.error);
+  } catch(e) { alert('Erreur'); }
+  btn.disabled = false; bpUpdBtn();
+}
+
+// ===== PROSPECTION ADMIN (legacy) =====
 function showProSub(n) {
   ['scraper','leads'].forEach(s=>{
     document.getElementById('pro-'+s).style.display=s===n?'block':'none';

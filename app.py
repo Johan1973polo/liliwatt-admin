@@ -1450,6 +1450,143 @@ def prospects_master():
 # ===== PROSPECTION ADMIN =====
 PROSPECTION_SHEET_ID = '1JFEAXFZbdvf40yDWZGVnuEgUN15XdOAx6WgqL69-AMA'
 
+# ===== BASE PREMIUM =====
+@app.route('/api/base-premium/stats')
+@login_required
+def base_premium_stats():
+    try:
+        gc = get_sheets_client()
+        sh = gc.open_by_key(PROSPECTION_SHEET_ID)
+        try:
+            ws = sh.worksheet('LEADS OHM')
+        except Exception:
+            return jsonify({'success': True, 'stats': {'total': 0, 'attribues': 0, 'disponibles': 0, 'par_vendeur': []}})
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return jsonify({'success': True, 'stats': {'total': 0, 'attribues': 0, 'disponibles': 0, 'par_vendeur': []}})
+        headers = rows[0]
+        va_idx = next((i for i, h in enumerate(headers) if 'vendeur_attribue' in h.lower()), -1)
+        total = len(rows) - 1
+        vendeurs = {}
+        attribues = 0
+        for row in rows[1:]:
+            attr = row[va_idx].strip() if va_idx >= 0 and va_idx < len(row) else ''
+            if attr:
+                attribues += 1
+                if attr not in vendeurs:
+                    vendeurs[attr] = 0
+                vendeurs[attr] += 1
+        # Enrichir noms
+        par_vendeur = []
+        try:
+            gc2 = get_sheets_client()
+            mdp_ws = gc2.open_by_key(os.environ.get('GOOGLE_SHEET_ID', '')).sheet1
+            mdp_rows = mdp_ws.get_all_values()
+            for email, nb in vendeurs.items():
+                nom, prenom = email.split('@')[0], ''
+                for mr in mdp_rows:
+                    if len(mr) > 3 and mr[3].lower() == email.lower():
+                        nom, prenom = mr[0], mr[1]
+                        break
+                par_vendeur.append({'email': email, 'nom': nom, 'prenom': prenom, 'nb_contacts': nb})
+        except:
+            par_vendeur = [{'email': e, 'nom': e.split('@')[0], 'prenom': '', 'nb_contacts': n} for e, n in vendeurs.items()]
+        return jsonify({'success': True, 'stats': {'total': total, 'attribues': attribues, 'disponibles': total - attribues, 'par_vendeur': par_vendeur}})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/base-premium/liste')
+@login_required
+def base_premium_liste():
+    try:
+        gc = get_sheets_client()
+        sh = gc.open_by_key(PROSPECTION_SHEET_ID)
+        try:
+            ws = sh.worksheet('LEADS OHM')
+        except Exception:
+            return jsonify({'success': True, 'prospects': [], 'total': 0, 'page': 1, 'pages': 0})
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return jsonify({'success': True, 'prospects': [], 'total': 0, 'page': 1, 'pages': 0})
+        headers = rows[0]
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 50))
+        seg_f = request.args.get('segment', '').upper()
+        score_f = int(request.args.get('score_min', 0))
+        statut_f = request.args.get('statut_ohm', '')
+        annee_f = request.args.get('annee_fin', '')
+        has_sign = request.args.get('has_signataire', '') == 'true'
+        has_email = request.args.get('has_email', '') == 'true'
+        non_attr = request.args.get('non_attribues', '') == 'true'
+
+        def g(row, *names):
+            for n in names:
+                idx = next((i for i, h in enumerate(headers) if n.lower() in h.lower()), -1)
+                if idx >= 0 and idx < len(row) and row[idx].strip():
+                    return row[idx].strip()
+            return ''
+
+        filtered = []
+        for i, row in enumerate(rows[1:], start=2):
+            if seg_f and seg_f not in (g(row, 'segment', 'typologie') or '').upper():
+                continue
+            if score_f:
+                try:
+                    if int(g(row, 'score') or '0') < score_f: continue
+                except: continue
+            if statut_f and g(row, 'statut') != statut_f: continue
+            if annee_f and annee_f not in (g(row, 'date_fin') or ''): continue
+            if has_sign and not g(row, 'signataire'): continue
+            if has_email and not g(row, 'email_signataire'): continue
+            if non_attr and g(row, 'vendeur_attribue'): continue
+            obj = {'_row': i}
+            for j, h in enumerate(headers):
+                obj[h] = row[j] if j < len(row) else ''
+            filtered.append(obj)
+
+        total = len(filtered)
+        pages = math.ceil(total / per_page) if total else 0
+        start = (page - 1) * per_page
+        prospects = filtered[start:start + per_page]
+        return jsonify({'success': True, 'prospects': prospects, 'total': total, 'page': page, 'pages': pages})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/base-premium/attribuer', methods=['POST'])
+@login_required
+def base_premium_attribuer():
+    try:
+        d = request.get_json()
+        rows_list = d.get('rows', [])
+        vendeur_email = d.get('vendeur_email', '')
+        if not rows_list or not vendeur_email:
+            return jsonify({'success': False, 'error': 'Rows et vendeur requis'})
+        if len(rows_list) > 20:
+            return jsonify({'success': False, 'error': 'Max 20 contacts'})
+        gc = get_sheets_client()
+        sh = gc.open_by_key(PROSPECTION_SHEET_ID)
+        ws = sh.worksheet('LEADS OHM')
+        headers = ws.row_values(1)
+        col_idx = -1
+        for i, h in enumerate(headers):
+            if 'vendeur_attribue' in h.lower():
+                col_idx = i + 1
+                break
+        if col_idx < 0:
+            col_idx = len(headers) + 1
+            ws.update_cell(1, col_idx, 'vendeur_attribue')
+        import time
+        for row_num in rows_list:
+            ws.update_cell(row_num, col_idx, vendeur_email)
+            time.sleep(0.3)
+        print(f"💎 {len(rows_list)} contacts attribués à {vendeur_email}")
+        return jsonify({'success': True, 'attribues': len(rows_list)})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/prospection/scraper', methods=['POST'])
 @login_required
 def prospection_scraper():
