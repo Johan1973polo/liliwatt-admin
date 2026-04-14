@@ -1211,6 +1211,51 @@ def inviter_phase1():
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/api/recrutement/profil/<int:row_id>', methods=['DELETE'])
+@login_required
+def delete_phase1_profil(row_id):
+    try:
+        d = request.get_json() or {}
+        drive_file_id = d.get('drive_file_id', '')
+
+        # 1. Supprimer la ligne dans le Sheet PHASE 1
+        gc = get_sheets_client()
+        ws = gc.open_by_key(RECRUTEMENT_SHEET_ID).worksheet('PHASE 1')
+        ws.delete_rows(row_id)
+        print(f"✅ Ligne {row_id} supprimée du Sheet PHASE 1")
+
+        # 2. Supprimer le fichier CV dans le Drive si fourni
+        if drive_file_id:
+            try:
+                from googleapiclient.discovery import build
+                from google.oauth2.service_account import Credentials as SACredentials
+                import base64
+
+                creds_b64 = os.environ.get('GOOGLE_DRIVE_CREDS_BASE64', '')
+                creds_json_env = os.environ.get('GOOGLE_CREDS_JSON', '')
+                if creds_b64:
+                    creds_dict = json.loads(base64.b64decode(creds_b64).decode())
+                elif creds_json_env:
+                    creds_dict = json.loads(creds_json_env)
+                else:
+                    creds_dict = None
+
+                if creds_dict:
+                    creds = SACredentials.from_service_account_info(
+                        creds_dict,
+                        scopes=['https://www.googleapis.com/auth/drive']
+                    )
+                    drive_service = build('drive', 'v3', credentials=creds)
+                    drive_service.files().delete(fileId=drive_file_id).execute()
+                    print(f"✅ Fichier Drive {drive_file_id} supprimé")
+            except Exception as e:
+                print(f"⚠️ Erreur suppression Drive: {e}")
+
+        return jsonify({'success': True})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
 # ===== SUIVI DES VENTES =====
 SUIVI_VENTES_SHEET_ID = os.environ.get('SUIVI_VENTES_SHEET_ID', '1Ld1Zl3qVzdVZsyksdfxYfL1LiVcFd5BEbrPV6NYLfcA')
 

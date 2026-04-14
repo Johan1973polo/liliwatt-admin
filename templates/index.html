@@ -704,8 +704,10 @@ function renderP1() {
   const sc = {'NON CONTACTÉ':'#9ca3af','CONTACTÉ':'#22c55e','RELANCÉ':'#f59e0b'};
   div.innerHTML = list.map(c => {
     const col = sc[c.statut] || '#9ca3af';
-    return '<div style="padding:12px 16px;background:#faf5ff;border-radius:10px;border:1px solid #e9d5ff;margin-bottom:6px;">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">' +
+    const driveFileId = c.lien_cv ? extractDriveId(c.lien_cv) : '';
+    return '<div id="profil-'+c.row+'" style="position:relative;padding:12px 16px;background:#faf5ff;border-radius:10px;border:1px solid #e9d5ff;margin-bottom:6px;">' +
+      '<button onclick="supprimerProfil('+c.row+',\''+driveFileId+'\')" style="background:#dc2626;color:white;border:none;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:14px;font-weight:700;position:absolute;top:8px;right:8px;line-height:1;" title="Supprimer">✕</button>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding-right:28px;">' +
       '<div style="flex:1;min-width:200px;"><strong style="color:#1e1b4b;">' + c.prenom + ' ' + c.nom + '</strong> ' +
       '<span style="font-size:11px;color:#9ca3af;">' + c.email + ' | ' + c.telephone + '</span>' +
       (c.adresse ? '<br><span style="font-size:11px;color:#6b7280;">' + c.adresse + '</span>' : '') +
@@ -729,6 +731,33 @@ async function changeP1Statut(row, statut) {
 
 async function saveP1Note(row, note) {
   await fetch('/api/recrutement/phase1/note', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({row,note}) });
+}
+
+function extractDriveId(url) {
+  if (!url) return '';
+  const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+
+async function supprimerProfil(rowId, driveFileId) {
+  if (!confirm('Supprimer ce profil définitivement ?')) return;
+  try {
+    const r = await fetch('/api/recrutement/profil/' + rowId, {
+      method: 'DELETE',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({drive_file_id: driveFileId})
+    });
+    const data = await r.json();
+    if (data.success) {
+      const el = document.getElementById('profil-' + rowId);
+      if (el) el.remove();
+      alert('✅ Profil supprimé');
+    } else {
+      alert('❌ Erreur: ' + (data.error || 'Inconnue'));
+    }
+  } catch(e) {
+    alert('❌ Erreur réseau');
+  }
 }
 
 let _inviteData = {};
