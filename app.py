@@ -859,15 +859,24 @@ def list_candidats_phase1():
         try:
             ws = sh.worksheet('PHASE 1')
         except Exception:
-            ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=9)
-            ws.update('A1:I1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION']])
+            ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=10)
+            ws.update('A1:J1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV']])
         rows = ws.get_all_values()
         candidats = []
         for i, row in enumerate(rows):
             if i == 0:
+                # Log les headers pour debug
+                print(f"📋 PHASE 1 headers ({len(row)} cols): {row}")
                 continue
             if len(row) < 3 or not row[2]:
                 continue
+            lien_cv = row[9] if len(row) > 9 else ''
+            if not lien_cv and len(row) > 8:
+                # Chercher un lien Drive dans toutes les colonnes restantes
+                for col_idx in range(8, len(row)):
+                    if row[col_idx] and ('drive.google.com' in row[col_idx] or row[col_idx].startswith('http')):
+                        lien_cv = row[col_idx]
+                        break
             candidats.append({
                 'row': i + 1,
                 'nom': row[0], 'prenom': row[1], 'email': row[2],
@@ -877,8 +886,10 @@ def list_candidats_phase1():
                 'note': row[6] if len(row) > 6 else '',
                 'date': row[7] if len(row) > 7 else '',
                 'session': row[8] if len(row) > 8 else '',
-                'lien_cv': row[9] if len(row) > 9 else ''
+                'lien_cv': lien_cv
             })
+            if lien_cv:
+                print(f"  📄 CV trouvé pour {row[1]} {row[0]}: {lien_cv[:60]}...")
         return jsonify({'success': True, 'candidats': candidats})
     except Exception as e:
         import traceback; traceback.print_exc()
