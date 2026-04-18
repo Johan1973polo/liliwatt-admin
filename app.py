@@ -1900,5 +1900,88 @@ def promote_vendeur():
     return jsonify({'success': True, 'email': email, 'role': new_role})
 
 
+@app.route('/api/toggle-vendeur', methods=['POST'])
+@login_required
+def toggle_vendeur():
+    data = request.get_json()
+    email = data.get('email')
+    actif = data.get('actif')  # True ou False
+
+    if not email or actif is None:
+        return jsonify({'error': 'Paramètres invalides'}), 400
+
+    # 1. Google Sheets — colonne K = STATUT
+    gc = get_sheets_client()
+    if gc:
+        try:
+            sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+            sh = gc.open_by_key(sheet_id)
+            ws = sh.sheet1
+            all_values = ws.get_all_values()
+            for i, row in enumerate(all_values):
+                if len(row) > 3 and row[3].lower() == email.lower():
+                    ws.update_cell(i + 1, 11, 'actif' if actif else 'inactif')
+                    print(f'✅ Sheets toggle: {email} → {"actif" if actif else "inactif"}')
+                    break
+        except Exception as e:
+            print(f'❌ Sheets toggle error: {e}')
+
+    # 2. CRM Neon
+    CRM_URL = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+    CRM_API_KEY = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+    try:
+        requests.post(
+            f'{CRM_URL}/api/crm/toggle',
+            headers={'X-API-Key': CRM_API_KEY, 'Content-Type': 'application/json'},
+            json={'email': email, 'actif': actif},
+            timeout=10
+        )
+    except Exception as e:
+        print(f'CRM toggle error: {e}')
+
+    return jsonify({'success': True, 'email': email, 'actif': actif})
+
+
+@app.route('/api/supprimer-vendeur', methods=['POST'])
+@login_required
+def supprimer_vendeur():
+    data = request.get_json()
+    email = data.get('email')
+
+    if not email:
+        return jsonify({'error': 'Email requis'}), 400
+
+    # 1. Google Sheets — marque SUPPRIMÉ dans colonne K
+    gc = get_sheets_client()
+    if gc:
+        try:
+            sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+            sh = gc.open_by_key(sheet_id)
+            ws = sh.sheet1
+            all_values = ws.get_all_values()
+            for i, row in enumerate(all_values):
+                if len(row) > 3 and row[3].lower() == email.lower():
+                    ws.update_cell(i + 1, 11, 'supprime')
+                    print(f'✅ Sheets supprimé: {email}')
+                    break
+        except Exception as e:
+            print(f'❌ Sheets suppress error: {e}')
+
+    # 2. CRM Neon — marque inactif + deletedAt
+    CRM_URL = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+    CRM_API_KEY = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+    try:
+        requests.post(
+            f'{CRM_URL}/api/crm/delete-user',
+            headers={'X-API-Key': CRM_API_KEY, 'Content-Type': 'application/json'},
+            json={'email': email},
+            timeout=10
+        )
+    except Exception as e:
+        print(f'CRM delete error: {e}')
+
+    return jsonify({'success': True, 'email': email})
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

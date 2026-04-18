@@ -503,44 +503,62 @@ async function loadUsers() {
     const email = u.primaryEmailAddress || (Array.isArray(u.emailAddress) ? u.emailAddress[0]?.mailId : u.emailAddress) || '';
     const name = u.displayName || u.firstName + ' ' + u.lastName;
     return `
-    <div class="user-item" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin-bottom:8px;background:#f9fafb;border-radius:10px;">
-      <div class="user-info">
+    <div class="user-item" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin-bottom:8px;background:#f9fafb;border-radius:10px;flex-wrap:wrap;gap:8px;">
+      <div class="user-info" style="flex:1;min-width:200px;">
         <strong>${name}</strong>
         <span style="color:#6b7280;font-size:13px;margin-left:8px;">${email}</span>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <button onclick="promoteUser('${email}', 'referent')" style="background:#3b82f6;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;">⬆️ Référent</button>
-        <button onclick="promoteUser('${email}', 'vendeur')" style="background:#f97316;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;">⬇️ Vendeur</button>
-        <button class="btn btn-danger" onclick="deleteUser('${email}', '${name}')" style="font-size:12px;padding:4px 10px;">Supprimer</button>
+      <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+        <button onclick="promouvoir('${email}','referent')" style="background:#3b82f6;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">⬆️ Réf.</button>
+        <button onclick="promouvoir('${email}','vendeur')" style="background:#f97316;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">⬇️ Vend.</button>
+        <button onclick="toggleActif('${email}',true)" style="background:#dc2626;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">🔒 Désact.</button>
+        <button onclick="supprimerVendeur('${email}','${name.replace(/'/g,"\\'")}')" style="background:#1e1b4b;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">🗑</button>
       </div>
     </div>
   `;
   }).join('');
 }
 
-async function deleteUser(email, name) {
-  if (!confirm('Supprimer ' + name + ' ? Cette action est irréversible.')) return;
-  const r = await fetch('/api/users/' + encodeURIComponent(email), {method: 'DELETE'});
-  const data = await r.json();
-  if (data.success) { alert('Utilisateur supprimé.'); loadUsers(); }
-  else alert('Erreur : ' + data.error);
-}
-
-async function promoteUser(email, role) {
+async function promouvoir(email, role) {
   const label = role === 'referent' ? 'référent' : 'vendeur';
-  if(!confirm(`Promouvoir ${email} en ${label} sur tous les systèmes (Sheets + CRM + Prospection) ?`)) return;
+  if(!confirm('Promouvoir ' + email + ' en ' + label + ' sur tous les systèmes ?')) return;
   const r = await fetch('/api/promote-vendeur', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({email, role})
   });
-  const data = await r.json();
-  if(data.success) {
-    alert(`✅ ${email} promu ${label} sur Courtier, Prospection et CRM !`);
-    loadUsers();
-  } else {
-    alert('❌ Erreur: ' + (data.error || 'Inconnue'));
-  }
+  const d = await r.json();
+  if(d.success) { alert('✅ ' + email + ' promu ' + label); loadUsers(); }
+  else alert('❌ Erreur: ' + (d.error || 'Inconnue'));
+}
+
+async function toggleActif(email, actuelActif) {
+  const action = actuelActif ? 'désactiver' : 'réactiver';
+  if(!confirm('Voulez-vous ' + action + ' ' + email + ' ?')) return;
+  await fetch('/api/toggle-vendeur', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({email, actif: !actuelActif})
+  });
+  alert('✅ ' + email + ' ' + action + ' avec succès');
+  loadUsers();
+}
+
+async function supprimerVendeur(email, name) {
+  if(!confirm('ATTENTION: Supprimer définitivement ' + (name||email) + ' de tous les systèmes ?')) return;
+  if(!confirm('Dernière confirmation — cette action est irréversible.')) return;
+  await fetch('/api/supprimer-vendeur', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({email})
+  });
+  // Aussi supprimer du Zoho
+  await fetch('/api/users/' + encodeURIComponent(email), {method: 'DELETE'});
+  alert('✅ ' + (name||email) + ' supprimé de tous les systèmes');
+  loadUsers();
+}
+
+// promoteUser remplacée par promouvoir() ci-dessus
 }
 
 // ===== RECRUTEMENT =====
