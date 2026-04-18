@@ -34,7 +34,7 @@ def get_zoho_token():
 
 
 
-def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', referent_email='', token_rgpd=''):
+def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', referent_email='', token_rgpd='', role='vendeur'):
     """Enregistre le commercial dans Google Sheets"""
     try:
         import gspread
@@ -70,7 +70,7 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', refer
             referent_email,
             token_rgpd,
             rgpd_link,
-            'vendeur',
+            role,
             'actif'
         ])
         print(f"✅ {nom} {prenom} enregistré dans Google Sheets (token RGPD: {token_rgpd})")
@@ -518,6 +518,7 @@ def create_user():
         email_perso = d.get('email_perso', '').strip()
         drive_folder_id = d.get('drive_folder_id', '').strip()
         referent_email = d.get('referent_email', '').strip()
+        role = d.get('role', 'vendeur').strip().lower()
         # Générer automatiquement si vide
         password = password_input if password_input else generate_password()
 
@@ -592,7 +593,7 @@ def create_user():
             token_rgpd = uuid.uuid4().hex[:12]
 
             # Enregistrer dans Google Sheets
-            save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id, referent_email, token_rgpd)
+            save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id, referent_email, token_rgpd, role)
 
             # Créer l'utilisateur dans courtier-energie
             try:
@@ -632,7 +633,7 @@ def create_user():
                         'email': email_local,
                         'firstName': prenom,
                         'lastName': nom,
-                        'role': 'VENDEUR',
+                        'role': role.upper(),
                         'password': password,
                         'referentEmail': referent_email,
                         'token_rgpd': token_rgpd,
