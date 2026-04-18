@@ -472,20 +472,42 @@ def get_referents():
         sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
         ws = gc.open_by_key(sheet_id).sheet1
         rows = ws.get_all_values()
-        # Collecter les emails en colonne G (referent_email)
-        referent_emails = set()
-        for row in rows:
-            if len(row) > 6 and row[6].strip() and '@' in row[6]:
-                referent_emails.add(row[6].strip().lower())
-        # Trouver les infos des référents parmi les vendeurs
+
         referents = []
-        for row in rows:
-            if len(row) > 3 and row[3].strip().lower() in referent_emails:
+        referent_emails_from_col_g = set()
+
+        for row in rows[1:]:  # skip header
+            if len(row) < 4 or not row[3].strip():
+                continue
+            email = row[3].strip()
+            role = row[9].strip().lower() if len(row) > 9 else ''
+            statut = row[10].strip().lower() if len(row) > 10 else 'actif'
+
+            # Collecter les emails référents depuis colonne G
+            if len(row) > 6 and row[6].strip() and '@' in row[6]:
+                referent_emails_from_col_g.add(row[6].strip().lower())
+
+            # Méthode 1 : colonne J = "referent"
+            if role == 'referent' and statut != 'supprime':
                 referents.append({
-                    'email': row[3].strip(),
+                    'email': email,
                     'nom': row[0].strip(),
                     'prenom': row[1].strip()
                 })
+
+        # Méthode 2 fallback : emails trouvés en colonne G mais pas encore dans la liste
+        existing_emails = {r['email'].lower() for r in referents}
+        for row in rows[1:]:
+            if len(row) > 3:
+                email = row[3].strip()
+                if email.lower() in referent_emails_from_col_g and email.lower() not in existing_emails:
+                    referents.append({
+                        'email': email,
+                        'nom': row[0].strip(),
+                        'prenom': row[1].strip()
+                    })
+                    existing_emails.add(email.lower())
+
         return jsonify({'success': True, 'referents': referents})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
