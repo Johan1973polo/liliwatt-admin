@@ -69,7 +69,9 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', refer
             drive_folder_id,
             referent_email,
             token_rgpd,
-            rgpd_link
+            rgpd_link,
+            'vendeur',
+            'actif'
         ])
         print(f"✅ {nom} {prenom} enregistré dans Google Sheets (token RGPD: {token_rgpd})")
         return True
