@@ -422,16 +422,16 @@ def list_vendeurs_api():
         ws = gc.open_by_key(sheet_id).sheet1
         rows = ws.get_all_values()
         vendeurs = []
-        for row in rows:
+        for row in rows[1:]:  # skip header
             if len(row) > 3 and '@' in row[3]:
-                statut = row[10] if len(row) > 10 else 'actif'
-                if statut == 'inactif':
+                statut = (row[10] if len(row) > 10 else 'actif').strip().lower()
+                if statut in ('inactif', 'supprime'):
                     continue
                 vendeurs.append({
                     'nom': row[0],
                     'prenom': row[1],
                     'email': row[3],
-                    'role': row[9] if len(row) > 9 else 'vendeur'
+                    'role': (row[9] if len(row) > 9 else 'vendeur').strip().lower()
                 })
         return jsonify({'success': True, 'vendeurs': vendeurs})
     except Exception as e:
@@ -446,17 +446,21 @@ def referents_avec_equipe():
         sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
         ws = gc.open_by_key(sheet_id).sheet1
         rows = ws.get_all_values()
-        # Collecter les emails en colonne G (vrais référents)
+        # Collecter les référents par colonne J (role) ET colonne G (fallback)
         ref_emails = set()
-        for row in rows:
+        for row in rows[1:]:
+            # Méthode 1 : colonne J = referent
+            if len(row) > 9 and row[9].strip().lower() == 'referent' and len(row) > 3 and '@' in row[3]:
+                ref_emails.add(row[3].strip().lower())
+            # Méthode 2 : email en colonne G
             if len(row) > 6 and row[6].strip() and '@' in row[6]:
                 ref_emails.add(row[6].strip().lower())
         # Construire la liste avec équipes
         referents = []
-        for row in rows:
+        for row in rows[1:]:
             if len(row) > 3 and row[3].strip().lower() in ref_emails:
                 email = row[3].strip()
-                equipe = [r[3] for r in rows if len(r) > 6 and r[6].strip().lower() == email.lower() and r[3] != email]
+                equipe = [r[3] for r in rows[1:] if len(r) > 6 and r[6].strip().lower() == email.lower() and r[3] != email]
                 referents.append({'email': email, 'nom': row[0], 'prenom': row[1], 'vendeurs': equipe})
         return jsonify({'success': True, 'referents': referents})
     except Exception as e:
