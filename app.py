@@ -441,13 +441,14 @@ def list_vendeurs_api():
         for row in rows[1:]:  # skip header
             if len(row) > 3 and '@' in row[3]:
                 statut = (row[10] if len(row) > 10 else 'actif').strip().lower()
-                if statut in ('inactif', 'supprime'):
+                if statut == 'supprime':
                     continue
                 vendeurs.append({
                     'nom': row[0],
                     'prenom': row[1],
                     'email': row[3],
-                    'role': (row[9] if len(row) > 9 else 'vendeur').strip().lower()
+                    'role': (row[9] if len(row) > 9 else 'vendeur').strip().lower(),
+                    'statut': statut
                 })
         return jsonify({'success': True, 'vendeurs': vendeurs})
     except Exception as e:

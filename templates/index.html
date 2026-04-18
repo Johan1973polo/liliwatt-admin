@@ -502,24 +502,31 @@ async function createUser() {
 async function loadUsers() {
   const list = document.getElementById('user-list');
   list.innerHTML = '<div class="loading">Chargement...</div>';
-  const r = await fetch('/api/users');
+  const r = await fetch('/api/vendeurs');
   const data = await r.json();
   if (!data.success) { list.innerHTML = '<div class="loading">Erreur : ' + data.error + '</div>'; return; }
-  if (!data.users.length) { list.innerHTML = '<div class="loading">Aucun utilisateur trouvé</div>'; return; }
-  list.innerHTML = data.users.map(u => {
-    const email = u.primaryEmailAddress || (Array.isArray(u.emailAddress) ? u.emailAddress[0]?.mailId : u.emailAddress) || '';
-    const name = u.displayName || u.firstName + ' ' + u.lastName;
+  if (!data.vendeurs || !data.vendeurs.length) { list.innerHTML = '<div class="loading">Aucun commercial trouvé</div>'; return; }
+  list.innerHTML = data.vendeurs.map(u => {
+    const email = u.email;
+    const name = (u.prenom || '') + ' ' + (u.nom || '');
+    const estActif = u.statut !== 'inactif';
+    const roleBadge = u.role === 'referent'
+      ? '<span style="background:#3b82f6;color:white;font-size:9px;padding:1px 6px;border-radius:8px;margin-left:6px;">REF</span>'
+      : '<span style="background:#7c3aed;color:white;font-size:9px;padding:1px 6px;border-radius:8px;margin-left:6px;">VEND</span>';
+    const statutBadge = estActif
+      ? '<span style="background:#dcfce7;color:#166534;font-size:9px;padding:1px 6px;border-radius:8px;margin-left:4px;">ACTIF</span>'
+      : '<span style="background:#fef2f2;color:#dc2626;font-size:9px;padding:1px 6px;border-radius:8px;margin-left:4px;">INACTIF</span>';
     return `
-    <div class="user-item" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin-bottom:8px;background:#f9fafb;border-radius:10px;flex-wrap:wrap;gap:8px;">
+    <div class="user-item" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin-bottom:8px;background:${estActif ? '#f9fafb' : '#fef2f2'};border-radius:10px;flex-wrap:wrap;gap:8px;${estActif ? '' : 'opacity:0.7;'}">
       <div class="user-info" style="flex:1;min-width:200px;">
-        <strong>${name}</strong>
-        <span style="color:#6b7280;font-size:13px;margin-left:8px;">${email}</span>
+        <strong>${name.trim()}</strong>${roleBadge}${statutBadge}
+        <span style="color:#6b7280;font-size:12px;display:block;margin-top:2px;">${email}</span>
       </div>
       <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
         <button onclick="promouvoir('${email}','referent')" style="background:#3b82f6;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">⬆️ Réf.</button>
         <button onclick="promouvoir('${email}','vendeur')" style="background:#f97316;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">⬇️ Vend.</button>
-        <button onclick="toggleActif('${email}',true)" style="background:#dc2626;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">🔒 Désact.</button>
-        <button onclick="supprimerVendeur('${email}','${name.replace(/'/g,"\\'")}')" style="background:#1e1b4b;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">🗑</button>
+        <button onclick="toggleActif('${email}',${estActif})" style="background:${estActif ? '#dc2626' : '#16a34a'};color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">${estActif ? '🔒 Désact.' : '✅ Réactiver'}</button>
+        <button onclick="supprimerVendeur('${email}','${name.trim().replace(/'/g,"\\'")}')" style="background:#1e1b4b;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">🗑</button>
       </div>
     </div>
   `;
