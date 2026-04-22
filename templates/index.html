@@ -371,6 +371,19 @@
   </div>
 </div>
 
+<!-- Modal Référent -->
+<div id="modalReferent" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:14px;padding:28px;max-width:420px;width:90%;border:2px solid #7c3aed;">
+    <h3 id="modalRefTitle" style="margin:0 0 6px;color:#1e1b4b;font-size:16px;"></h3>
+    <p id="modalRefSubtitle" style="margin:0 0 16px;color:#9ca3af;font-size:12px;"></p>
+    <select id="modalRefSelect" style="width:100%;padding:10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;margin-bottom:16px;"></select>
+    <div style="display:flex;gap:8px;">
+      <button id="modalRefConfirm" style="flex:1;padding:10px;background:#16a34a;color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Confirmer</button>
+      <button onclick="document.getElementById('modalReferent').style.display='none'" style="flex:1;padding:10px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Annuler</button>
+    </div>
+  </div>
+</div>
+
 <script>
 if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } else { console.log('✅ JSZip OK', JSZip.version); }
 
@@ -521,10 +534,12 @@ async function loadUsers() {
       <div class="user-info" style="flex:1;min-width:200px;">
         <strong>${name.trim()}</strong>${roleBadge}${statutBadge}
         <span style="color:#6b7280;font-size:12px;display:block;margin-top:2px;">${email}</span>
+        <small style="color:#9ca3af;font-size:10px;">Référent : ${u.referent_email || 'Aucun'}</small>
       </div>
       <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
         <button onclick="promouvoir('${email}','referent')" style="background:#3b82f6;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">⬆️ Réf.</button>
         <button onclick="promouvoir('${email}','vendeur')" style="background:#f97316;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">⬇️ Vend.</button>
+        <button onclick="changerReferent('${email}','${(u.prenom||'').replace(/'/g,"\\'")}','${(u.nom||'').replace(/'/g,"\\'")}','${(u.referent_email||'').replace(/'/g,"\\'")}')" style="background:#5b21b6;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">👤 Réf.</button>
         <button onclick="toggleActif('${email}',${estActif})" style="background:${estActif ? '#dc2626' : '#16a34a'};color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">${estActif ? '🔒 Désact.' : '✅ Réactiver'}</button>
         <button onclick="supprimerVendeur('${email}','${name.trim().replace(/'/g,"\\'")}')" style="background:#1e1b4b;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:600;">🗑</button>
       </div>
@@ -570,6 +585,34 @@ async function supprimerVendeur(email, name) {
   await fetch('/api/users/' + encodeURIComponent(email), {method: 'DELETE'});
   alert('✅ ' + (name||email) + ' supprimé de tous les systèmes');
   loadUsers();
+}
+
+async function changerReferent(vendeurEmail, prenom, nom, refActuel) {
+  try {
+    const r = await fetch('/api/referents');
+    const d = await r.json();
+    const refs = d.referents || [];
+    let opts = '<option value="">— Aucun référent —</option>';
+    refs.forEach(ref => {
+      const sel = ref.email.toLowerCase() === (refActuel||'').toLowerCase() ? 'selected' : '';
+      opts += '<option value="'+ref.email+'" '+sel+'>'+ref.prenom+' '+ref.nom+' ('+ref.email+')</option>';
+    });
+    document.getElementById('modalRefTitle').textContent = 'Assigner un référent à ' + prenom + ' ' + nom;
+    document.getElementById('modalRefSubtitle').textContent = 'Référent actuel : ' + (refActuel || 'Aucun');
+    document.getElementById('modalRefSelect').innerHTML = opts;
+    document.getElementById('modalReferent').style.display = 'flex';
+    document.getElementById('modalRefConfirm').onclick = async function() {
+      const newRef = document.getElementById('modalRefSelect').value;
+      const res = await fetch('/api/changer-referent', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ vendeur_email: vendeurEmail, referent_email: newRef })
+      });
+      const data = await res.json();
+      document.getElementById('modalReferent').style.display = 'none';
+      if (data.success) { alert('✅ Référent mis à jour pour ' + prenom); loadUsers(); }
+      else { alert('❌ Erreur : ' + (data.error || 'inconnue')); }
+    };
+  } catch(e) { alert('Erreur chargement référents'); }
 }
 
 // promoteUser remplacée par promouvoir() ci-dessus

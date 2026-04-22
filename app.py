@@ -447,6 +447,7 @@ def list_vendeurs_api():
                     'nom': row[0],
                     'prenom': row[1],
                     'email': row[3],
+                    'referent_email': (row[6] if len(row) > 6 else '').strip(),
                     'role': (row[9] if len(row) > 9 else 'vendeur').strip().lower(),
                     'statut': statut
                 })
@@ -1944,6 +1945,57 @@ def promote_vendeur():
         update_role_in_sheets(email, new_role, master_sheet_id)
 
     return jsonify({'success': True, 'email': email, 'role': new_role})
+
+
+@app.route('/api/changer-referent', methods=['POST'])
+@login_required
+def changer_referent():
+    data = request.get_json()
+    vendeur_email = (data.get('vendeur_email') or '').strip().lower()
+    referent_email = (data.get('referent_email') or '').strip().lower()
+
+    if not vendeur_email:
+        return jsonify({'success': False, 'error': 'Email vendeur manquant'}), 400
+
+    results = {}
+
+    # 1. Sheets colonne G (REFERANT) = index 7 en 1-based
+    try:
+        gc = get_sheets_client()
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+        found = False
+        for i, row in enumerate(rows):
+            if len(row) > 3 and row[3].strip().lower() == vendeur_email:
+                ws.update_cell(i + 1, 7, referent_email)
+                print(f'✅ Sheets: référent de {vendeur_email} → {referent_email or "aucun"}')
+                results['sheets'] = 'ok'
+                found = True
+                break
+        if not found:
+            results['sheets'] = 'vendeur introuvable'
+    except Exception as e:
+        print(f'❌ Erreur Sheets changer-referent: {e}')
+        results['sheets'] = str(e)
+
+    # 2. CRM Neon
+    try:
+        crm_url = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+        crm_key = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+        r = requests.post(
+            f'{crm_url}/api/crm/assign-referent',
+            headers={'X-API-Key': crm_key, 'Content-Type': 'application/json'},
+            json={'vendeur_email': vendeur_email, 'referent_email': referent_email or None},
+            timeout=15
+        )
+        print(f'CRM assign-referent: {r.status_code}')
+        results['crm'] = 'ok' if r.ok else f'status {r.status_code}'
+    except Exception as e:
+        print(f'⚠️ CRM assign-referent error: {e}')
+        results['crm'] = str(e)
+
+    return jsonify({'success': True, 'results': results})
 
 
 @app.route('/api/toggle-vendeur', methods=['POST'])
