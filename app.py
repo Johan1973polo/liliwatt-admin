@@ -5,6 +5,7 @@ import json
 import uuid
 from functools import wraps
 from datetime import datetime, timedelta
+from google_meet_service import create_referent_meet_room
 
 def parse_float(val):
     if not val:
@@ -1944,7 +1945,42 @@ def promote_vendeur():
     if master_sheet_id:
         update_role_in_sheets(email, new_role, master_sheet_id)
 
-    return jsonify({'success': True, 'email': email, 'role': new_role})
+    # 4. Création salle Meet si promu référent
+    meet_link = None
+    if new_role == 'referent':
+        try:
+            gc = get_sheets_client()
+            sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+            ws = gc.open_by_key(sheet_id).sheet1
+            rows = ws.get_all_values()
+            prenom_ref = ''
+            nom_ref = ''
+            lien_actuel = ''
+            row_idx = -1
+            for i, row in enumerate(rows):
+                if len(row) > 3 and row[3].strip().lower() == email.lower():
+                    prenom_ref = row[1].strip() if len(row) > 1 else ''
+                    nom_ref = row[0].strip() if len(row) > 0 else ''
+                    lien_actuel = row[12].strip() if len(row) > 12 else ''
+                    row_idx = i + 1
+                    break
+            if not lien_actuel or 'meet.google.com' not in lien_actuel:
+                result = create_referent_meet_room(prenom_ref, nom_ref, email)
+                meet_link = result['meet_link']
+                if row_idx > 0:
+                    ws.update_cell(row_idx, 13, meet_link)
+                CRM_URL2 = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+                CRM_KEY2 = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+                requests.post(f'{CRM_URL2}/api/crm/update-lien-visio',
+                    headers={'X-API-Key': CRM_KEY2, 'Content-Type': 'application/json'},
+                    json={'email': email, 'lien': meet_link}, timeout=10)
+                print(f'✅ Salle Meet créée pour promotion: {meet_link}')
+            else:
+                print(f'⏭️ Salle Meet existe déjà: {lien_actuel}')
+        except Exception as e:
+            print(f'⚠️ Meet promotion error: {e}')
+
+    return jsonify({'success': True, 'email': email, 'role': new_role, 'meet_link': meet_link})
 
 
 @app.route('/api/changer-referent', methods=['POST'])
