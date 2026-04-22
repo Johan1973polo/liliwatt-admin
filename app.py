@@ -80,6 +80,36 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', refer
         print(f"⚠️ Erreur Google Sheets : {e}")
         return False
 
+def orpheliner_vendeurs(ancien_referent_email):
+    """Détache tous les vendeurs de leur ancien référent."""
+    try:
+        gc = get_sheets_client()
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+        orphelins = []
+        for i, row in enumerate(rows):
+            if len(row) > 6 and row[6].strip().lower() == ancien_referent_email.lower():
+                ws.update_cell(i + 1, 7, '')
+                orphelins.append(row[3].strip().lower())
+                print(f'  → Vendeur orphelin : {row[3]}')
+        print(f'✅ {len(orphelins)} vendeur(s) orphelin(s) après départ de {ancien_referent_email}')
+        if orphelins:
+            crm_url = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+            crm_key = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+            for email_v in orphelins:
+                try:
+                    requests.post(f'{crm_url}/api/crm/assign-referent',
+                        headers={'X-API-Key': crm_key, 'Content-Type': 'application/json'},
+                        json={'vendeur_email': email_v, 'referent_email': None}, timeout=10)
+                except: pass
+            print(f'✅ CRM Neon : {len(orphelins)} vendeurs mis à referentId=null')
+        return orphelins
+    except Exception as e:
+        print(f'❌ Erreur orpheliner_vendeurs : {e}')
+        return []
+
+
 def get_sheets_client():
     """Retourne un client gspread authentifié"""
     import gspread
@@ -1980,7 +2010,28 @@ def promote_vendeur():
         except Exception as e:
             print(f'⚠️ Meet promotion error: {e}')
 
-    return jsonify({'success': True, 'email': email, 'role': new_role, 'meet_link': meet_link})
+    # 5. Si rétrogradation referent → vendeur, orpheliner ses vendeurs
+    orphelins = []
+    if new_role == 'vendeur':
+        orphelins = orpheliner_vendeurs(email)
+
+    return jsonify({'success': True, 'email': email, 'role': new_role, 'meet_link': meet_link, 'orphelins': orphelins})
+
+
+@app.route('/api/count-vendeurs-sous-referent')
+@login_required
+def count_vendeurs_sous_referent():
+    email = request.args.get('email', '').strip().lower()
+    if not email:
+        return jsonify({'count': 0})
+    try:
+        gc = get_sheets_client()
+        ws = gc.open_by_key(os.environ.get('GOOGLE_SHEET_ID', '')).sheet1
+        rows = ws.get_all_values()
+        count = sum(1 for row in rows if len(row) > 6 and row[6].strip().lower() == email)
+        return jsonify({'count': count})
+    except:
+        return jsonify({'count': 0})
 
 
 @app.route('/api/changer-referent', methods=['POST'])
@@ -2073,7 +2124,19 @@ def toggle_vendeur():
     except Exception as e:
         print(f'CRM toggle error: {e}')
 
-    return jsonify({'success': True, 'email': email, 'actif': actif})
+    # 3. Orpheliner si désactivation d'un référent
+    orphelins = []
+    if not actif:
+        try:
+            gc2 = get_sheets_client()
+            ws2 = gc2.open_by_key(os.environ.get('GOOGLE_SHEET_ID', '')).sheet1
+            for row in ws2.get_all_values():
+                if len(row) > 9 and row[3].strip().lower() == email.lower() and row[9].strip().lower() == 'referent':
+                    orphelins = orpheliner_vendeurs(email)
+                    break
+        except: pass
+
+    return jsonify({'success': True, 'email': email, 'actif': actif, 'orphelins': orphelins})
 
 
 @app.route('/api/supprimer-vendeur', methods=['POST'])
@@ -2114,7 +2177,10 @@ def supprimer_vendeur():
     except Exception as e:
         print(f'CRM delete error: {e}')
 
-    return jsonify({'success': True, 'email': email})
+    # 3. Orpheliner si c'est un référent
+    orphelins = orpheliner_vendeurs(email)
+
+    return jsonify({'success': True, 'email': email, 'orphelins': orphelins})
 
 
 if __name__ == '__main__':
