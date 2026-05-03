@@ -1428,7 +1428,8 @@ def derogation_soumettre():
             },
             json={
                 'fromAddress': 'bo@liliwatt.fr',
-                'toAddress': 'bo@liliwatt.fr',
+                'toAddress': 'aya.benchikar@ohm-energie.com',
+                'ccAddress': 'bo@liliwatt.fr,johan.mallet@liliwatt.fr',
                 'replyTo': 'johan.mallet@liliwatt.fr',
                 'subject': f'🔍 Demande de dérogation — {nom} (SIREN {siren})',
                 'content': html_body,
