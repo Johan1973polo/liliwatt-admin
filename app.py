@@ -1455,11 +1455,11 @@ VENDEURS_PARENT_ID = '157Sol6u32W0loIEv8CmYT3uoDaGyZ7q6'
 
 CONTRAT_TEMPLATES = {
     'VENDEUR': [
-        ('Contrat Partenariat', '1HGtIapr0qLyyFhlfJOn3w4wE-gn6_Qpl'),
-        ('Avenant 1 Remuneration', '1nmLviACHQTNC_S_8Xw4lNtYyeK_Ymw43'),
+        ('Contrat Partenariat', '1ll4JmsEKBusTafQfaxbe96dU2u4kmE7gxVG9ShPXj-k'),
+        ('Avenant 1 Remuneration', '1o3lGOSX4BUGywBXMJewbhRfDLnbB_5SvqZc3lhQBxik'),
     ],
     'REFERENT': [
-        ('Avenant 2 Referent', '1Jl2tYAJtiiFPBwgSnaHDGVw0bKGw4Wdf'),
+        ('Avenant 2 Referent', '1XvLhgnMGo4ep8O2UgAZKs1PaIPfxwmeemLR2FLSdWMk'),
     ]
 }
 
