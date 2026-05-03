@@ -55,6 +55,7 @@
     <div class="tab" onclick="showTab('ventes')">💰 Suivi ventes</div>
     <div class="tab" onclick="showTab('premium')">💎 Base Premium</div>
     <div class="tab" onclick="showTab('derogation')">🔍 Dérogation</div>
+    <div class="tab" onclick="showTab('contrats')">📄 Contrats</div>
   </div>
 
   <!-- Créer -->
@@ -404,6 +405,50 @@
       </div>
     </div>
   </div>
+
+  <!-- Contrats -->
+  <div class="panel" id="tab-contrats">
+    <div style="max-width:600px;margin:30px auto;">
+      <h2 style="color:#1e1b4b;margin-bottom:8px;">📄 Génération de contrats</h2>
+      <p style="color:#6b7280;font-size:14px;margin-bottom:24px;">
+        Remplis le formulaire pour générer les contrats LILIWATT au format PDF, sauvegardés dans Drive et prêts à envoyer en signature électronique.
+      </p>
+      <div style="background:white;padding:24px;border-radius:12px;border:1px solid #e5e7eb;">
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:8px;">Type de contrat</label>
+        <div style="display:flex;gap:12px;margin-bottom:20px;">
+          <label id="ctr-label-vendeur" style="flex:1;padding:14px;border:2px solid #7c3aed;border-radius:10px;cursor:pointer;background:#f5f3ff;">
+            <input type="radio" name="ctr-type" value="VENDEUR" checked onchange="onCtrTypeChange()" style="margin-right:8px;" />
+            <strong style="color:#7c3aed;">Nouveau Vendeur</strong>
+            <div style="font-size:11px;color:#6b7280;margin-top:4px;">Contrat + Avenant 1</div>
+          </label>
+          <label id="ctr-label-referent" style="flex:1;padding:14px;border:2px solid #d1d5db;border-radius:10px;cursor:pointer;background:white;">
+            <input type="radio" name="ctr-type" value="REFERENT" onchange="onCtrTypeChange()" style="margin-right:8px;" />
+            <strong>Promotion en Référent</strong>
+            <div style="font-size:11px;color:#6b7280;margin-top:4px;">Avenant 2 uniquement</div>
+          </label>
+        </div>
+        <select id="ctr-civilite" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;">
+          <option value="Monsieur">Monsieur</option>
+          <option value="Madame">Madame</option>
+        </select>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <input type="text" id="ctr-prenom" placeholder="Prénom" style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />
+          <input type="text" id="ctr-nom" placeholder="NOM (en majuscules)" style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />
+        </div>
+        <input type="text" id="ctr-entreprise" placeholder="Nom de l'entreprise du prestataire" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
+        <div id="ctr-adresse-wrapper" style="margin-bottom:12px;">
+          <textarea id="ctr-adresse" rows="2" placeholder="Adresse complète (rue + CP + ville)" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;resize:vertical;box-sizing:border-box;"></textarea>
+        </div>
+        <input type="text" id="ctr-siren" placeholder="SIREN ou 'Immatriculation en cours'" value="Immatriculation en cours" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
+        <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px;">Date de signature</label>
+        <input type="date" id="ctr-date" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
+        <input type="email" id="ctr-email" placeholder="Email du signataire" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
+        <button onclick="genererContrats()" id="btn-ctr" style="width:100%;padding:12px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">
+          📧 Générer + Envoyer
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Modal Référent -->
@@ -424,7 +469,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation'];
+    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -1554,6 +1599,83 @@ async function soumettreDerogation() {
     alert('❌ Erreur réseau : ' + e.message);
   }
   btn.disabled = false; btn.textContent = '📧 Envoyer la demande';
+}
+
+// === Contrats ===
+document.addEventListener('DOMContentLoaded', function() {
+  const dateInput = document.getElementById('ctr-date');
+  if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
+});
+
+function onCtrTypeChange() {
+  const type = document.querySelector('input[name="ctr-type"]:checked').value;
+  const lv = document.getElementById('ctr-label-vendeur');
+  const lr = document.getElementById('ctr-label-referent');
+  if (type === 'VENDEUR') {
+    lv.style.border = '2px solid #7c3aed'; lv.style.background = '#f5f3ff';
+    lr.style.border = '2px solid #d1d5db'; lr.style.background = 'white';
+  } else {
+    lr.style.border = '2px solid #7c3aed'; lr.style.background = '#f5f3ff';
+    lv.style.border = '2px solid #d1d5db'; lv.style.background = 'white';
+  }
+  const adrWrapper = document.getElementById('ctr-adresse-wrapper');
+  if (type === 'REFERENT') {
+    adrWrapper.style.opacity = '0.5';
+    document.getElementById('ctr-adresse').placeholder = 'Adresse (optionnelle pour un Référent)';
+  } else {
+    adrWrapper.style.opacity = '1';
+    document.getElementById('ctr-adresse').placeholder = 'Adresse complète (rue + CP + ville)';
+  }
+}
+
+async function genererContrats() {
+  const type = document.querySelector('input[name="ctr-type"]:checked').value;
+  const civilite = document.getElementById('ctr-civilite').value;
+  const prenom = document.getElementById('ctr-prenom').value.trim();
+  const nom = document.getElementById('ctr-nom').value.trim();
+  const entreprise = document.getElementById('ctr-entreprise').value.trim();
+  const adresse = document.getElementById('ctr-adresse').value.trim();
+  const siren = document.getElementById('ctr-siren').value.trim();
+  const date_signature = document.getElementById('ctr-date').value;
+  const email_signataire = document.getElementById('ctr-email').value.trim();
+
+  if (!prenom || !nom || !entreprise || !siren || !date_signature || !email_signataire) {
+    alert('Merci de remplir tous les champs obligatoires');
+    return;
+  }
+  if (type === 'VENDEUR' && !adresse) {
+    alert("L'adresse est obligatoire pour un nouveau vendeur");
+    return;
+  }
+
+  const btn = document.getElementById('btn-ctr');
+  btn.disabled = true;
+  btn.textContent = '⏳ Génération en cours (10-20s)...';
+
+  try {
+    const r = await fetch('/api/contrats/generer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, civilite, prenom, nom, entreprise, adresse, siren, date_signature, email_signataire })
+    });
+    const data = await r.json();
+    if (data.success) {
+      const liensList = (data.liens || []).map(l => '• ' + l.nom).join('\n');
+      alert('✅ Contrats générés et sauvegardés dans Drive\n\nDocuments :\n' + liensList + '\n\nUn mail avec les liens vient de t\'être envoyé.');
+      document.getElementById('ctr-prenom').value = '';
+      document.getElementById('ctr-nom').value = '';
+      document.getElementById('ctr-entreprise').value = '';
+      document.getElementById('ctr-adresse').value = '';
+      document.getElementById('ctr-siren').value = 'Immatriculation en cours';
+      document.getElementById('ctr-email').value = '';
+    } else {
+      alert('❌ Erreur : ' + (data.error || 'inconnue'));
+    }
+  } catch (e) {
+    alert('❌ Erreur réseau : ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = '📧 Générer + Envoyer';
 }
 </script>
 </body>

@@ -1449,6 +1449,223 @@ def derogation_soumettre():
         print(f'[DEROGATION] Erreur: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ===== GENERATION CONTRATS =====
+
+VENDEURS_PARENT_ID = '157Sol6u32W0loIEv8CmYT3uoDaGyZ7q6'
+
+CONTRAT_TEMPLATES = {
+    'VENDEUR': [
+        ('Contrat Partenariat', '1HGtIapr0qLyyFhlfJOn3w4wE-gn6_Qpl'),
+        ('Avenant 1 Remuneration', '1nmLviACHQTNC_S_8Xw4lNtYyeK_Ymw43'),
+    ],
+    'REFERENT': [
+        ('Avenant 2 Referent', '1Jl2tYAJtiiFPBwgSnaHDGVw0bKGw4Wdf'),
+    ]
+}
+
+MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+           'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+
+def get_drive_docs_services():
+    """Build Drive v3 + Docs v1 services avec les bons scopes"""
+    import base64
+    from googleapiclient.discovery import build
+    from google.oauth2.service_account import Credentials as SACredentials
+
+    creds_b64 = os.environ.get('GOOGLE_DRIVE_CREDS_BASE64', '')
+    creds_json_env = os.environ.get('GOOGLE_CREDS_JSON', '')
+    if creds_b64:
+        creds_dict = json.loads(base64.b64decode(creds_b64).decode())
+    elif creds_json_env:
+        creds_dict = json.loads(creds_json_env)
+    else:
+        with open(os.path.join(os.path.dirname(__file__), 'liliwatt-eddcc0bc9e18.json')) as f:
+            creds_dict = json.load(f)
+
+    creds = SACredentials.from_service_account_info(creds_dict, scopes=[
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/documents',
+        'https://www.googleapis.com/auth/spreadsheets',
+    ])
+    drive_svc = build('drive', 'v3', credentials=creds)
+    docs_svc = build('docs', 'v1', credentials=creds)
+    return drive_svc, docs_svc
+
+def find_or_create_folder(drive, name, parent_id):
+    """Cherche un dossier par nom sous parent_id, le cree si absent"""
+    q = f"name='{name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    r = drive.files().list(q=q, supportsAllDrives=True, includeItemsFromAllDrives=True, fields='files(id,name)').execute()
+    if r.get('files'):
+        return r['files'][0]['id']
+    new_folder = drive.files().create(body={
+        'name': name,
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [parent_id]
+    }, supportsAllDrives=True, fields='id').execute()
+    return new_folder['id']
+
+@app.route('/api/contrats/generer', methods=['POST'])
+@login_required
+def contrats_generer():
+    try:
+        import io
+        from googleapiclient.http import MediaIoBaseUpload
+
+        data = request.json
+        type_contrat = data.get('type', '').strip()
+        civilite = data.get('civilite', '').strip()
+        prenom = data.get('prenom', '').strip()
+        nom = data.get('nom', '').strip().upper()
+        entreprise = data.get('entreprise', '').strip().upper()
+        adresse = data.get('adresse', '').strip()
+        siren = data.get('siren', '').strip()
+        date_signature = data.get('date_signature', '').strip()
+        email_signataire = data.get('email_signataire', '').strip()
+
+        if not all([type_contrat, civilite, prenom, nom, entreprise, siren, date_signature, email_signataire]):
+            return jsonify({'success': False, 'error': 'Champs obligatoires manquants'}), 400
+        if type_contrat == 'VENDEUR' and not adresse:
+            return jsonify({'success': False, 'error': 'Adresse requise pour un contrat vendeur'}), 400
+
+        templates = CONTRAT_TEMPLATES.get(type_contrat)
+        if not templates:
+            return jsonify({'success': False, 'error': 'Type invalide'}), 400
+
+        # Format date FR : "29 avril 2026"
+        date_obj = datetime.strptime(date_signature, '%Y-%m-%d')
+        date_fr = f"{date_obj.day} {MOIS_FR[date_obj.month - 1]} {date_obj.year}"
+
+        nom_complet = f"{prenom.capitalize()} {nom}"
+
+        drive, docs = get_drive_docs_services()
+
+        # Trouver/creer dossier vendeur + sous-dossier Contrats
+        vendeur_folder_id = find_or_create_folder(drive, f"{prenom.capitalize()} {nom}", VENDEURS_PARENT_ID)
+        contrats_folder_id = find_or_create_folder(drive, 'Contrats', vendeur_folder_id)
+
+        liens_pdf = []
+
+        for nom_template, template_id in templates:
+            # 1. Copier le template Google Doc
+            copy = drive.files().copy(
+                fileId=template_id,
+                body={'name': f'_temp_{nom_template}_{nom}'},
+                supportsAllDrives=True
+            ).execute()
+            copy_id = copy['id']
+
+            try:
+                # 2. Remplacer les marqueurs
+                replacements = [
+                    {'replaceAllText': {'containsText': {'text': '[[CIVILITE]]', 'matchCase': True}, 'replaceText': civilite}},
+                    {'replaceAllText': {'containsText': {'text': '[[PRENOM_NOM]]', 'matchCase': True}, 'replaceText': nom_complet}},
+                    {'replaceAllText': {'containsText': {'text': '[[ENTREPRISE]]', 'matchCase': True}, 'replaceText': entreprise}},
+                    {'replaceAllText': {'containsText': {'text': '[[ADRESSE]]', 'matchCase': True}, 'replaceText': adresse or ''}},
+                    {'replaceAllText': {'containsText': {'text': '[[SIREN]]', 'matchCase': True}, 'replaceText': siren}},
+                    {'replaceAllText': {'containsText': {'text': '[[DATE]]', 'matchCase': True}, 'replaceText': date_fr}},
+                ]
+                docs.documents().batchUpdate(documentId=copy_id, body={'requests': replacements}).execute()
+
+                # 3. Export PDF
+                pdf_bytes = drive.files().export(fileId=copy_id, mimeType='application/pdf').execute()
+
+                # 4. Upload PDF dans Contrats/
+                pdf_filename = f"{nom_template} - {prenom.capitalize()} {nom}.pdf"
+                media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype='application/pdf')
+                pdf_file = drive.files().create(
+                    body={'name': pdf_filename, 'parents': [contrats_folder_id]},
+                    media_body=media,
+                    fields='id, webViewLink',
+                    supportsAllDrives=True
+                ).execute()
+
+                liens_pdf.append({'nom': nom_template, 'lien': pdf_file.get('webViewLink', '')})
+                print(f'[CONTRATS] PDF cree: {pdf_filename}')
+
+            finally:
+                # 5. Cleanup : supprimer la copie temporaire
+                try:
+                    drive.files().delete(fileId=copy_id, supportsAllDrives=True).execute()
+                except Exception as cleanup_err:
+                    print(f'[CONTRATS] Cleanup warning: {cleanup_err}')
+
+        # 6. Log Sheet CONTRATS_GENERES (best effort)
+        try:
+            sh = get_sheets_client().open_by_key(SUIVI_VENTES_SHEET_ID)
+            ws = sh.worksheet('CONTRATS_GENERES')
+            liens_str = ' | '.join([f"{l['nom']}: {l['lien']}" for l in liens_pdf])
+            ws.append_row([
+                datetime.now().strftime('%d/%m/%Y %H:%M'),
+                type_contrat, civilite, prenom.capitalize(), nom, entreprise,
+                siren, email_signataire, date_fr, liens_str
+            ])
+        except Exception as sheet_err:
+            print(f'[CONTRATS] Sheet log warning: {sheet_err}')
+
+        # 7. Mail a johan.mallet@liliwatt.fr
+        token = get_zoho_token()
+        if token:
+            docs_links = ''.join([
+                f'<tr><td style="padding:8px 0;"><a href="{l["lien"]}" style="color:#7c3aed;font-weight:600;text-decoration:none;font-size:14px;">📄 {l["nom"]}</a></td></tr>'
+                for l in liens_pdf
+            ])
+            html_mail = f'''<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">
+<div style="background:linear-gradient(135deg,#7c3aed,#d946ef);padding:24px;text-align:center;color:white;border-radius:8px 8px 0 0;">
+<h2 style="margin:0;font-size:20px;">📄 Contrats générés</h2>
+<p style="margin:6px 0 0;font-size:13px;opacity:0.9;">Prêts à envoyer pour signature</p>
+</div>
+<div style="padding:24px;background:#fafafa;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
+<div style="background:white;border-left:3px solid #7c3aed;padding:14px 18px;margin:0 0 16px;border-radius:4px;">
+<p style="margin:0 0 8px;font-weight:700;color:#7c3aed;font-size:13px;">DESTINATAIRE</p>
+<p style="margin:3px 0;color:#374151;font-size:14px;">{civilite} {nom_complet}</p>
+<p style="margin:3px 0;color:#374151;font-size:14px;">Entreprise : {entreprise}</p>
+<p style="margin:3px 0;color:#374151;font-size:14px;">Email : {email_signataire}</p>
+</div>
+<div style="background:white;border-left:3px solid #d946ef;padding:14px 18px;margin:0 0 16px;border-radius:4px;">
+<p style="margin:0 0 8px;font-weight:700;color:#d946ef;font-size:13px;">DOCUMENTS GÉNÉRÉS</p>
+<table style="width:100%;">{docs_links}</table>
+</div>
+<div style="background:#fef3c7;border:1px solid #fbbf24;padding:14px 18px;margin:0 0 16px;border-radius:6px;">
+<p style="margin:0 0 6px;font-weight:700;color:#92400e;font-size:13px;">⚠️ ACTION REQUISE</p>
+<p style="margin:0;color:#92400e;font-size:13px;line-height:1.5;">Cliquer sur chaque lien pour ouvrir le PDF dans Drive, puis cliquer sur l'icône signature 📝 et saisir l'email : <strong>{email_signataire}</strong></p>
+</div>
+<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">
+<p style="margin:0;color:#374151;font-size:14px;font-weight:600;">Bien cordialement,</p>
+<p style="margin:4px 0 0;color:#1e1b4b;font-size:14px;font-weight:700;">Johan MALLET</p>
+<p style="margin:0;color:#6b7280;font-size:12px;">Directeur Général · LILIWATT</p>
+<p style="margin:0;color:#6b7280;font-size:12px;">📧 johan.mallet@liliwatt.fr</p>
+</div>
+<p style="margin:20px 0 0;color:#9ca3af;font-size:11px;text-align:center;">— Système LILIWATT</p>
+</div>
+</div>'''
+
+            try:
+                account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+                requests.post(
+                    f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+                    headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                    json={
+                        'fromAddress': 'bo@liliwatt.fr',
+                        'toAddress': 'johan.mallet@liliwatt.fr',
+                        'ccAddress': 'bo@liliwatt.fr',
+                        'replyTo': 'johan.mallet@liliwatt.fr',
+                        'subject': f'📄 Contrats générés pour {prenom.capitalize()} {nom} — prêts à signer',
+                        'content': html_mail,
+                        'mailFormat': 'html'
+                    },
+                    timeout=15
+                )
+                print(f'[CONTRATS] Mail envoye a johan.mallet@liliwatt.fr')
+            except Exception as mail_err:
+                print(f'[CONTRATS] Mail warning: {mail_err}')
+
+        return jsonify({'success': True, 'liens': liens_pdf})
+
+    except Exception as e:
+        print(f'[CONTRATS] Erreur: {e}')
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # ===== SUIVI DES VENTES =====
 
 def get_suivi_sheet_id():
