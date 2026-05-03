@@ -1546,54 +1546,53 @@ def contrats_generer():
         liens_pdf = []
 
         for nom_template, template_id in templates:
-            # 1. Copier le template Google Doc
+            # 1. Copier le template Google Doc directement dans Contrats/
+            copy_name = f"{nom_template} - {prenom.capitalize()} {nom}"
             copy = drive.files().copy(
                 fileId=template_id,
-                body={'name': f'_temp_{nom_template}_{nom}'},
-                supportsAllDrives=True
+                body={'name': copy_name, 'parents': [contrats_folder_id]},
+                supportsAllDrives=True,
+                fields='id, webViewLink'
             ).execute()
             copy_id = copy['id']
+            gdoc_link = copy.get('webViewLink', '')
 
-            try:
-                # 2. Remplacer les marqueurs
-                replacements = [
-                    {'replaceAllText': {'containsText': {'text': '[[CIVILITE]]', 'matchCase': True}, 'replaceText': civilite}},
-                    {'replaceAllText': {'containsText': {'text': '[[PRENOM_NOM]]', 'matchCase': True}, 'replaceText': nom_complet}},
-                    {'replaceAllText': {'containsText': {'text': '[[ENTREPRISE]]', 'matchCase': True}, 'replaceText': entreprise}},
-                    {'replaceAllText': {'containsText': {'text': '[[ADRESSE]]', 'matchCase': True}, 'replaceText': adresse or ''}},
-                    {'replaceAllText': {'containsText': {'text': '[[SIREN]]', 'matchCase': True}, 'replaceText': siren}},
-                    {'replaceAllText': {'containsText': {'text': '[[DATE]]', 'matchCase': True}, 'replaceText': date_fr}},
-                ]
-                docs.documents().batchUpdate(documentId=copy_id, body={'requests': replacements}).execute()
+            # 2. Remplacer les marqueurs
+            replacements = [
+                {'replaceAllText': {'containsText': {'text': '[[CIVILITE]]', 'matchCase': True}, 'replaceText': civilite}},
+                {'replaceAllText': {'containsText': {'text': '[[PRENOM_NOM]]', 'matchCase': True}, 'replaceText': nom_complet}},
+                {'replaceAllText': {'containsText': {'text': '[[ENTREPRISE]]', 'matchCase': True}, 'replaceText': entreprise}},
+                {'replaceAllText': {'containsText': {'text': '[[ADRESSE]]', 'matchCase': True}, 'replaceText': adresse or ''}},
+                {'replaceAllText': {'containsText': {'text': '[[SIREN]]', 'matchCase': True}, 'replaceText': siren}},
+                {'replaceAllText': {'containsText': {'text': '[[DATE]]', 'matchCase': True}, 'replaceText': date_fr}},
+            ]
+            docs.documents().batchUpdate(documentId=copy_id, body={'requests': replacements}).execute()
 
-                # 3. Export PDF
-                pdf_bytes = drive.files().export(fileId=copy_id, mimeType='application/pdf').execute()
+            # 3. Export PDF
+            pdf_bytes = drive.files().export(fileId=copy_id, mimeType='application/pdf').execute()
 
-                # 4. Upload PDF dans Contrats/
-                pdf_filename = f"{nom_template} - {prenom.capitalize()} {nom}.pdf"
-                media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype='application/pdf')
-                pdf_file = drive.files().create(
-                    body={'name': pdf_filename, 'parents': [contrats_folder_id]},
-                    media_body=media,
-                    fields='id, webViewLink',
-                    supportsAllDrives=True
-                ).execute()
+            # 4. Upload PDF dans Contrats/
+            pdf_filename = f"{nom_template} - {prenom.capitalize()} {nom}.pdf"
+            media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype='application/pdf')
+            pdf_file = drive.files().create(
+                body={'name': pdf_filename, 'parents': [contrats_folder_id]},
+                media_body=media,
+                fields='id, webViewLink',
+                supportsAllDrives=True
+            ).execute()
 
-                liens_pdf.append({'nom': nom_template, 'lien': pdf_file.get('webViewLink', '')})
-                print(f'[CONTRATS] PDF cree: {pdf_filename}')
-
-            finally:
-                # 5. Cleanup : supprimer la copie temporaire
-                try:
-                    drive.files().delete(fileId=copy_id, supportsAllDrives=True).execute()
-                except Exception as cleanup_err:
-                    print(f'[CONTRATS] Cleanup warning: {cleanup_err}')
+            liens_pdf.append({
+                'nom': nom_template,
+                'lien_pdf': pdf_file.get('webViewLink', ''),
+                'lien_gdoc': gdoc_link
+            })
+            print(f'[CONTRATS] PDF + Google Doc crees: {copy_name}')
 
         # 6. Log Sheet CONTRATS_GENERES (best effort)
         try:
             sh = get_sheets_client().open_by_key(SUIVI_VENTES_SHEET_ID)
             ws = sh.worksheet('CONTRATS_GENERES')
-            liens_str = ' | '.join([f"{l['nom']}: {l['lien']}" for l in liens_pdf])
+            liens_str = ' | '.join([f"{l['nom']}: GDoc={l['lien_gdoc']} | PDF={l['lien_pdf']}" for l in liens_pdf])
             ws.append_row([
                 datetime.now().strftime('%d/%m/%Y %H:%M'),
                 type_contrat, civilite, prenom.capitalize(), nom, entreprise,
@@ -1606,7 +1605,7 @@ def contrats_generer():
         token = get_zoho_token()
         if token:
             docs_links = ''.join([
-                f'<tr><td style="padding:8px 0;"><a href="{l["lien"]}" style="color:#7c3aed;font-weight:600;text-decoration:none;font-size:14px;">📄 {l["nom"]}</a></td></tr>'
+                f'<tr><td style="padding:8px 0 4px;"><p style="margin:0 0 4px;font-weight:700;color:#1e1b4b;font-size:14px;">{l["nom"]}</p><p style="margin:0 0 4px;"><a href="{l["lien_gdoc"]}" style="color:#7c3aed;font-weight:600;text-decoration:none;font-size:13px;">🖋️ Signer le document (Google Doc)</a></p><p style="margin:0 0 8px;"><a href="{l["lien_pdf"]}" style="color:#6b7280;font-weight:500;text-decoration:none;font-size:12px;">📄 PDF (archive)</a></p></td></tr>'
                 for l in liens_pdf
             ])
             html_mail = f'''<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">
@@ -1627,7 +1626,7 @@ def contrats_generer():
 </div>
 <div style="background:#fef3c7;border:1px solid #fbbf24;padding:14px 18px;margin:0 0 16px;border-radius:6px;">
 <p style="margin:0 0 6px;font-weight:700;color:#92400e;font-size:13px;">⚠️ ACTION REQUISE</p>
-<p style="margin:0;color:#92400e;font-size:13px;line-height:1.5;">Cliquer sur chaque lien pour ouvrir le PDF dans Drive, puis cliquer sur l'icône signature 📝 et saisir l'email : <strong>{email_signataire}</strong></p>
+<p style="margin:0;color:#92400e;font-size:13px;line-height:1.5;">Cliquer sur 'Signer le document' pour ouvrir le Google Doc, puis menu Outils &gt; Signatures électroniques &gt; envoyer au signataire : <strong>{email_signataire}</strong></p>
 </div>
 <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">
 <p style="margin:0;color:#374151;font-size:14px;font-weight:600;">Bien cordialement,</p>
