@@ -54,6 +54,7 @@
     <div class="tab" onclick="showTab('recrutement')">👥 Recrutement</div>
     <div class="tab" onclick="showTab('ventes')">💰 Suivi ventes</div>
     <div class="tab" onclick="showTab('premium')">💎 Base Premium</div>
+    <div class="tab" onclick="showTab('derogation')">🔍 Dérogation</div>
   </div>
 
   <!-- Créer -->
@@ -375,6 +376,34 @@
       <div id="bp_pag" style="display:flex;justify-content:center;gap:8px;margin-top:10px;"></div>
     </div>
   </div>
+
+  <!-- Dérogation -->
+  <div class="panel" id="tab-derogation">
+    <div style="max-width:600px;margin:30px auto;">
+      <h2 style="color:#1e1b4b;margin-bottom:8px;">🔍 Demande de dérogation OHM Énergie</h2>
+      <p style="color:#6b7280;font-size:14px;margin-bottom:24px;">
+        À utiliser quand un client est mal scoré et que tu veux solliciter ta référente OHM avant de répondre au vendeur.
+      </p>
+      <div style="background:white;padding:24px;border-radius:12px;border:1px solid #e5e7eb;">
+        <input type="text" id="derog-nom" placeholder="Nom de l'entreprise" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
+        <input type="text" id="derog-siren" placeholder="SIREN (9 chiffres)" maxlength="9" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
+        <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px;">Date de démarrage du contrat</label>
+        <input type="date" id="derog-date" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
+        <select id="derog-energie" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;">
+          <option value="">Énergie</option>
+          <option value="Électricité">Électricité</option>
+          <option value="Gaz">Gaz</option>
+          <option value="Dual (Élec + Gaz)">Dual (Élec + Gaz)</option>
+        </select>
+        <input type="number" id="derog-volume" placeholder="Volume annuel (kWh)" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
+        <input type="text" id="derog-score" placeholder="Score (ex: 38/100)" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
+        <textarea id="derog-commentaire" rows="4" placeholder="Commentaire / contexte pour Aya (optionnel)" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;resize:vertical;box-sizing:border-box;"></textarea>
+        <button onclick="soumettreDerogation()" id="btn-derog" style="width:100%;padding:12px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">
+          📧 Envoyer la demande
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Modal Référent -->
@@ -395,7 +424,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','premium'];
+    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -1483,6 +1512,48 @@ async function genContrat(email) {
     }
   } catch(e) { alert('❌ Erreur réseau'); }
   btn.disabled = false; btn.textContent = '📄 Contrats';
+}
+
+async function soumettreDerogation() {
+  const nom = document.getElementById('derog-nom').value.trim();
+  const siren = document.getElementById('derog-siren').value.trim();
+  const date = document.getElementById('derog-date').value;
+  const energie = document.getElementById('derog-energie').value;
+  const volume = document.getElementById('derog-volume').value;
+  const score = document.getElementById('derog-score').value.trim();
+  const commentaire = document.getElementById('derog-commentaire').value.trim();
+
+  if (!nom || !siren || !date || !energie || !volume || !score) {
+    alert('Merci de remplir tous les champs obligatoires');
+    return;
+  }
+
+  const btn = document.getElementById('btn-derog');
+  btn.disabled = true; btn.textContent = '⏳ Envoi en cours...';
+
+  try {
+    const r = await fetch('/api/derogation/soumettre', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nom, siren, date, energie, volume, score, commentaire })
+    });
+    const data = await r.json();
+    if (data.success) {
+      alert('✅ Demande envoyée à OHM Énergie');
+      document.getElementById('derog-nom').value = '';
+      document.getElementById('derog-siren').value = '';
+      document.getElementById('derog-date').value = '';
+      document.getElementById('derog-energie').value = '';
+      document.getElementById('derog-volume').value = '';
+      document.getElementById('derog-score').value = '';
+      document.getElementById('derog-commentaire').value = '';
+    } else {
+      alert('❌ Erreur : ' + (data.error || 'inconnue'));
+    }
+  } catch (e) {
+    alert('❌ Erreur réseau : ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = '📧 Envoyer la demande';
 }
 </script>
 </body>

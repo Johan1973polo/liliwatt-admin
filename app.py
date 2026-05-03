@@ -1345,8 +1345,110 @@ def delete_phase1_profil(row_id):
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
 
-# ===== SUIVI DES VENTES =====
+# ===== DEROGATION OHM =====
 SUIVI_VENTES_SHEET_ID = os.environ.get('SUIVI_VENTES_SHEET_ID', '1Ld1Zl3qVzdVZsyksdfxYfL1LiVcFd5BEbrPV6NYLfcA')
+
+@app.route('/api/derogation/soumettre', methods=['POST'])
+@login_required
+def derogation_soumettre():
+    try:
+        data = request.json
+        nom = data.get('nom', '').strip()
+        siren = data.get('siren', '').strip()
+        date_demarrage = data.get('date', '').strip()
+        energie = data.get('energie', '').strip()
+        volume = data.get('volume', '').strip()
+        score = data.get('score', '').strip()
+        commentaire = data.get('commentaire', '').strip()
+
+        if not all([nom, siren, date_demarrage, energie, volume, score]):
+            return jsonify({'success': False, 'error': 'Champs manquants'}), 400
+
+        date_obj = datetime.strptime(date_demarrage, '%Y-%m-%d')
+        date_fr = date_obj.strftime('%d/%m/%Y')
+        date_soumission = datetime.now().strftime('%d/%m/%Y %H:%M')
+
+        # 1. Append Sheet DEROGATIONS (best effort)
+        try:
+            sh = get_sheets_client().open_by_key(SUIVI_VENTES_SHEET_ID)
+            ws = sh.worksheet('DEROGATIONS')
+            ws.append_row([
+                date_soumission, nom, siren, date_fr, energie,
+                volume, score, commentaire, 'En attente'
+            ])
+            print(f'[DEROGATION] Sheet OK — {nom} ({siren})')
+        except Exception as e:
+            print(f'[DEROGATION] Erreur Sheet: {e}')
+
+        # 2. Mail Zoho a bo@liliwatt.fr
+        token = get_zoho_token()
+        if not token:
+            return jsonify({'success': False, 'error': 'Token Zoho indisponible'}), 500
+
+        commentaire_block = f'<div style="background:#fef3c7;border:1px solid #fbbf24;padding:14px 18px;margin:14px 0;border-radius:6px;"><p style="margin:0 0 6px;font-weight:700;color:#92400e;font-size:13px;">COMMENTAIRE</p><p style="margin:0;color:#92400e;font-size:13px;line-height:1.5;">{commentaire}</p></div>' if commentaire else ''
+
+        html_body = f'''<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">
+<div style="background:linear-gradient(135deg,#7c3aed,#d946ef);padding:24px;text-align:center;color:white;border-radius:8px 8px 0 0;">
+<h2 style="margin:0;font-size:20px;">🔍 Demande de dérogation</h2>
+<p style="margin:6px 0 0;font-size:13px;opacity:0.9;">Score client en dessous du seuil</p>
+</div>
+<div style="padding:24px;background:#fafafa;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
+<p style="margin:0 0 16px;color:#374151;">Bonjour Aya,</p>
+<p style="margin:0 0 20px;color:#374151;">Suite à un score client défavorable, nous demandons une dérogation pour le dossier suivant :</p>
+<div style="background:white;border-left:3px solid #7c3aed;padding:14px 18px;margin:14px 0;border-radius:4px;">
+<p style="margin:0 0 8px;font-weight:700;color:#7c3aed;font-size:13px;">ENTREPRISE</p>
+<p style="margin:3px 0;color:#374151;font-size:14px;">Nom : <strong>{nom}</strong></p>
+<p style="margin:3px 0;color:#374151;font-size:14px;">SIREN : {siren}</p>
+<p style="margin:3px 0;color:#374151;font-size:14px;">Date de démarrage : {date_fr}</p>
+</div>
+<div style="background:white;border-left:3px solid #d946ef;padding:14px 18px;margin:14px 0;border-radius:4px;">
+<p style="margin:0 0 8px;font-weight:700;color:#d946ef;font-size:13px;">CONTRAT</p>
+<p style="margin:3px 0;color:#374151;font-size:14px;">Énergie : <strong>{energie}</strong></p>
+<p style="margin:3px 0;color:#374151;font-size:14px;">Volume annuel : {volume} kWh</p>
+<p style="margin:3px 0;color:#374151;font-size:14px;">Score : {score}</p>
+</div>
+{commentaire_block}
+<p style="margin:20px 0 0;color:#374151;">Merci de revenir vers moi pour validation ou refus.</p>
+<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">
+<p style="margin:0;color:#374151;font-size:14px;font-weight:600;">Bien cordialement,</p>
+<p style="margin:4px 0 0;color:#1e1b4b;font-size:14px;font-weight:700;">Johan MALLET</p>
+<p style="margin:0;color:#6b7280;font-size:12px;">Directeur Général · LILIWATT</p>
+<p style="margin:0;color:#6b7280;font-size:12px;">📧 johan.mallet@liliwatt.fr</p>
+</div>
+<p style="margin:20px 0 0;color:#9ca3af;font-size:11px;text-align:center;">— Système LILIWATT</p>
+</div>
+</div>'''
+
+        account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+        resp = requests.post(
+            f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+            headers={
+                'Authorization': f'Zoho-oauthtoken {token}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'fromAddress': 'bo@liliwatt.fr',
+                'toAddress': 'bo@liliwatt.fr',
+                'replyTo': 'johan.mallet@liliwatt.fr',
+                'subject': f'🔍 Demande de dérogation — {nom} (SIREN {siren})',
+                'content': html_body,
+                'mailFormat': 'html'
+            },
+            timeout=15
+        )
+
+        if resp.status_code not in (200, 201):
+            print(f'[DEROGATION] Mail erreur Zoho: {resp.status_code} {resp.text}')
+            return jsonify({'success': False, 'error': 'Envoi mail echec'}), 500
+
+        print(f'[DEROGATION] Mail OK — {nom} ({siren})')
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print(f'[DEROGATION] Erreur: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ===== SUIVI DES VENTES =====
 
 def get_suivi_sheet_id():
     return SUIVI_VENTES_SHEET_ID
