@@ -2664,16 +2664,18 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
     parr_url = PARRAINAGE_URL or '#'
     titre_html = (f'<div style="font-size:24px;font-weight:800;color:#1e1b4b;line-height:1.2;margin:16px 0 0;">'
                   f'{html_mod.escape(titre)}</div>') if titre else ''
-    # CTA centré en bas de BLOC 5 (format Newsletter uniquement)
+    # CTA contourné centré en bas de BLOC 5 (format Newsletter uniquement)
+    # Table-border pour Outlook (pas de border CSS sur le <a>)
     cta_html = ''
     if fmt == 'newsletter' and cta_texte and cta_lien:
         cta_html = (
-            f'<div style="text-align:center;margin-top:32px;">'
+            f'<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin-top:32px;">'
+            f'<tr><td style="border:2px solid #7c3aed;border-radius:8px;">'
             f'<a href="{html_mod.escape(cta_lien)}" '
-            f'style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;'
-            f'font-weight:700;font-size:14px;padding:14px 32px;border-radius:8px;" '
+            f'style="display:inline-block;padding:14px 32px;color:#7c3aed;background:transparent;'
+            f'text-decoration:none;font-weight:700;font-size:14px;border-radius:6px;" '
             f'target="_blank">{html_mod.escape(cta_texte)}</a>'
-            f'</div>'
+            f'</td></tr></table>'
         )
 
     salutation = f'Bonjour&nbsp;{html_mod.escape(prenom)},' if prenom else 'Bonjour,'
