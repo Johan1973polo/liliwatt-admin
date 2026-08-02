@@ -3,9 +3,43 @@ import os
 import requests
 import json
 import uuid
+import re
+import hmac
+import hashlib
+import html as html_mod
+import threading
+import time
 from functools import wraps
 from datetime import datetime, timedelta
 from google_meet_service import create_referent_meet_room
+
+# ── Newsletter : constantes ────────────────────────────────────────────────
+MENTIONS_LEGALES = {
+    "raison_sociale": "LILISTRAT STRATÉGIE SAS",
+    "marque":         "LILIWATT",
+    "adresse":        "59 rue de Ponthieu, Bureau 326, 75008 Paris",
+    "email":          "contact@liliwatt.fr",
+    "telephone":      "01 84 16 08 56",
+    "forme":          "au capital de 10 000 €",
+    "siren":          "SIREN 103 572 947",
+}
+
+SOCIAL_LINKS = [
+    ("linkedin",  "https://www.linkedin.com/company/liliwatt/",              "linkedin.png"),
+    ("instagram", "https://www.instagram.com/liliwatt/",                     "instagram.png"),
+    ("x",         "https://x.com/liliwattfrance",                            "x.png"),
+    ("youtube",   "https://www.youtube.com/@liliwattfrance",                 "youtube.png"),
+    ("facebook",  "https://www.facebook.com/profile.php?id=61577269553280",  "facebook.png"),
+]
+
+NL_ASSETS_BASE = "https://liliwatt-admin.onrender.com/static/newsletter"
+GOOGLE_AVIS_URL = os.environ.get("GOOGLE_AVIS_URL", "")
+PARRAINAGE_URL  = os.environ.get("PARRAINAGE_URL", "")
+NEWSLETTER_SECRET = os.environ.get("NEWSLETTER_SECRET", "nl-liliwatt-secret-2026")
+NL_DELAI_S = 3
+NL_LOT = 50
+
+_nl_status = {"en_cours": False, "total": 0, "envoyes": 0, "erreurs": [], "objet": ""}
 
 def parse_float(val):
     if not val:
@@ -17,6 +51,7 @@ def parse_float(val):
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'liliwatt-admin-secret-2026')
+app.json.ensure_ascii = False
 
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
 ZOHO_CLIENT_ID = os.environ.get('ZOHO_CLIENT_ID', '')
@@ -2500,6 +2535,457 @@ def supprimer_vendeur():
     orphelins = orpheliner_vendeurs(email)
 
     return jsonify({'success': True, 'email': email, 'orphelins': orphelins})
+
+
+# ===== NEWSLETTER =====
+
+def _nl_unsub_token(email):
+    """HMAC token pour désinscription (32 chars)."""
+    return hmac.new(NEWSLETTER_SECRET.encode(), email.strip().lower().encode(), hashlib.sha256).hexdigest()[:32]
+
+def _nl_get_or_create_sheet(tab_name, headers):
+    """Retourne un worksheet, le crée s'il n'existe pas."""
+    gc = get_sheets_client()
+    sh = gc.open_by_key(SUIVI_VENTES_SHEET_ID)
+    try:
+        ws = sh.worksheet(tab_name)
+    except Exception:
+        ws = sh.add_worksheet(title=tab_name, rows=500, cols=len(headers))
+        ws.update('A1:' + chr(64 + len(headers)) + '1', [headers])
+    return ws
+
+def _nl_get_unsub_set():
+    """Retourne le set des emails désinscrits."""
+    try:
+        ws = _nl_get_or_create_sheet('NEWSLETTER_UNSUB', ['EMAIL', 'DATE', 'ORIGINE'])
+        rows = ws.get_all_values()
+        return {r[0].strip().lower() for r in rows[1:] if r and r[0]}
+    except Exception as e:
+        print(f"⚠️ Erreur lecture NEWSLETTER_UNSUB: {e}")
+        return set()
+
+def _nl_parse_balises(text):
+    """Parse [bouton]texte|url[/bouton] et [lien]texte|url[/lien] dans du HTML échappé."""
+    # Boutons
+    def repl_bouton(m):
+        parts = m.group(1).split('|', 1)
+        if len(parts) != 2:
+            return m.group(0)
+        txt, url = parts
+        return (f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">'
+                f'<tr><td>'
+                f'<a href="{url.strip()}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:15px;padding:14px 28px;border-radius:8px;" target="_blank">{txt.strip()}</a>'
+                f'</td></tr></table>')
+    text = re.sub(r'\[bouton\](.*?)\[/bouton\]', repl_bouton, text, flags=re.DOTALL)
+    # Supprimer les <br> immédiatement avant/après les wrappers bouton
+    text = re.sub(r'(<br>)+(<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">)', r'\2', text)
+    text = re.sub(r'(</table>)(<br>)+', r'\1', text)
+    # Liens
+    def repl_lien(m):
+        parts = m.group(1).split('|', 1)
+        if len(parts) != 2:
+            return m.group(0)
+        txt, url = parts
+        return f'<a href="{url.strip()}" style="color:#7c3aed;text-decoration:underline;font-weight:600;" target="_blank">{txt.strip()}</a>'
+    text = re.sub(r'\[lien\](.*?)\[/lien\]', repl_lien, text, flags=re.DOTALL)
+    # Raccourcis
+    if GOOGLE_AVIS_URL:
+        text = text.replace('[avis]', GOOGLE_AVIS_URL)
+    if PARRAINAGE_URL:
+        text = text.replace('[parrainage]', PARRAINAGE_URL)
+    return text
+
+def _nl_build_html(objet, titre, body_html, unsub_url):
+    """Construit le template email newsletter complet — 9 blocs fidèles à la maquette."""
+    ml = MENTIONS_LEGALES
+    B = NL_ASSETS_BASE
+    avis_url = GOOGLE_AVIS_URL or '#'
+    parr_url = PARRAINAGE_URL or '#'
+    titre_html = (f'<div style="font-size:24px;font-weight:800;color:#1e1b4b;line-height:1.2;margin:16px 0 0;">'
+                  f'{html_mod.escape(titre)}</div>') if titre else ''
+
+    def _social_cells(spacing=4):
+        c = ''
+        for name, url, img in SOCIAL_LINKS:
+            c += (f'<td style="padding:0 {spacing}px;">'
+                  f'<a href="{url}" title="{name.capitalize()}" target="_blank">'
+                  f'<img src="{B}/{img}" alt="{name.capitalize()}" width="32" height="32" '
+                  f'style="display:block;border:0;border-radius:50%;" /></a></td>')
+        return c
+
+    social_hdr = f'<table role="presentation" cellpadding="0" cellspacing="0" align="right"><tr>{_social_cells()}</tr></table>'
+    social_ftr = f'<table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>{_social_cells()}</tr></table>'
+
+    parts = []
+    parts.append(f'''<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;">
+<!-- BLOC 1 : Preheader -->
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">Newsletter LILIWATT &mdash; {objet}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f3ff;font-family:Inter,Arial,sans-serif;color:#241f47;">
+<tr><td style="background:#ffffff;padding:8px 0;">
+  <table role="presentation" width="640" cellpadding="0" cellspacing="0" align="center"><tr>
+    <td style="font-size:12px;color:#6b7280;padding:0 20px;text-align:center;">Newsletter &#8211; Ao&#251;t 2026</td>
+  </tr></table>
+</td></tr>''')
+
+    parts.append(f'''<!-- BLOC 2 : Bandeau navy -->
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#1e1b4b;">
+  <tr><td style="padding:18px 28px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="vertical-align:middle;">
+        <img src="{B}/logo_blanc.png" alt="LILIWATT" width="140" height="36" style="display:block;border:0;" />
+      </td>
+      <td align="right" style="vertical-align:middle;">{social_hdr}</td>
+    </tr></table>
+  </td></tr>
+</table>
+</td></tr>''')
+
+    parts.append(f'''<!-- BLOC 3 : Hero -->
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0">
+  <tr><td bgcolor="#4c1d95">
+    <img src="{B}/hero.jpg" alt="L&#39;&#233;nergie &#233;volue, nous vous accompagnons" width="640" style="display:block;width:100%;max-width:640px;height:auto;border:0;" />
+  </td></tr>
+</table>
+</td></tr>''')
+
+    parts.append(f'''<!-- BLOC 4 : Salutation -->
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;">
+  <tr><td style="padding:28px 40px 12px;">
+    <div style="font-size:16px;font-weight:700;color:#1e1b4b;margin-bottom:10px;">Bonjour,</div>
+    <div style="font-size:14px;color:#4b5563;line-height:1.65;">Votre newsletter mensuelle avec les derni&#232;res actualit&#233;s du march&#233; de l&#39;&#233;nergie, nos conseils et nos services pour vous accompagner au mieux.</div>
+  </td></tr>
+</table>
+</td></tr>''')
+
+    parts.append(f'''<!-- BLOC 5 : Contenu editable -->
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;">
+  <tr><td style="padding:8px 40px 12px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f3ff;border-radius:12px;">
+      <tr><td style="padding:32px;">
+        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td style="vertical-align:top;width:56px;">
+            <img src="{B}/icone_actu.png" alt="" width="56" height="56" style="display:block;border:0;border-radius:50%;" />
+          </td>
+          <td style="padding-left:16px;vertical-align:top;">
+            <div style="font-size:13px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:6px;">ACTUALIT&#201; DU MOIS</div>
+          </td>
+        </tr></table>
+        {titre_html}
+        <div style="font-size:14px;line-height:1.65;color:#241f47;margin-top:16px;">{body_html}</div>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</td></tr>''')
+
+    parts.append(f'''<!-- BLOC 6 : Double colonne Avis + Parrainage -->
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;">
+  <tr><td style="padding:12px 32px 28px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="50%" style="vertical-align:top;padding:0 8px 0 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f2ff;border-radius:12px;">
+          <tr><td style="padding:22px 18px;">
+            <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+              <td style="vertical-align:middle;width:40px;"><img src="{B}/icone_avis.png" alt="" width="32" height="32" style="display:block;border:0;" /></td>
+              <td style="padding-left:10px;font-size:12px;font-weight:800;letter-spacing:1px;color:#1e1b4b;text-transform:uppercase;vertical-align:middle;">Votre avis nous est important</td>
+            </tr></table>
+            <div style="font-size:12px;color:#5b5486;line-height:1.5;margin:10px 0 14px;">Vous &#234;tes satisfait ? Un avis Google nous aide beaucoup !</div>
+            <a href="{avis_url}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;padding:12px 22px;border-radius:8px;white-space:nowrap;" target="_blank">Laisser un avis Google</a>
+          </td></tr>
+        </table>
+      </td>
+      <td width="50%" style="vertical-align:top;padding:0 0 0 8px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f2ff;border-radius:12px;">
+          <tr><td style="padding:22px 18px;">
+            <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+              <td style="vertical-align:middle;width:40px;"><img src="{B}/icone_parrainage.png" alt="" width="32" height="32" style="display:block;border:0;" /></td>
+              <td style="padding-left:10px;font-size:12px;font-weight:800;letter-spacing:1px;color:#1e1b4b;text-transform:uppercase;vertical-align:middle;">Programme parrainage</td>
+            </tr></table>
+            <div style="font-size:12px;color:#5b5486;line-height:1.5;margin:10px 0 14px;">Recommandez une entreprise, gagnez jusqu&#39;&#224; 550&#8364; en cartes Amazon !</div>
+            <a href="{parr_url}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;padding:12px 22px;border-radius:8px;white-space:nowrap;" target="_blank">Je parraine une entreprise</a>
+          </td></tr>
+        </table>
+      </td>
+    </tr></table>
+  </td></tr>
+</table>
+</td></tr>''')
+
+    parts.append(f'''<!-- BLOC 7 : Signature / Contact -->
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;">
+  <tr><td style="padding:24px 32px 28px;border-top:1px solid #ece7fb;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f3ff;border-radius:12px;">
+      <tr><td style="padding:20px 22px 10px;">
+        <span style="font-family:Syne,Inter,Arial,sans-serif;font-size:20px;font-weight:700;color:#7c3aed;font-style:italic;">Besoin d&#39;un conseil&nbsp;?</span>
+      </td></tr>
+      <tr><td style="padding:0 22px 22px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td style="vertical-align:middle;width:80px;">
+            <img src="{B}/conseillere.png" alt="Conseill&#232;re" width="80" height="80" style="display:block;border:0;border-radius:50%;" />
+          </td>
+          <td style="padding-left:16px;vertical-align:middle;font-size:13px;line-height:1.5;">
+            <strong style="color:#1e1b4b;">Notre &#233;quipe est &#224; votre &#233;coute.</strong><br>
+            <span style="color:#5b5486;font-size:12px;">Une question sur votre contrat ? Contactez-nous.</span>
+          </td>
+          <td style="vertical-align:middle;padding-left:16px;text-align:right;white-space:nowrap;">
+            <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#1e1b4b;text-transform:uppercase;margin-bottom:6px;">Service Relations Client</div>
+            <a href="mailto:{ml['email']}" style="color:#7c3aed;text-decoration:none;font-weight:600;font-size:13px;">{ml['email']}</a><br>
+            <span style="color:#1e1b4b;font-weight:600;font-size:13px;">{ml['telephone']}</span>
+          </td>
+        </tr></table>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</td></tr>''')
+
+    parts.append(f'''<!-- BLOC 8 : Footer navy -->
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#1e1b4b;">
+  <tr><td style="padding:28px 30px 12px;text-align:center;">
+    <img src="{B}/logo_blanc.png" alt="LILIWATT" width="120" height="30" style="display:inline-block;border:0;margin-bottom:16px;" /><br>
+    {social_ftr}
+  </td></tr>
+  <tr><td style="padding:16px 30px 8px;text-align:center;">
+    <a href="https://liliwatt.fr/nos-offres" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">Nos offres</a><span style="color:#4c4a7a;margin:0 8px;">|</span><a href="https://liliwatt.fr/qui-sommes-nous" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">Qui sommes-nous&nbsp;?</a><span style="color:#4c4a7a;margin:0 8px;">|</span><a href="https://liliwatt.fr/actualites" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">Actualit&#233;s</a><span style="color:#4c4a7a;margin:0 8px;">|</span><a href="https://liliwatt.fr/faq" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">FAQ</a><span style="color:#4c4a7a;margin:0 8px;">|</span><a href="https://liliwatt.fr/contact" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">Contact</a>
+  </td></tr>
+  <tr><td style="padding:8px 30px 20px;text-align:center;font-size:11px;color:#b7aee0;line-height:1.6;">
+    {ml['marque']} &#183; {ml['adresse']} &#183; {ml['email']} &#183; {ml['telephone']}
+  </td></tr>
+</table>
+</td></tr>''')
+
+    parts.append(f'''<!-- BLOC 9 : Mentions legales + desinscription -->
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#f5f3ff;">
+  <tr><td style="padding:16px 30px;text-align:center;font-size:10px;color:#8a83ad;line-height:1.7;">
+    {ml['raison_sociale']} {ml['forme']} &#8211; {ml['siren']}<br>
+    <a href="{unsub_url}" style="color:#7c3aed;text-decoration:underline;font-size:10px;">Se d&#233;sinscrire de cette newsletter</a>
+  </td></tr>
+</table>
+</td></tr>
+
+</table>
+</body></html>''')
+
+    return '\n'.join(parts)
+
+def _nl_send_thread(objet, titre, message, destinataires):
+    """Thread d'envoi échelonné."""
+    global _nl_status
+    _nl_status = {"en_cours": True, "total": len(destinataires), "envoyes": 0, "erreurs": [], "objet": objet}
+    # Préparer le HTML du message
+    escaped = html_mod.escape(message)
+    escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
+    body_html = _nl_parse_balises(escaped)
+    token_zoho = get_zoho_token()
+    account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+    for i, email in enumerate(destinataires):
+        if not _nl_status["en_cours"]:
+            break
+        unsub_token = _nl_unsub_token(email)
+        base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://liliwatt-admin.onrender.com')
+        unsub_url = f"{base_url}/newsletter/unsubscribe?email={email}&token={unsub_token}"
+        full_html = _nl_build_html(objet, titre, body_html, unsub_url)
+        try:
+            # Renouveler le token tous les 40 envois
+            if i > 0 and i % 40 == 0:
+                token_zoho = get_zoho_token()
+            r = requests.post(
+                f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+                headers={'Authorization': f'Zoho-oauthtoken {token_zoho}', 'Content-Type': 'application/json'},
+                json={'fromAddress': 'contact@liliwatt.fr', 'toAddress': email,
+                      'subject': objet, 'content': full_html, 'mailFormat': 'html'},
+                timeout=15
+            )
+            if r.status_code >= 400:
+                _nl_status["erreurs"].append(email)
+                print(f"❌ Newsletter → {email}: HTTP {r.status_code}")
+            else:
+                _nl_status["envoyes"] += 1
+                print(f"✅ Newsletter → {email} ({_nl_status['envoyes']}/{_nl_status['total']})")
+        except Exception as e:
+            _nl_status["erreurs"].append(email)
+            print(f"❌ Newsletter → {email}: {e}")
+        # Pause
+        if (i + 1) % NL_LOT == 0 and (i + 1) < len(destinataires):
+            print(f"⏸ Pause 60s après {i+1} envois…")
+            time.sleep(60)
+        else:
+            time.sleep(NL_DELAI_S)
+    _nl_status["en_cours"] = False
+    # Log dans NEWSLETTER_LOG
+    try:
+        ws = _nl_get_or_create_sheet('NEWSLETTER_LOG', ['DATE', 'OBJET', 'NB_DEST', 'SUCCES', 'ERREURS'])
+        ws.append_row([
+            datetime.now().strftime('%Y-%m-%d %H:%M'),
+            objet,
+            str(_nl_status["total"]),
+            str(_nl_status["envoyes"]),
+            str(len(_nl_status["erreurs"]))
+        ])
+    except Exception as e:
+        print(f"⚠️ Log newsletter: {e}")
+    print(f"📊 Newsletter terminée: {_nl_status['envoyes']}/{_nl_status['total']} envoyés, {len(_nl_status['erreurs'])} erreurs")
+
+@app.route('/newsletter/send', methods=['POST'])
+@login_required
+def newsletter_send():
+    global _nl_status
+    if _nl_status.get("en_cours"):
+        return jsonify({"success": False, "error": "Une campagne est déjà en cours"}), 409
+    d = request.get_json()
+    objet = (d.get('objet') or '').strip()
+    message = (d.get('message') or '').strip()
+    cible = (d.get('cible') or 'tous').strip()
+    email_unique = (d.get('email_unique') or '').strip().lower()
+    if not objet or not message:
+        return jsonify({"success": False, "error": "Objet et message requis"}), 400
+    # Construire la liste
+    if cible == 'un' and email_unique:
+        destinataires = [email_unique]
+    else:
+        try:
+            gc = get_sheets_client()
+            ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+            rows = ws.get_all_values()
+            emails_raw = set()
+            email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+            for row in rows[1:]:
+                if len(row) > 22:
+                    e = row[22].strip().lower()
+                    if e and email_re.match(e):
+                        emails_raw.add(e)
+            unsub = _nl_get_unsub_set()
+            destinataires = sorted(emails_raw - unsub)
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Erreur lecture Sheet: {e}"}), 500
+    if not destinataires:
+        return jsonify({"success": False, "error": "Aucun destinataire trouvé"}), 400
+    titre = (d.get('titre') or '').strip()
+    t = threading.Thread(target=_nl_send_thread, args=(objet, titre, message, destinataires), daemon=True)
+    t.start()
+    return jsonify({"success": True, "started": True, "total": len(destinataires)})
+
+@app.route('/newsletter/status')
+@login_required
+def newsletter_status():
+    return jsonify(_nl_status)
+
+@app.route('/newsletter/preview', methods=['POST'])
+@login_required
+def newsletter_preview():
+    d = request.get_json()
+    message = (d.get('message') or '').strip()
+    objet = (d.get('objet') or 'Aperçu').strip()
+    titre = (d.get('titre') or '').strip()
+    escaped = html_mod.escape(message)
+    escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
+    body_html = _nl_parse_balises(escaped)
+    preview_html = _nl_build_html(objet, titre, body_html, '#')
+    return jsonify({"success": True, "html": preview_html})
+
+@app.route('/newsletter/test-send', methods=['POST'])
+@login_required
+def newsletter_test_send():
+    d = request.get_json()
+    objet = (d.get('objet') or '').strip()
+    titre = (d.get('titre') or '').strip()
+    message = (d.get('message') or '').strip()
+    test_email = (d.get('test_email') or '').strip().lower()
+    if not objet or not message:
+        return jsonify({"success": False, "error": "Objet et message requis"}), 400
+    if not test_email:
+        return jsonify({"success": False, "error": "Email de test requis"}), 400
+    escaped = html_mod.escape(message)
+    escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
+    body_html = _nl_parse_balises(escaped)
+    full_html = _nl_build_html(objet, titre, body_html, '#')
+    try:
+        token_zoho = get_zoho_token()
+        account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+        r = requests.post(
+            f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+            headers={'Authorization': f'Zoho-oauthtoken {token_zoho}', 'Content-Type': 'application/json'},
+            json={'fromAddress': 'contact@liliwatt.fr', 'toAddress': test_email,
+                  'subject': f'[TEST] {objet}', 'content': full_html, 'mailFormat': 'html'},
+            timeout=15
+        )
+        if r.status_code >= 400:
+            return jsonify({"success": False, "error": f"Zoho HTTP {r.status_code}"}), 500
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/newsletter/unsubscribe')
+def newsletter_unsubscribe():
+    email = (request.args.get('email') or '').strip().lower()
+    token = (request.args.get('token') or '').strip()
+    if not email or not token:
+        return '<h1>Lien invalide</h1>', 400
+    expected = _nl_unsub_token(email)
+    if not hmac.compare_digest(token, expected):
+        return '<h1>Lien invalide</h1>', 400
+    # Ajouter dans NEWSLETTER_UNSUB
+    try:
+        ws = _nl_get_or_create_sheet('NEWSLETTER_UNSUB', ['EMAIL', 'DATE', 'ORIGINE'])
+        existing = {r[0].strip().lower() for r in ws.get_all_values()[1:] if r and r[0]}
+        if email not in existing:
+            ws.append_row([email, datetime.now().strftime('%Y-%m-%d %H:%M'), 'lien_mail'])
+    except Exception as e:
+        print(f"⚠️ Erreur désinscription sheet: {e}")
+    # Notifier contact@liliwatt.fr
+    try:
+        tk = get_zoho_token()
+        if tk:
+            account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+            requests.post(
+                f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+                headers={'Authorization': f'Zoho-oauthtoken {tk}', 'Content-Type': 'application/json'},
+                json={'fromAddress': 'contact@liliwatt.fr', 'toAddress': 'contact@liliwatt.fr',
+                      'subject': f'Désinscription newsletter : {email}',
+                      'content': f'<p>{email} s\'est désinscrit de la newsletter LILIWATT.</p>', 'mailFormat': 'html'},
+                timeout=10
+            )
+    except Exception as e:
+        print(f"⚠️ Notif désinscription: {e}")
+    ml = MENTIONS_LEGALES
+    unsub_page = (
+        '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>D\u00e9sinscription \u2014 LILIWATT</title>'
+        '<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">'
+        '<style>'
+        '*{margin:0;padding:0;box-sizing:border-box}'
+        'body{font-family:Inter,sans-serif;background:#f4f1fb;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}'
+        '.card{background:#fff;border-radius:22px;max-width:480px;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(124,58,237,.12)}'
+        '.head{background:linear-gradient(135deg,#1e1b4b,#7c3aed 60%,#d946ef);padding:28px;text-align:center;color:#fff}'
+        '.head h1{font-family:Syne,sans-serif;font-size:24px;font-weight:800;letter-spacing:1px}'
+        '.head p{font-size:12px;opacity:.8;margin-top:4px;letter-spacing:1px}'
+        '.body{padding:32px 28px;text-align:center}'
+        '.check{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;font-size:32px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px}'
+        '.body h2{font-size:20px;color:#1e1b4b;margin-bottom:10px}'
+        '.body p{color:#6b6591;font-size:14px;line-height:1.6}'
+        '.foot{background:#f4f1fb;padding:16px;text-align:center;font-size:11px;color:#8a83ad}'
+        '</style></head><body>'
+        '<div class="card">'
+        '<div class="head"><h1>LILIWATT</h1><p>NEWSLETTER</p></div>'
+        '<div class="body">'
+        '<div class="check">\u2713</div>'
+        '<h2>D\u00e9sinscription confirm\u00e9e</h2>'
+        '<p>L\'adresse <strong>' + email + '</strong> a \u00e9t\u00e9 retir\u00e9e de notre liste. '
+        'Vous ne recevrez plus de newsletters.</p>'
+        '</div>'
+        '<div class="foot">' + ml['marque'] + ' \u2013 ' + ml['adresse'] + '</div>'
+        '</div></body></html>'
+    )
+    return unsub_page, 200
 
 
 if __name__ == '__main__':

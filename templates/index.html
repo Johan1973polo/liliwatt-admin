@@ -56,6 +56,7 @@
     <div class="tab" onclick="showTab('premium')">💎 Base Premium</div>
     <div class="tab" onclick="showTab('derogation')">🔍 Dérogation</div>
     <div class="tab" onclick="showTab('contrats')">📄 Contrats</div>
+    <div class="tab" onclick="showTab('newsletter')">📩 Newsletter</div>
   </div>
 
   <!-- Créer -->
@@ -449,9 +450,87 @@
       </div>
     </div>
   </div>
+
+  <!-- Newsletter -->
+  <div class="panel" id="tab-newsletter">
+    <div style="max-width:700px;margin:30px auto;">
+      <h2 style="color:#1e1b4b;margin-bottom:8px;">📩 Newsletter clients</h2>
+      <p style="color:#6b7280;font-size:14px;margin-bottom:24px;">Envoyez une newsletter aux clients du suivi des ventes (colonne Email client). Les désinscrits et doublons sont exclus automatiquement.</p>
+      <div style="background:white;padding:24px;border-radius:12px;border:1px solid #e5e7eb;">
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Objet de l'email</label>
+        <input type="text" id="nl-objet" placeholder="Ex : Votre facture a baissé ? Vérifiez !" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
+
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Titre de l'actualité</label>
+        <input type="text" id="nl-titre-actu" placeholder="Ex : Les prix de l'énergie chutent en août" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
+
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Destinataires</label>
+        <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;">
+          <select id="nl-cible" onchange="document.getElementById('nl-email-unique-wrap').style.display=this.value==='un'?'block':'none'" style="padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+            <option value="tous">Tous les clients (dédupliqués)</option>
+            <option value="un">Un client précis</option>
+          </select>
+          <div id="nl-email-unique-wrap" style="display:none;flex:1;">
+            <input type="email" id="nl-email-unique" placeholder="email@client.fr" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />
+          </div>
+        </div>
+
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Message</label>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <button type="button" onclick="nlInsertBalise('bouton')" style="padding:6px 14px;background:#f5f3ff;border:1px solid #d9c8f7;border-radius:6px;font-size:12px;font-weight:600;color:#7c3aed;cursor:pointer;">+ Insérer un bouton</button>
+          <button type="button" onclick="nlInsertBalise('lien')" style="padding:6px 14px;background:#f5f3ff;border:1px solid #d9c8f7;border-radius:6px;font-size:12px;font-weight:600;color:#7c3aed;cursor:pointer;">+ Insérer un lien</button>
+        </div>
+        <textarea id="nl-message" rows="10" placeholder="Bonjour,&#10;&#10;Votre message ici...&#10;&#10;[bouton]Texte du bouton|https://url[/bouton]&#10;[lien]Texte du lien|https://url[/lien]" style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:monospace;resize:vertical;box-sizing:border-box;min-height:180px;"></textarea>
+
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button onclick="nlPreview()" style="flex:1;padding:12px;background:#f5f3ff;border:2px solid #7c3aed;color:#7c3aed;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">👁 Aperçu</button>
+          <button onclick="nlSend()" id="nl-btn-send" style="flex:1;padding:12px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">📧 Envoyer</button>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
+          <input type="email" id="nl-test-email" placeholder="email@test.fr" style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;box-sizing:border-box;" />
+          <button onclick="nlTestSend()" id="nl-btn-test" style="padding:10px 18px;background:#374151;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">🧪 Envoi de test</button>
+        </div>
+        <div id="nl-test-result" style="display:none;margin-top:8px;font-size:12px;padding:8px 12px;border-radius:8px;"></div>
+
+        <!-- Barre de progression -->
+        <div id="nl-progress" style="display:none;margin-top:16px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#6b7280;margin-bottom:4px;">
+            <span id="nl-prog-text">Envoi en cours…</span>
+            <span id="nl-prog-count">0/0</span>
+          </div>
+          <div style="background:#e5e7eb;border-radius:999px;height:10px;overflow:hidden;">
+            <div id="nl-prog-bar" style="height:100%;background:linear-gradient(90deg,#7c3aed,#d946ef);border-radius:999px;width:0%;transition:width .3s;"></div>
+          </div>
+          <div id="nl-prog-errors" style="display:none;margin-top:8px;font-size:12px;color:#dc2626;"></div>
+        </div>
+      </div>
+
+      <!-- Aperçu iframe -->
+      <div id="nl-preview-wrap" style="display:none;margin-top:24px;">
+        <h3 style="color:#1e1b4b;margin-bottom:8px;">Aperçu de l'email</h3>
+        <iframe id="nl-preview-frame" style="width:100%;height:700px;border:2px solid #e9d5ff;border-radius:12px;background:#fff;"></iframe>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Modal Référent -->
+
+<!-- Modal Insertion Balise Newsletter -->
+<div id="nl-modal-balise" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:14px;padding:28px;max-width:420px;width:90%;border:2px solid #7c3aed;">
+    <h3 id="nl-modal-title" style="margin:0 0 16px;color:#1e1b4b;font-size:16px;">Insérer un bouton</h3>
+    <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Texte affiché</label>
+    <input type="text" id="nl-modal-texte" placeholder="Ex : Découvrir l'offre" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
+    <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">URL</label>
+    <input type="url" id="nl-modal-url" placeholder="https://..." style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
+    <div style="display:flex;gap:8px;">
+      <button id="nl-modal-confirm" style="flex:1;padding:10px;background:#7c3aed;color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Insérer</button>
+      <button onclick="document.getElementById('nl-modal-balise').style.display='none'" style="flex:1;padding:10px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Annuler</button>
+    </div>
+  </div>
+</div>
 <div id="modalReferent" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
   <div style="background:white;border-radius:14px;padding:28px;max-width:420px;width:90%;border:2px solid #7c3aed;">
     <h3 id="modalRefTitle" style="margin:0 0 6px;color:#1e1b4b;font-size:16px;"></h3>
@@ -469,7 +548,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats'];
+    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -1676,6 +1755,147 @@ async function genererContrats() {
   }
   btn.disabled = false;
   btn.textContent = '📧 Générer + Envoyer';
+}
+
+// ── Newsletter ──────────────────────────────────────────────────
+let _nlBaliseType = 'bouton';
+function nlInsertBalise(type) {
+  _nlBaliseType = type;
+  document.getElementById('nl-modal-title').textContent = type === 'bouton' ? 'Insérer un bouton' : 'Insérer un lien';
+  document.getElementById('nl-modal-texte').value = '';
+  document.getElementById('nl-modal-url').value = '';
+  const modal = document.getElementById('nl-modal-balise');
+  modal.style.display = 'flex';
+  document.getElementById('nl-modal-confirm').onclick = function() {
+    const txt = document.getElementById('nl-modal-texte').value.trim();
+    const url = document.getElementById('nl-modal-url').value.trim();
+    if (!txt || !url) { alert('Texte et URL requis'); return; }
+    const tag = `[${_nlBaliseType}]${txt}|${url}[/${_nlBaliseType}]`;
+    const ta = document.getElementById('nl-message');
+    const start = ta.selectionStart;
+    const before = ta.value.substring(0, start);
+    const after = ta.value.substring(ta.selectionEnd);
+    ta.value = before + tag + after;
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = start + tag.length;
+    modal.style.display = 'none';
+  };
+}
+
+async function nlPreview() {
+  const objet = document.getElementById('nl-objet').value.trim();
+  const titre = document.getElementById('nl-titre-actu').value.trim();
+  const message = document.getElementById('nl-message').value.trim();
+  if (!message) { alert('Rédigez un message avant l\'aperçu'); return; }
+  try {
+    const r = await fetch('/newsletter/preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ objet, titre, message })
+    });
+    const d = await r.json();
+    if (d.success) {
+      const wrap = document.getElementById('nl-preview-wrap');
+      wrap.style.display = 'block';
+      const frame = document.getElementById('nl-preview-frame');
+      frame.srcdoc = d.html;
+      wrap.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      alert('Erreur: ' + (d.error || 'inconnue'));
+    }
+  } catch (e) { alert('Erreur réseau: ' + e.message); }
+}
+
+let _nlPolling = null;
+async function nlSend() {
+  const objet = document.getElementById('nl-objet').value.trim();
+  const titre = document.getElementById('nl-titre-actu').value.trim();
+  const message = document.getElementById('nl-message').value.trim();
+  const cible = document.getElementById('nl-cible').value;
+  const emailUnique = document.getElementById('nl-email-unique').value.trim();
+  if (!objet || !message) { alert('Objet et message requis'); return; }
+  if (cible === 'un' && !emailUnique) { alert('Entrez l\'email du client'); return; }
+  const desc = cible === 'un' ? `à ${emailUnique}` : 'à tous les clients';
+  if (!confirm(`Envoyer la newsletter ${desc} ?\n\nObjet : ${objet}`)) return;
+  const btn = document.getElementById('nl-btn-send');
+  btn.disabled = true; btn.textContent = '⏳ Lancement…';
+  try {
+    const r = await fetch('/newsletter/send', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ objet, titre, message, cible, email_unique: emailUnique })
+    });
+    const d = await r.json();
+    if (d.success || d.started) {
+      document.getElementById('nl-progress').style.display = 'block';
+      document.getElementById('nl-prog-count').textContent = `0/${d.total}`;
+      document.getElementById('nl-prog-bar').style.width = '0%';
+      document.getElementById('nl-prog-errors').style.display = 'none';
+      btn.textContent = '📧 Envoi en cours…';
+      _nlPolling = setInterval(nlPollStatus, 2000);
+    } else {
+      alert('Erreur: ' + (d.error || 'inconnue'));
+      btn.disabled = false; btn.textContent = '📧 Envoyer';
+    }
+  } catch (e) {
+    alert('Erreur réseau: ' + e.message);
+    btn.disabled = false; btn.textContent = '📧 Envoyer';
+  }
+}
+
+async function nlPollStatus() {
+  try {
+    const r = await fetch('/newsletter/status');
+    const d = await r.json();
+    const total = d.total || 1;
+    const done = d.envoyes + (d.erreurs ? d.erreurs.length : 0);
+    const pct = Math.round(done / total * 100);
+    document.getElementById('nl-prog-bar').style.width = pct + '%';
+    document.getElementById('nl-prog-count').textContent = `${d.envoyes}/${total}`;
+    document.getElementById('nl-prog-text').textContent = d.en_cours ? 'Envoi en cours…' : 'Terminé !';
+    if (d.erreurs && d.erreurs.length) {
+      const el = document.getElementById('nl-prog-errors');
+      el.style.display = 'block';
+      el.textContent = `⚠️ ${d.erreurs.length} erreur(s) : ${d.erreurs.slice(0,5).join(', ')}${d.erreurs.length > 5 ? '…' : ''}`;
+    }
+    if (!d.en_cours) {
+      clearInterval(_nlPolling); _nlPolling = null;
+      const btn = document.getElementById('nl-btn-send');
+      btn.disabled = false; btn.textContent = '📧 Envoyer';
+      document.getElementById('nl-prog-text').textContent = `✅ Terminé — ${d.envoyes}/${total} envoyés`;
+    }
+  } catch (e) { /* retry next poll */ }
+}
+
+async function nlTestSend() {
+  const objet = document.getElementById('nl-objet').value.trim();
+  const titre = document.getElementById('nl-titre-actu').value.trim();
+  const message = document.getElementById('nl-message').value.trim();
+  const testEmail = document.getElementById('nl-test-email').value.trim();
+  if (!objet || !message) { alert('Objet et message requis'); return; }
+  if (!testEmail) { alert('Entrez l\'adresse email de test'); return; }
+  const btn = document.getElementById('nl-btn-test');
+  btn.disabled = true; btn.textContent = '⏳…';
+  const res = document.getElementById('nl-test-result');
+  res.style.display = 'none';
+  try {
+    const r = await fetch('/newsletter/test-send', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ objet, titre, message, test_email: testEmail })
+    });
+    const d = await r.json();
+    res.style.display = 'block';
+    if (d.success) {
+      res.style.background = '#f0fdf4'; res.style.color = '#16a34a'; res.style.border = '1px solid #bbf7d0';
+      res.textContent = `✅ Test envoyé à ${testEmail}`;
+    } else {
+      res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
+      res.textContent = `❌ Erreur : ${d.error || 'inconnue'}`;
+    }
+  } catch (e) {
+    res.style.display = 'block'; res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
+    res.textContent = `❌ Erreur réseau : ${e.message}`;
+  } finally {
+    btn.disabled = false; btn.textContent = '🧪 Envoi de test';
+  }
 }
 </script>
 </body>
