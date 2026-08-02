@@ -32,6 +32,13 @@ SOCIAL_LINKS = [
     ("facebook",  "https://www.facebook.com/profile.php?id=61577269553280",  "facebook.png"),
 ]
 
+FOOTER_NAV = [
+    ("Nos offres",        "https://liliwatt.fr/offres.html"),
+    ("Qui sommes-nous ?", "https://liliwatt.fr/apropos.html"),
+    ("Actualités",        "https://liliwatt.fr/blog"),
+    ("Contact",           "https://liliwatt.fr/contact.html"),
+]
+
 NL_ASSETS_BASE = "https://liliwatt-admin.onrender.com/static/newsletter"
 GOOGLE_AVIS_URL = os.environ.get("GOOGLE_AVIS_URL", "https://g.page/r/CUzpowIihy_ZEBM/review")
 PARRAINAGE_URL  = os.environ.get("PARRAINAGE_URL", "https://liliwatt-parrainage.onrender.com/")
@@ -2692,6 +2699,12 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
     social_hdr = f'<table role="presentation" cellpadding="0" cellspacing="0" align="right"><tr>{_social_cells()}</tr></table>'
     social_ftr = f'<table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>{_social_cells()}</tr></table>'
 
+    _sep = '<span style="color:#4c4a7a;margin:0 8px;">|</span>'
+    _link_tpl = '<a href="{u}" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">{l}</a>'
+    footer_nav_html = _sep.join(
+        _link_tpl.format(u=u, l=html_mod.escape(l)) for l, u in FOOTER_NAV
+    )
+
     parts = []
     parts.append(f'''<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;">
 <!-- BLOC 1 : Preheader -->
@@ -2744,10 +2757,10 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
       <tr><td style="padding:32px;">
         <table role="presentation" cellpadding="0" cellspacing="0"><tr>
           <td style="vertical-align:top;width:56px;">
-            <img src="{B}/icone_actu.png" alt="" width="56" height="56" style="display:block;border:0;border-radius:50%;" />
+            <img src="{B}/{'icone_contact.png' if fmt == 'communication' else 'icone_actu.png'}" alt="" width="56" height="56" style="display:block;border:0;border-radius:50%;" />
           </td>
           <td style="padding-left:16px;vertical-align:top;">
-            <div style="font-size:13px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:6px;">ACTUALIT&#201; DU MOIS</div>
+            <div style="font-size:13px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:6px;">{'RESTONS EN CONTACT' if fmt == 'communication' else 'ACTUALIT\u00c9 DU MOIS'}</div>
           </td>
         </tr></table>
         {titre_html}
@@ -2830,7 +2843,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
     {social_ftr}
   </td></tr>
   <tr><td style="padding:16px 30px 8px;text-align:center;">
-    <a href="https://liliwatt.fr/nos-offres" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">Nos offres</a><span style="color:#4c4a7a;margin:0 8px;">|</span><a href="https://liliwatt.fr/qui-sommes-nous" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">Qui sommes-nous&nbsp;?</a><span style="color:#4c4a7a;margin:0 8px;">|</span><a href="https://liliwatt.fr/actualites" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">Actualit&#233;s</a><span style="color:#4c4a7a;margin:0 8px;">|</span><a href="https://liliwatt.fr/faq" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">FAQ</a><span style="color:#4c4a7a;margin:0 8px;">|</span><a href="https://liliwatt.fr/contact" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">Contact</a>
+    {footer_nav_html}
   </td></tr>
   <tr><td style="padding:8px 30px 20px;text-align:center;font-size:11px;color:#b7aee0;line-height:1.6;">
     {ml['marque']} &#183; {ml['adresse']} &#183; {ml['email']} &#183; {ml['telephone']}

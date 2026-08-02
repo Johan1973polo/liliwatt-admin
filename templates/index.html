@@ -466,15 +466,16 @@
         <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Objet de l'email</label>
         <input type="text" id="nl-objet" placeholder="Ex : Votre facture a baissé ? Vérifiez !" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
 
-        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Titre de l'actualité</label>
+        <label id="nl-titre-label" style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Titre de l'actualité</label>
         <input type="text" id="nl-titre-actu" placeholder="Ex : Les prix de l'énergie chutent en août" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
 
         <div id="nl-cta-fields" style="background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:16px;margin-bottom:16px;">
           <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:12px;">Bouton article (centré en bas)</div>
           <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Texte du bouton</label>
-          <input type="text" id="nl-cta-texte" placeholder="Ex : Lire l'article complet" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:10px;font-size:14px;box-sizing:border-box;" />
+          <input type="text" id="nl-cta-texte" placeholder="Ex : Lire l'article complet" oninput="nlCheckCtaRequired()" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:10px;font-size:14px;box-sizing:border-box;" />
           <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Lien de l'article</label>
-          <input type="url" id="nl-cta-lien" placeholder="https://..." style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />
+          <input type="url" id="nl-cta-lien" placeholder="https://..." oninput="nlCheckCtaRequired()" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />
+          <div id="nl-cta-required-msg" style="display:none;margin-top:8px;font-size:12px;color:#dc2626;">⚠️ Texte et lien du bouton requis en mode Newsletter pour pouvoir envoyer.</div>
         </div>
 
         <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Destinataires</label>
@@ -489,7 +490,7 @@
         </div>
 
         <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Message</label>
-        <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div id="nl-balise-tools" style="display:none;gap:8px;margin-bottom:8px;">
           <button type="button" onclick="nlInsertBalise('bouton')" style="padding:6px 14px;background:#f5f3ff;border:1px solid #d9c8f7;border-radius:6px;font-size:12px;font-weight:600;color:#7c3aed;cursor:pointer;">+ Insérer un bouton</button>
           <button type="button" onclick="nlInsertBalise('lien')" style="padding:6px 14px;background:#f5f3ff;border:1px solid #d9c8f7;border-radius:6px;font-size:12px;font-weight:600;color:#7c3aed;cursor:pointer;">+ Insérer un lien</button>
         </div>
@@ -575,7 +576,7 @@ function showTab(name) {
   if (name === 'recrutement') loadCandidats();
   if (name === 'ventes') { loadVenteVendeurs(); loadVentes(); }
   if (name === 'premium') { loadBPStats(); loadBPVendeurs(); }
-  if (name === 'newsletter') nlCount();
+  if (name === 'newsletter') { nlCount(); nlSetFormat(_nlFormat); }
 }
 
 function normalize(s) {
@@ -1787,6 +1788,22 @@ function nlSetFormat(fmt) {
   document.getElementById('nl-fmt-communication').style.background = fmt === 'communication' ? '#7c3aed' : '#f3f4f6';
   document.getElementById('nl-fmt-communication').style.color = fmt === 'communication' ? '#fff' : '#374151';
   document.getElementById('nl-cta-fields').style.display = fmt === 'newsletter' ? 'block' : 'none';
+  document.getElementById('nl-balise-tools').style.display = fmt === 'communication' ? 'flex' : 'none';
+  document.getElementById('nl-titre-label').textContent = fmt === 'newsletter' ? "Titre de l'actualité" : "Titre du message";
+  nlCheckCtaRequired();
+}
+
+function nlCheckCtaRequired() {
+  if (_nlFormat !== 'newsletter') {
+    document.getElementById('nl-btn-send').disabled = false;
+    document.getElementById('nl-cta-required-msg').style.display = 'none';
+    return;
+  }
+  const texte = document.getElementById('nl-cta-texte').value.trim();
+  const lien  = document.getElementById('nl-cta-lien').value.trim();
+  const ok = texte.length > 0 && lien.length > 0;
+  document.getElementById('nl-btn-send').disabled = !ok;
+  document.getElementById('nl-cta-required-msg').style.display = ok ? 'none' : 'block';
 }
 
 async function nlCount() {
@@ -1872,6 +1889,10 @@ async function nlSend() {
   const cta_lien = document.getElementById('nl-cta-lien').value.trim();
   if (!objet || !message) { alert('Objet et message requis'); return; }
   if (cible === 'un' && !emailUnique) { alert('Entrez l\'email du client'); return; }
+  if (_nlFormat === 'newsletter') {
+    if (!cta_texte || !cta_lien) { alert('Le texte et le lien du bouton article sont requis en mode Newsletter.'); return; }
+    if (!/^https?:\/\//i.test(cta_lien)) { alert('Le lien du bouton article doit commencer par http:// ou https://'); return; }
+  }
   const desc = cible === 'un' ? `à ${emailUnique}` : 'à tous les clients';
   if (!confirm(`Envoyer la newsletter ${desc} ?\n\nObjet : ${objet}`)) return;
   const btn = document.getElementById('nl-btn-send');
