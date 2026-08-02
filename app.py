@@ -26,7 +26,7 @@ MENTIONS_LEGALES = {
 
 SOCIAL_LINKS = [
     ("linkedin",  "https://www.linkedin.com/company/liliwatt/",              "linkedin.png"),
-    ("instagram", "https://www.instagram.com/liliwatt/",                     "instagram.png"),
+    ("instagram", "https://www.instagram.com/liliwatt.fr/",                  "instagram.png"),
     ("x",         "https://x.com/liliwattfrance",                            "x.png"),
     ("youtube",   "https://www.youtube.com/@liliwattfrance",                 "youtube.png"),
     ("facebook",  "https://www.facebook.com/profile.php?id=61577269553280",  "facebook.png"),
