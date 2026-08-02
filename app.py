@@ -44,7 +44,7 @@ NL_ASSETS_BASE = "https://liliwatt-admin.onrender.com/static/newsletter"
 # Gmail met en cache les images par URL exacte, indefiniment.
 # A INCREMENTER a chaque fois qu'un asset de static/newsletter/
 # est modifie, sinon les destinataires verront l'ancienne version.
-NL_ASSETS_VERSION = "4"
+NL_ASSETS_VERSION = "5"
 
 def _nl_asset(nom):
     """Retourne l'URL complète d'un asset newsletter avec cache-busting."""
