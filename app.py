@@ -33,8 +33,8 @@ SOCIAL_LINKS = [
 ]
 
 NL_ASSETS_BASE = "https://liliwatt-admin.onrender.com/static/newsletter"
-GOOGLE_AVIS_URL = os.environ.get("GOOGLE_AVIS_URL", "")
-PARRAINAGE_URL  = os.environ.get("PARRAINAGE_URL", "")
+GOOGLE_AVIS_URL = os.environ.get("GOOGLE_AVIS_URL", "https://g.page/r/CUzpowIihy_ZEBM/review")
+PARRAINAGE_URL  = os.environ.get("PARRAINAGE_URL", "https://liliwatt-parrainage.onrender.com/")
 NEWSLETTER_SECRET = os.environ.get("NEWSLETTER_SECRET", "nl-liliwatt-secret-2026")
 NL_DELAI_S = 3
 NL_LOT = 50
@@ -2564,6 +2564,67 @@ def _nl_get_unsub_set():
         print(f"⚠️ Erreur lecture NEWSLETTER_UNSUB: {e}")
         return set()
 
+_NL_PARTICLES = frozenset({
+    'de', 'du', 'des', 'le', 'la', 'les', 'van', 'von', 'der', 'den', 'el', 'al'
+})
+_NL_BLACKLIST_PRENOMS = frozenset({
+    'm', 'mr', 'mme', 'dr',
+    'sarl', 'sas', 'sasu', 'eurl', 'sci',
+    'societe', 'entreprise', 'service', 'contact',
+    'compta', 'direction', 'gerant'
+})
+
+def _nl_strip_accents(t):
+    import unicodedata as _ud
+    return ''.join(c for c in _ud.normalize('NFD', t) if _ud.category(c) != 'Mn').lower()
+
+def _nl_normalise_prenom(raw):
+    """Normalise un prénom brut. Retourne '' si absent ou invalide."""
+    s = raw.strip()
+    if not s:
+        return ''
+    # Longueur
+    if len(s) < 2 or len(s) > 25:
+        return ''
+    # Caractères autorisés : lettres unicode, espace, tiret, apostrophe
+    for ch in s:
+        if ch.isdigit() or ch == '@':
+            return ''
+        if not (ch.isalpha() or ch in (' ', '-', "'")):
+            return ''
+    # Blacklist (token par token, sans accents)
+    tokens = _nl_strip_accents(s).replace('-', ' ').replace("'", ' ').split()
+    for tok in tokens:
+        if tok in _NL_BLACKLIST_PRENOMS:
+            return ''
+    # Pas de normalisation de casse si < 3 caractères (préserve initiales "JC")
+    if len(s) < 3:
+        return s
+
+    def _cap_word(w):
+        """Capitalise un mot, gère les apostrophes internes et les particules."""
+        if not w:
+            return w
+        if "'" in w:
+            pre, _, suf = w.partition("'")
+            pre_l = _nl_strip_accents(pre)
+            if pre_l in ('d', 'l'):         # d'Alembert, l'Herminier
+                return pre.lower() + "'" + (_cap_word(suf) if suf else '')
+            pre_c = (pre[0].upper() + pre[1:].lower()) if len(pre) >= 3 else pre
+            return pre_c + "'" + (_cap_word(suf) if suf else '')
+        wl = _nl_strip_accents(w)
+        if wl in _NL_PARTICLES:
+            return w.lower()
+        if len(w) < 3:
+            return w                        # préserve initiales courtes
+        return w[0].upper() + w[1:].lower()
+
+    # Split sur tiret, puis sur espace dans chaque segment
+    return '-'.join(
+        ' '.join(_cap_word(sp) for sp in hp.split(' '))
+        for hp in s.split('-')
+    )
+
 def _nl_parse_balises(text):
     """Parse [bouton]texte|url[/bouton] et [lien]texte|url[/lien] dans du HTML échappé."""
     # Boutons
@@ -2595,7 +2656,7 @@ def _nl_parse_balises(text):
         text = text.replace('[parrainage]', PARRAINAGE_URL)
     return text
 
-def _nl_build_html(objet, titre, body_html, unsub_url):
+def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_texte='', cta_lien='', prenom=''):
     """Construit le template email newsletter complet — 9 blocs fidèles à la maquette."""
     ml = MENTIONS_LEGALES
     B = NL_ASSETS_BASE
@@ -2603,6 +2664,19 @@ def _nl_build_html(objet, titre, body_html, unsub_url):
     parr_url = PARRAINAGE_URL or '#'
     titre_html = (f'<div style="font-size:24px;font-weight:800;color:#1e1b4b;line-height:1.2;margin:16px 0 0;">'
                   f'{html_mod.escape(titre)}</div>') if titre else ''
+    # CTA centré en bas de BLOC 5 (format Newsletter uniquement)
+    cta_html = ''
+    if fmt == 'newsletter' and cta_texte and cta_lien:
+        cta_html = (
+            f'<div style="text-align:center;margin-top:32px;">'
+            f'<a href="{html_mod.escape(cta_lien)}" '
+            f'style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;'
+            f'font-weight:700;font-size:14px;padding:14px 32px;border-radius:8px;" '
+            f'target="_blank">{html_mod.escape(cta_texte)}</a>'
+            f'</div>'
+        )
+
+    salutation = f'Bonjour&nbsp;{html_mod.escape(prenom)},' if prenom else 'Bonjour,'
 
     def _social_cells(spacing=4):
         c = ''
@@ -2654,7 +2728,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url):
 <tr><td align="center">
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;">
   <tr><td style="padding:28px 40px 12px;">
-    <div style="font-size:16px;font-weight:700;color:#1e1b4b;margin-bottom:10px;">Bonjour,</div>
+    <div style="font-size:16px;font-weight:700;color:#1e1b4b;margin-bottom:10px;">{salutation}</div>
     <div style="font-size:14px;color:#4b5563;line-height:1.65;">Votre newsletter mensuelle avec les derni&#232;res actualit&#233;s du march&#233; de l&#39;&#233;nergie, nos conseils et nos services pour vous accompagner au mieux.</div>
   </td></tr>
 </table>
@@ -2676,6 +2750,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url):
         </tr></table>
         {titre_html}
         <div style="font-size:14px;line-height:1.65;color:#241f47;margin-top:16px;">{body_html}</div>
+        {cta_html}
       </td></tr>
     </table>
   </td></tr>
@@ -2776,23 +2851,25 @@ def _nl_build_html(objet, titre, body_html, unsub_url):
 
     return '\n'.join(parts)
 
-def _nl_send_thread(objet, titre, message, destinataires):
-    """Thread d'envoi échelonné."""
+def _nl_send_thread(objet, titre, message, dest_map, fmt='newsletter', cta_texte='', cta_lien=''):
+    """Thread d'envoi échelonné. dest_map = {email_normalise: prenom_normalise}."""
     global _nl_status
+    destinataires = sorted(dest_map.keys())
     _nl_status = {"en_cours": True, "total": len(destinataires), "envoyes": 0, "erreurs": [], "objet": objet}
-    # Préparer le HTML du message
+    # Préparer le HTML du corps (invariant par destinataire)
     escaped = html_mod.escape(message)
     escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
     body_html = _nl_parse_balises(escaped)
     token_zoho = get_zoho_token()
     account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+    base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://liliwatt-admin.onrender.com')
     for i, email in enumerate(destinataires):
         if not _nl_status["en_cours"]:
             break
+        prenom = dest_map.get(email, '')
         unsub_token = _nl_unsub_token(email)
-        base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://liliwatt-admin.onrender.com')
         unsub_url = f"{base_url}/newsletter/unsubscribe?email={email}&token={unsub_token}"
-        full_html = _nl_build_html(objet, titre, body_html, unsub_url)
+        full_html = _nl_build_html(objet, titre, body_html, unsub_url, fmt, cta_texte, cta_lien, prenom)
         try:
             # Renouveler le token tous les 40 envois
             if i > 0 and i % 40 == 0:
@@ -2847,36 +2924,82 @@ def newsletter_send():
     email_unique = (d.get('email_unique') or '').strip().lower()
     if not objet or not message:
         return jsonify({"success": False, "error": "Objet et message requis"}), 400
-    # Construire la liste
+    titre = (d.get('titre') or '').strip()
+    fmt = (d.get('fmt') or 'newsletter').strip()
+    cta_texte = (d.get('cta_texte') or '').strip()
+    cta_lien = (d.get('cta_lien') or '').strip()
+    # Construire dest_map {email: prenom}
     if cible == 'un' and email_unique:
-        destinataires = [email_unique]
+        dest_map = {email_unique: ''}
     else:
         try:
             gc = get_sheets_client()
             ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
             rows = ws.get_all_values()
-            emails_raw = set()
             email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+            email_prenom = {}
             for row in rows[1:]:
                 if len(row) > 22:
                     e = row[22].strip().lower()
-                    if e and email_re.match(e):
-                        emails_raw.add(e)
+                    if e and email_re.match(e) and e not in email_prenom:
+                        raw_p = row[20].strip() if len(row) > 20 else ''
+                        email_prenom[e] = _nl_normalise_prenom(raw_p)
             unsub = _nl_get_unsub_set()
-            destinataires = sorted(emails_raw - unsub)
+            dest_map = {e: p for e, p in email_prenom.items() if e not in unsub}
         except Exception as e:
             return jsonify({"success": False, "error": f"Erreur lecture Sheet: {e}"}), 500
-    if not destinataires:
+    if not dest_map:
         return jsonify({"success": False, "error": "Aucun destinataire trouvé"}), 400
-    titre = (d.get('titre') or '').strip()
-    t = threading.Thread(target=_nl_send_thread, args=(objet, titre, message, destinataires), daemon=True)
+    t = threading.Thread(target=_nl_send_thread, args=(objet, titre, message, dest_map, fmt, cta_texte, cta_lien), daemon=True)
     t.start()
-    return jsonify({"success": True, "started": True, "total": len(destinataires)})
+    return jsonify({"success": True, "started": True, "total": len(dest_map)})
 
 @app.route('/newsletter/status')
 @login_required
 def newsletter_status():
     return jsonify(_nl_status)
+
+@app.route('/newsletter/count')
+@login_required
+def newsletter_count():
+    try:
+        gc = get_sheets_client()
+        ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+        rows = ws.get_all_values()
+        email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+        brut = []
+        for row in rows[1:]:
+            if len(row) > 22:
+                e = row[22].strip().lower()
+                if e and email_re.match(e):
+                    brut.append(e)
+        total_brut = len(brut)
+        uniques_set = set(brut)
+        doublons = total_brut - len(uniques_set)
+        unsub = _nl_get_unsub_set()
+        desinscrits = len(uniques_set & unsub)
+        destinataires = sorted(uniques_set - unsub)
+        return jsonify({
+            "success": True,
+            "total_brut": total_brut,
+            "uniques": len(uniques_set),
+            "doublons": doublons,
+            "desinscrits": desinscrits,
+            "destinataires": len(destinataires)
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/newsletter/sheet-headers')
+@login_required
+def newsletter_sheet_headers():
+    try:
+        gc = get_sheets_client()
+        ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+        headers = ws.row_values(1)
+        return jsonify({"success": True, "headers": [{"index": i, "name": h} for i, h in enumerate(headers)]})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/newsletter/preview', methods=['POST'])
 @login_required
@@ -2885,10 +3008,13 @@ def newsletter_preview():
     message = (d.get('message') or '').strip()
     objet = (d.get('objet') or 'Aperçu').strip()
     titre = (d.get('titre') or '').strip()
+    fmt = (d.get('fmt') or 'newsletter').strip()
+    cta_texte = (d.get('cta_texte') or '').strip()
+    cta_lien = (d.get('cta_lien') or '').strip()
     escaped = html_mod.escape(message)
     escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
     body_html = _nl_parse_balises(escaped)
-    preview_html = _nl_build_html(objet, titre, body_html, '#')
+    preview_html = _nl_build_html(objet, titre, body_html, '#', fmt, cta_texte, cta_lien)
     return jsonify({"success": True, "html": preview_html})
 
 @app.route('/newsletter/test-send', methods=['POST'])
@@ -2899,14 +3025,35 @@ def newsletter_test_send():
     titre = (d.get('titre') or '').strip()
     message = (d.get('message') or '').strip()
     test_email = (d.get('test_email') or '').strip().lower()
+    fmt = (d.get('fmt') or 'newsletter').strip()
+    cta_texte = (d.get('cta_texte') or '').strip()
+    cta_lien = (d.get('cta_lien') or '').strip()
     if not objet or not message:
         return jsonify({"success": False, "error": "Objet et message requis"}), 400
     if not test_email:
         return jsonify({"success": False, "error": "Email de test requis"}), 400
+    # Chercher le prénom dans le Sheet ; sinon "Test" (pour voir le rendu personnalisé)
+    prenom_test = 'Test'
+    prenom_source = 'fallback'
+    try:
+        gc = get_sheets_client()
+        ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+        rows = ws.get_all_values()
+        email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+        for row in rows[1:]:
+            if len(row) > 22 and row[22].strip().lower() == test_email:
+                raw_p = row[20].strip() if len(row) > 20 else ''
+                p = _nl_normalise_prenom(raw_p)
+                if p:
+                    prenom_test = p
+                    prenom_source = 'sheet'
+                break
+    except Exception:
+        pass  # Sheet inaccessible : on garde "Test"
     escaped = html_mod.escape(message)
     escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
     body_html = _nl_parse_balises(escaped)
-    full_html = _nl_build_html(objet, titre, body_html, '#')
+    full_html = _nl_build_html(objet, titre, body_html, '#', fmt, cta_texte, cta_lien, prenom_test)
     try:
         token_zoho = get_zoho_token()
         account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
@@ -2919,7 +3066,7 @@ def newsletter_test_send():
         )
         if r.status_code >= 400:
             return jsonify({"success": False, "error": f"Zoho HTTP {r.status_code}"}), 500
-        return jsonify({"success": True})
+        return jsonify({"success": True, "prenom": prenom_test, "prenom_source": prenom_source})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

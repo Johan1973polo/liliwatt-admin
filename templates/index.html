@@ -457,11 +457,25 @@
       <h2 style="color:#1e1b4b;margin-bottom:8px;">📩 Newsletter clients</h2>
       <p style="color:#6b7280;font-size:14px;margin-bottom:24px;">Envoyez une newsletter aux clients du suivi des ventes (colonne Email client). Les désinscrits et doublons sont exclus automatiquement.</p>
       <div style="background:white;padding:24px;border-radius:12px;border:1px solid #e5e7eb;">
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Format</label>
+        <div style="display:flex;gap:0;margin-bottom:16px;border:1px solid #d1d5db;border-radius:8px;overflow:hidden;">
+          <button type="button" id="nl-fmt-newsletter" onclick="nlSetFormat('newsletter')" style="flex:1;padding:10px;background:#7c3aed;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">Newsletter</button>
+          <button type="button" id="nl-fmt-communication" onclick="nlSetFormat('communication')" style="flex:1;padding:10px;background:#f3f4f6;color:#374151;border:none;font-size:13px;font-weight:600;cursor:pointer;">Communication</button>
+        </div>
+
         <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Objet de l'email</label>
         <input type="text" id="nl-objet" placeholder="Ex : Votre facture a baissé ? Vérifiez !" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
 
         <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Titre de l'actualité</label>
         <input type="text" id="nl-titre-actu" placeholder="Ex : Les prix de l'énergie chutent en août" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
+
+        <div id="nl-cta-fields" style="background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:16px;margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:12px;">Bouton article (centré en bas)</div>
+          <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Texte du bouton</label>
+          <input type="text" id="nl-cta-texte" placeholder="Ex : Lire l'article complet" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:10px;font-size:14px;box-sizing:border-box;" />
+          <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Lien de l'article</label>
+          <input type="url" id="nl-cta-lien" placeholder="https://..." style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />
+        </div>
 
         <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Destinataires</label>
         <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;">
@@ -481,7 +495,12 @@
         </div>
         <textarea id="nl-message" rows="10" placeholder="Bonjour,&#10;&#10;Votre message ici...&#10;&#10;[bouton]Texte du bouton|https://url[/bouton]&#10;[lien]Texte du lien|https://url[/lien]" style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:monospace;resize:vertical;box-sizing:border-box;min-height:180px;"></textarea>
 
-        <div style="display:flex;gap:10px;margin-top:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;margin-bottom:4px;">
+          <span id="nl-count-text" style="font-size:13px;color:#6b7280;">— destinataires</span>
+          <button type="button" onclick="nlCount()" id="nl-btn-count" style="padding:6px 12px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-weight:600;color:#374151;cursor:pointer;">↻ Recalculer</button>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:8px;">
           <button onclick="nlPreview()" style="flex:1;padding:12px;background:#f5f3ff;border:2px solid #7c3aed;color:#7c3aed;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">👁 Aperçu</button>
           <button onclick="nlSend()" id="nl-btn-send" style="flex:1;padding:12px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">📧 Envoyer</button>
         </div>
@@ -556,6 +575,7 @@ function showTab(name) {
   if (name === 'recrutement') loadCandidats();
   if (name === 'ventes') { loadVenteVendeurs(); loadVentes(); }
   if (name === 'premium') { loadBPStats(); loadBPVendeurs(); }
+  if (name === 'newsletter') nlCount();
 }
 
 function normalize(s) {
@@ -1758,6 +1778,40 @@ async function genererContrats() {
 }
 
 // ── Newsletter ──────────────────────────────────────────────────
+let _nlFormat = 'newsletter';
+
+function nlSetFormat(fmt) {
+  _nlFormat = fmt;
+  document.getElementById('nl-fmt-newsletter').style.background = fmt === 'newsletter' ? '#7c3aed' : '#f3f4f6';
+  document.getElementById('nl-fmt-newsletter').style.color = fmt === 'newsletter' ? '#fff' : '#374151';
+  document.getElementById('nl-fmt-communication').style.background = fmt === 'communication' ? '#7c3aed' : '#f3f4f6';
+  document.getElementById('nl-fmt-communication').style.color = fmt === 'communication' ? '#fff' : '#374151';
+  document.getElementById('nl-cta-fields').style.display = fmt === 'newsletter' ? 'block' : 'none';
+}
+
+async function nlCount() {
+  const el = document.getElementById('nl-count-text');
+  el.textContent = '⏳ Calcul…';
+  try {
+    const r = await fetch('/newsletter/count');
+    const d = await r.json();
+    if (d.success) {
+      const parts = [];
+      if (d.doublons > 0) parts.push(`${d.doublons} doublon${d.doublons > 1 ? 's' : ''}`);
+      if (d.desinscrits > 0) parts.push(`${d.desinscrits} désinscrit${d.desinscrits > 1 ? 's' : ''}`);
+      const detail = parts.length ? ` (${parts.join(' et ')} exclus)` : '';
+      el.textContent = `${d.destinataires} destinataire${d.destinataires > 1 ? 's' : ''}${detail}`;
+      el.style.color = '#374151';
+    } else {
+      el.textContent = '⚠️ ' + (d.error || 'Erreur');
+      el.style.color = '#dc2626';
+    }
+  } catch (e) {
+    el.textContent = '⚠️ Erreur réseau';
+    el.style.color = '#dc2626';
+  }
+}
+
 let _nlBaliseType = 'bouton';
 function nlInsertBalise(type) {
   _nlBaliseType = type;
@@ -1786,11 +1840,13 @@ async function nlPreview() {
   const objet = document.getElementById('nl-objet').value.trim();
   const titre = document.getElementById('nl-titre-actu').value.trim();
   const message = document.getElementById('nl-message').value.trim();
+  const cta_texte = document.getElementById('nl-cta-texte').value.trim();
+  const cta_lien = document.getElementById('nl-cta-lien').value.trim();
   if (!message) { alert('Rédigez un message avant l\'aperçu'); return; }
   try {
     const r = await fetch('/newsletter/preview', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ objet, titre, message })
+      body: JSON.stringify({ objet, titre, message, fmt: _nlFormat, cta_texte, cta_lien })
     });
     const d = await r.json();
     if (d.success) {
@@ -1812,6 +1868,8 @@ async function nlSend() {
   const message = document.getElementById('nl-message').value.trim();
   const cible = document.getElementById('nl-cible').value;
   const emailUnique = document.getElementById('nl-email-unique').value.trim();
+  const cta_texte = document.getElementById('nl-cta-texte').value.trim();
+  const cta_lien = document.getElementById('nl-cta-lien').value.trim();
   if (!objet || !message) { alert('Objet et message requis'); return; }
   if (cible === 'un' && !emailUnique) { alert('Entrez l\'email du client'); return; }
   const desc = cible === 'un' ? `à ${emailUnique}` : 'à tous les clients';
@@ -1821,7 +1879,7 @@ async function nlSend() {
   try {
     const r = await fetch('/newsletter/send', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ objet, titre, message, cible, email_unique: emailUnique })
+      body: JSON.stringify({ objet, titre, message, cible, email_unique: emailUnique, fmt: _nlFormat, cta_texte, cta_lien })
     });
     const d = await r.json();
     if (d.success || d.started) {
@@ -1870,6 +1928,8 @@ async function nlTestSend() {
   const titre = document.getElementById('nl-titre-actu').value.trim();
   const message = document.getElementById('nl-message').value.trim();
   const testEmail = document.getElementById('nl-test-email').value.trim();
+  const cta_texte = document.getElementById('nl-cta-texte').value.trim();
+  const cta_lien = document.getElementById('nl-cta-lien').value.trim();
   if (!objet || !message) { alert('Objet et message requis'); return; }
   if (!testEmail) { alert('Entrez l\'adresse email de test'); return; }
   const btn = document.getElementById('nl-btn-test');
@@ -1879,13 +1939,16 @@ async function nlTestSend() {
   try {
     const r = await fetch('/newsletter/test-send', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ objet, titre, message, test_email: testEmail })
+      body: JSON.stringify({ objet, titre, message, test_email: testEmail, fmt: _nlFormat, cta_texte, cta_lien })
     });
     const d = await r.json();
     res.style.display = 'block';
     if (d.success) {
       res.style.background = '#f0fdf4'; res.style.color = '#16a34a'; res.style.border = '1px solid #bbf7d0';
-      res.textContent = `✅ Test envoyé à ${testEmail}`;
+      const prenomInfo = d.prenom_source === 'sheet'
+        ? ` — prénom : « ${d.prenom} » (trouvé dans le Sheet)`
+        : ` — prénom : « ${d.prenom} » (non trouvé dans le Sheet)`;
+      res.textContent = `✅ Test envoyé à ${testEmail}${prenomInfo}`;
     } else {
       res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
       res.textContent = `❌ Erreur : ${d.error || 'inconnue'}`;
