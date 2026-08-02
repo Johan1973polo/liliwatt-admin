@@ -40,6 +40,15 @@ FOOTER_NAV = [
 ]
 
 NL_ASSETS_BASE = "https://liliwatt-admin.onrender.com/static/newsletter"
+# Cache-busting des images de newsletter.
+# Gmail met en cache les images par URL exacte, indefiniment.
+# A INCREMENTER a chaque fois qu'un asset de static/newsletter/
+# est modifie, sinon les destinataires verront l'ancienne version.
+NL_ASSETS_VERSION = "4"
+
+def _nl_asset(nom):
+    """Retourne l'URL complète d'un asset newsletter avec cache-busting."""
+    return f"{NL_ASSETS_BASE}/{nom}?v={NL_ASSETS_VERSION}"
 GOOGLE_AVIS_URL = os.environ.get("GOOGLE_AVIS_URL", "https://g.page/r/CUzpowIihy_ZEBM/review")
 PARRAINAGE_URL  = os.environ.get("PARRAINAGE_URL", "https://liliwatt-parrainage.onrender.com/")
 NEWSLETTER_SECRET = os.environ.get("NEWSLETTER_SECRET", "nl-liliwatt-secret-2026")
@@ -2666,7 +2675,6 @@ def _nl_parse_balises(text):
 def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_texte='', cta_lien='', prenom=''):
     """Construit le template email newsletter complet — 9 blocs fidèles à la maquette."""
     ml = MENTIONS_LEGALES
-    B = NL_ASSETS_BASE
     avis_url = GOOGLE_AVIS_URL or '#'
     parr_url = PARRAINAGE_URL or '#'
     titre_html = (f'<div style="font-size:24px;font-weight:800;color:#1e1b4b;line-height:1.2;margin:16px 0 0;">'
@@ -2692,7 +2700,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
         for name, url, img in SOCIAL_LINKS:
             c += (f'<td style="padding:0 {spacing}px;">'
                   f'<a href="{url}" title="{name.capitalize()}" target="_blank">'
-                  f'<img src="{B}/{img}" alt="{name.capitalize()}" width="32" height="32" '
+                  f'<img src="{_nl_asset(img)}" alt="{name.capitalize()}" width="32" height="32" '
                   f'style="display:block;border:0;border-radius:50%;" /></a></td>')
         return c
 
@@ -2722,7 +2730,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
   <tr><td style="padding:18px 28px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
       <td style="vertical-align:middle;">
-        <img src="{B}/logo_blanc.png" alt="LILIWATT" width="140" height="36" style="display:block;border:0;" />
+        <img src="{_nl_asset('logo_blanc.png')}" alt="LILIWATT" width="140" height="36" style="display:block;border:0;" />
       </td>
       <td align="right" style="vertical-align:middle;">{social_hdr}</td>
     </tr></table>
@@ -2734,7 +2742,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
 <tr><td align="center">
 <table role="presentation" width="640" cellpadding="0" cellspacing="0">
   <tr><td bgcolor="#4c1d95">
-    <img src="{B}/hero.jpg" alt="L&#39;&#233;nergie &#233;volue, nous vous accompagnons" width="640" style="display:block;width:100%;max-width:640px;height:auto;border:0;" />
+    <img src="{_nl_asset('hero.jpg')}" alt="L&#39;&#233;nergie &#233;volue, nous vous accompagnons" width="640" style="display:block;width:100%;max-width:640px;height:auto;border:0;" />
   </td></tr>
 </table>
 </td></tr>''')
@@ -2757,7 +2765,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
       <tr><td style="padding:32px;">
         <table role="presentation" cellpadding="0" cellspacing="0"><tr>
           <td style="vertical-align:top;width:56px;">
-            <img src="{B}/{'icone_contact.png' if fmt == 'communication' else 'icone_actu.png'}" alt="" width="56" height="56" style="display:block;border:0;border-radius:50%;" />
+            <img src="{_nl_asset('icone_contact.png' if fmt == 'communication' else 'icone_actu.png')}" alt="" width="56" height="56" style="display:block;border:0;border-radius:50%;" />
           </td>
           <td style="padding-left:16px;vertical-align:top;">
             <div style="font-size:13px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:6px;">{'RESTONS EN CONTACT' if fmt == 'communication' else 'ACTUALIT\u00c9 DU MOIS'}</div>
@@ -2781,7 +2789,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f2ff;border-radius:12px;">
           <tr><td style="padding:22px 18px;">
             <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-              <td style="vertical-align:middle;width:40px;"><img src="{B}/icone_avis.png" alt="" width="32" height="32" style="display:block;border:0;" /></td>
+              <td style="vertical-align:middle;width:40px;"><img src="{_nl_asset('icone_avis.png')}" alt="" width="32" height="32" style="display:block;border:0;" /></td>
               <td style="padding-left:10px;font-size:12px;font-weight:800;letter-spacing:1px;color:#1e1b4b;text-transform:uppercase;vertical-align:middle;">Votre avis nous est important</td>
             </tr></table>
             <div style="font-size:12px;color:#5b5486;line-height:1.5;margin:10px 0 14px;">Vous &#234;tes satisfait ? Un avis Google nous aide beaucoup !</div>
@@ -2793,7 +2801,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f2ff;border-radius:12px;">
           <tr><td style="padding:22px 18px;">
             <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-              <td style="vertical-align:middle;width:40px;"><img src="{B}/icone_parrainage.png" alt="" width="32" height="32" style="display:block;border:0;" /></td>
+              <td style="vertical-align:middle;width:40px;"><img src="{_nl_asset('icone_parrainage.png')}" alt="" width="32" height="32" style="display:block;border:0;" /></td>
               <td style="padding-left:10px;font-size:12px;font-weight:800;letter-spacing:1px;color:#1e1b4b;text-transform:uppercase;vertical-align:middle;">Programme parrainage</td>
             </tr></table>
             <div style="font-size:12px;color:#5b5486;line-height:1.5;margin:10px 0 14px;">Recommandez une entreprise, gagnez jusqu&#39;&#224; 550&#8364; en cartes Amazon !</div>
@@ -2817,7 +2825,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
       <tr><td style="padding:0 22px 22px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
           <td style="vertical-align:middle;width:80px;">
-            <img src="{B}/conseillere.png" alt="Conseill&#232;re" width="80" height="80" style="display:block;border:0;border-radius:50%;" />
+            <img src="{_nl_asset('conseillere.png')}" alt="Conseill&#232;re" width="80" height="80" style="display:block;border:0;border-radius:50%;" />
           </td>
           <td style="padding-left:16px;vertical-align:middle;font-size:13px;line-height:1.5;">
             <strong style="color:#1e1b4b;">Notre &#233;quipe est &#224; votre &#233;coute.</strong><br>
@@ -2839,7 +2847,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
 <tr><td align="center">
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#1e1b4b;">
   <tr><td style="padding:28px 30px 12px;text-align:center;">
-    <img src="{B}/logo_blanc.png" alt="LILIWATT" width="120" height="30" style="display:inline-block;border:0;margin-bottom:16px;" /><br>
+    <img src="{_nl_asset('logo_blanc.png')}" alt="LILIWATT" width="120" height="30" style="display:inline-block;border:0;margin-bottom:16px;" /><br>
     {social_ftr}
   </td></tr>
   <tr><td style="padding:16px 30px 8px;text-align:center;">
