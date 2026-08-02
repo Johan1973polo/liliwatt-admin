@@ -57,6 +57,7 @@
     <div class="tab" onclick="showTab('derogation')">🔍 Dérogation</div>
     <div class="tab" onclick="showTab('contrats')">📄 Contrats</div>
     <div class="tab" onclick="showTab('newsletter')">📩 Newsletter</div>
+    <div class="tab" onclick="showTab('bienvenue')">👋 Bienvenue</div>
   </div>
 
   <!-- Créer -->
@@ -536,6 +537,59 @@
     </div>
   </div>
 
+  <!-- Bienvenue -->
+  <div class="panel" id="tab-bienvenue">
+    <div style="max-width:700px;margin:0 auto;padding:24px 0;">
+      <h2 style="color:#1e1b4b;font-size:22px;font-weight:800;margin-bottom:6px;">👋 Email de bienvenue</h2>
+      <p style="color:#6b7280;font-size:14px;margin-bottom:24px;">Envoyez l'email de bienvenue à un client. Les champs sont pré-remplis avec le texte par défaut — modifiez avant envoi si besoin.</p>
+      <div style="background:white;padding:24px;border-radius:12px;border:1px solid #e5e7eb;">
+
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Objet de l'email</label>
+        <input type="text" id="bv-objet" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
+
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Titre du message</label>
+        <input type="text" id="bv-titre" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
+
+        <div style="background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:16px;margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:12px;">Bouton (centré en bas) — facultatif</div>
+          <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Texte du bouton</label>
+          <input type="text" id="bv-cta-texte" placeholder="Ex : Découvrir nos offres" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:10px;font-size:14px;box-sizing:border-box;" />
+          <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Lien de redirection</label>
+          <input type="url" id="bv-cta-lien" placeholder="https://..." style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />
+        </div>
+
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Destinataire</label>
+        <select id="bv-client-select" onchange="bvClientChange()" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;">
+          <option value="">⏳ Chargement…</option>
+        </select>
+
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Message</label>
+        <textarea id="bv-message" rows="14" style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:monospace;resize:vertical;box-sizing:border-box;min-height:220px;"></textarea>
+
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button onclick="bvPreview()" style="flex:1;padding:12px;background:#f5f3ff;border:2px solid #7c3aed;color:#7c3aed;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">👁 Aperçu</button>
+          <button onclick="bvSend()" id="bv-btn-send" style="flex:1;padding:12px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">📧 Envoyer</button>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
+          <select id="bv-test-select" onchange="bvTestSelectChange()" style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;">
+            <option value="">⏳ Chargement…</option>
+          </select>
+          <button onclick="bvTestSend()" id="bv-btn-test" style="padding:10px 18px;background:#374151;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">🧪 Envoi de test</button>
+        </div>
+        <input type="email" id="bv-test-email" placeholder="Autre adresse email…" style="display:none;width:100%;margin-top:8px;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;box-sizing:border-box;" />
+        <div id="bv-test-result" style="display:none;margin-top:8px;font-size:12px;padding:8px 12px;border-radius:8px;"></div>
+        <div id="bv-send-result" style="display:none;margin-top:8px;font-size:12px;padding:8px 12px;border-radius:8px;"></div>
+      </div>
+
+      <!-- Aperçu iframe -->
+      <div id="bv-preview-wrap" style="display:none;margin-top:24px;">
+        <h3 style="color:#1e1b4b;margin-bottom:8px;">Aperçu de l'email</h3>
+        <iframe id="bv-preview-frame" style="width:100%;height:700px;border:2px solid #e9d5ff;border-radius:12px;background:#fff;"></iframe>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Modal Référent -->
@@ -567,6 +621,7 @@ function showTab(name) {
   if (name === 'ventes') { loadVenteVendeurs(); loadVentes(); }
   if (name === 'premium') { loadBPStats(); loadBPVendeurs(); }
   if (name === 'newsletter') { nlCount(); nlSetFormat(_nlFormat); nlLoadClients(); }
+  if (name === 'bienvenue') { bvInit(); }
 }
 
 function normalize(s) {
@@ -1988,6 +2043,143 @@ async function nlTestSend() {
   } finally {
     btn.disabled = false; btn.textContent = '🧪 Envoi de test';
   }
+}
+
+// ─── BIENVENUE ────────────────────────────────────────────────────────────────
+
+async function bvInit() {
+  // Charger les valeurs par défaut depuis le serveur
+  try {
+    const r = await fetch('/bienvenue/defaults');
+    const d = await r.json();
+    if (d.success) {
+      document.getElementById('bv-objet').value   = d.defaults.objet;
+      document.getElementById('bv-titre').value   = d.defaults.titre;
+      document.getElementById('bv-message').value = d.defaults.message;
+    }
+  } catch(e) { console.error('bvInit:', e); }
+  // Charger le select clients (réutilise la même route)
+  await bvLoadClients();
+}
+
+async function bvLoadClients() {
+  function _bvFallback(msg) {
+    for (const id of ['bv-client-select', 'bv-test-select']) {
+      const el = document.getElementById(id);
+      if (el) { el.innerHTML = `<option value="__autre__">${_nlEsc(msg)}</option>`; el.value = '__autre__'; }
+    }
+    document.getElementById('bv-test-email').style.display = 'block';
+  }
+  try {
+    const r = await fetch('/newsletter/clients');
+    const d = await r.json();
+    if (!d.success || !d.clients || d.clients.length === 0) { _bvFallback('Liste indisponible — saisir une adresse'); return; }
+    const opts = d.clients.map(c => `<option value="${_nlEsc(c.email)}">${_nlEsc(c.label)}</option>`).join('');
+    document.getElementById('bv-client-select').innerHTML = '<option value="">— Sélectionner un client —</option>' + opts;
+    document.getElementById('bv-test-select').innerHTML   =
+      '<option value="">— Sélectionner —</option>' + opts + '<option value="__autre__">Autre adresse…</option>';
+  } catch(e) { _bvFallback('Liste indisponible — saisir une adresse'); }
+}
+
+function bvClientChange() { /* sélection directe, pas d'action supplémentaire */ }
+
+function bvTestSelectChange() {
+  document.getElementById('bv-test-email').style.display =
+    document.getElementById('bv-test-select').value === '__autre__' ? 'block' : 'none';
+}
+
+async function bvPreview() {
+  const objet     = document.getElementById('bv-objet').value.trim();
+  const titre     = document.getElementById('bv-titre').value.trim();
+  const message   = document.getElementById('bv-message').value.trim();
+  const cta_texte = document.getElementById('bv-cta-texte').value.trim();
+  const cta_lien  = document.getElementById('bv-cta-lien').value.trim();
+  if (!message) { alert('Le message est vide'); return; }
+  try {
+    const r = await fetch('/bienvenue/preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ objet, titre, message, cta_texte, cta_lien })
+    });
+    const d = await r.json();
+    if (d.success) {
+      const wrap = document.getElementById('bv-preview-wrap');
+      wrap.style.display = 'block';
+      document.getElementById('bv-preview-frame').srcdoc = d.html;
+      wrap.scrollIntoView({ behavior: 'smooth' });
+    } else { alert('Erreur : ' + (d.error || 'inconnue')); }
+  } catch(e) { alert('Erreur réseau : ' + e.message); }
+}
+
+async function bvSend() {
+  const email = document.getElementById('bv-client-select').value.trim();
+  if (!email || email === '__autre__') { alert('Sélectionnez un client dans la liste'); return; }
+  const objet     = document.getElementById('bv-objet').value.trim();
+  const titre     = document.getElementById('bv-titre').value.trim();
+  const message   = document.getElementById('bv-message').value.trim();
+  const cta_texte = document.getElementById('bv-cta-texte').value.trim();
+  const cta_lien  = document.getElementById('bv-cta-lien').value.trim();
+  if (cta_lien && !/^https?:\/\//i.test(cta_lien)) { alert('Le lien du bouton doit commencer par http:// ou https://'); return; }
+  if (!confirm(`Envoyer l'email de bienvenue à ${email} ?\n\nObjet : ${objet}`)) return;
+  const btn = document.getElementById('bv-btn-send');
+  btn.disabled = true; btn.textContent = '⏳ Envoi…';
+  const res = document.getElementById('bv-send-result');
+  res.style.display = 'none';
+  try {
+    const r = await fetch('/bienvenue/send', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ objet, titre, message, email, cta_texte, cta_lien })
+    });
+    const d = await r.json();
+    res.style.display = 'block';
+    if (d.success) {
+      res.style.background = '#f0fdf4'; res.style.color = '#16a34a'; res.style.border = '1px solid #bbf7d0';
+      res.textContent = `✅ Email envoyé à ${email}${d.prenom ? ' (prénom : « ' + d.prenom + ' »)' : ''}`;
+    } else {
+      res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
+      res.textContent = `❌ Erreur : ${d.error || 'inconnue'}`;
+    }
+  } catch(e) {
+    res.style.display = 'block'; res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
+    res.textContent = `❌ Erreur réseau : ${e.message}`;
+  } finally { btn.disabled = false; btn.textContent = '📧 Envoyer'; }
+}
+
+async function bvTestSend() {
+  const selectVal = document.getElementById('bv-test-select').value;
+  const testEmail = selectVal === '__autre__'
+    ? document.getElementById('bv-test-email').value.trim()
+    : selectVal;
+  if (!testEmail) { alert('Sélectionnez un destinataire ou saisissez une adresse'); return; }
+  const objet     = document.getElementById('bv-objet').value.trim();
+  const titre     = document.getElementById('bv-titre').value.trim();
+  const message   = document.getElementById('bv-message').value.trim();
+  const cta_texte = document.getElementById('bv-cta-texte').value.trim();
+  const cta_lien  = document.getElementById('bv-cta-lien').value.trim();
+  const btn = document.getElementById('bv-btn-test');
+  btn.disabled = true; btn.textContent = '⏳…';
+  const res = document.getElementById('bv-test-result');
+  res.style.display = 'none';
+  try {
+    const r = await fetch('/bienvenue/test-send', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ objet, titre, message, test_email: testEmail, cta_texte, cta_lien })
+    });
+    const d = await r.json();
+    res.style.display = 'block';
+    if (d.success) {
+      res.style.background = '#f0fdf4'; res.style.color = '#16a34a'; res.style.border = '1px solid #bbf7d0';
+      const prenomInfo = d.prenom_source === 'sheet'
+        ? ` — prénom : « ${d.prenom} » (trouvé dans le Sheet)`
+        : ` — prénom : « ${d.prenom} » (non trouvé dans le Sheet)`;
+      res.textContent = `✅ Test envoyé à ${testEmail}${prenomInfo}`;
+    } else {
+      res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
+      res.textContent = `❌ Erreur : ${d.error || 'inconnue'}`;
+    }
+  } catch(e) {
+    res.style.display = 'block'; res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
+    res.textContent = `❌ Erreur réseau : ${e.message}`;
+  } finally { btn.disabled = false; btn.textContent = '🧪 Envoi de test'; }
 }
 </script>
 </body>

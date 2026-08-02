@@ -44,7 +44,7 @@ NL_ASSETS_BASE = "https://liliwatt-admin.onrender.com/static/newsletter"
 # Gmail met en cache les images par URL exacte, indefiniment.
 # A INCREMENTER a chaque fois qu'un asset de static/newsletter/
 # est modifie, sinon les destinataires verront l'ancienne version.
-NL_ASSETS_VERSION = "5"
+NL_ASSETS_VERSION = "6"
 
 def _nl_asset(nom):
     """Retourne l'URL complète d'un asset newsletter avec cache-busting."""
@@ -53,6 +53,28 @@ def _nl_asset(nom):
 NL_INTRO = {
     "newsletter":    "Votre newsletter mensuelle avec les dernières actualités du marché de l'énergie, nos conseils et nos services pour vous accompagner au mieux.",
     "communication": "Nous avons une information importante à vous transmettre.",
+    "bienvenue":     "Nous sommes heureux de vous compter parmi nos clients.",
+}
+
+BIENVENUE_DEFAUT = {
+    "objet": "Bienvenue chez LILIWATT",
+    "titre": "Bienvenue chez LILIWATT",
+    "message": """Merci de votre confiance.
+
+Vous avez choisi LILIWATT pour votre contrat d\u2019\xe9nergie, et nous en sommes heureux. Notre r\xf4le ne s\u2019arr\xeate pas \xe0 la signature \u2014 il commence.
+
+\xc0 partir d\u2019aujourd\u2019hui, nous suivons deux choses pour vous\u00a0: votre contrat, et le march\xe9 de l\u2019\xe9nergie. Les prix bougent, les offres changent, les \xe9ch\xe9ances arrivent. Nous surveillons tout cela en continu, et nous revenons vers vous \xe0 chaque fois que votre situation peut \xeatre am\xe9lior\xe9e. Vous n\u2019avez rien \xe0 surveiller de votre c\xf4t\xe9.
+
+Nous sommes votre interlocuteur unique pour tout ce qui touche \xe0 votre \xe9nergie\u00a0: votre contrat, vos consommations, vos factures, une question sur le march\xe9 ou simplement un doute. Une seule adresse, un seul num\xe9ro, et quelqu\u2019un qui conna\xeet d\xe9j\xe0 votre dossier.
+
+Nous travaillons en toute transparence. Vous saurez toujours pourquoi nous vous recommandons une offre plut\xf4t qu\u2019une autre, et vous resterez libre de votre d\xe9cision.
+
+N\u2019h\xe9sitez jamais \xe0 nous solliciter \u2014 c\u2019est exactement pour cela que nous sommes l\xe0.
+
+Deux choses encore, juste en dessous de ce message. Si notre accompagnement vous convient, quelques mots d\u2019avis sur Google nous aident beaucoup \xe0 nous faire conna\xeetre. Et si vous connaissez une entreprise qui gagnerait \xe0 \xeatre mieux conseill\xe9e sur son \xe9nergie, notre programme de parrainage vous permet de la recommander \u2014 et d\u2019\xeatre remerci\xe9 pour cela.
+
+\xc0 tr\xe8s bient\xf4t,
+L\u2019\xe9quipe LILIWATT""",
 }
 
 GOOGLE_AVIS_URL = os.environ.get("GOOGLE_AVIS_URL", "https://g.page/r/CUzpowIihy_ZEBM/review")
@@ -2685,10 +2707,9 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
     parr_url = PARRAINAGE_URL or '#'
     titre_html = (f'<div style="font-size:24px;font-weight:800;color:#1e1b4b;line-height:1.2;margin:16px 0 0;">'
                   f'{html_mod.escape(titre)}</div>') if titre else ''
-    # CTA contourné centré en bas de BLOC 5 (format Newsletter uniquement)
-    # Table-border pour Outlook (pas de border CSS sur le <a>)
+    # CTA centré en bas de BLOC 5 : obligatoire en Newsletter (validé côté UI), facultatif sinon
     cta_html = ''
-    if fmt == 'newsletter' and cta_texte and cta_lien:
+    if cta_texte and cta_lien:
         cta_html = (
             f'<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin-top:32px;">'
             f'<tr><td style="border:2px solid #7c3aed;border-radius:8px;">'
@@ -2744,11 +2765,13 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
 </table>
 </td></tr>''')
 
+    _hero_img  = 'hero_bienvenue.jpg' if fmt == 'bienvenue' else 'hero.jpg'
+    _hero_alt  = 'Bienvenue chez LILIWATT' if fmt == 'bienvenue' else 'L&#39;&#233;nergie &#233;volue, nous vous accompagnons'
     parts.append(f'''<!-- BLOC 3 : Hero -->
 <tr><td align="center">
 <table role="presentation" width="640" cellpadding="0" cellspacing="0">
   <tr><td bgcolor="#4c1d95">
-    <img src="{_nl_asset('hero.jpg')}" alt="L&#39;&#233;nergie &#233;volue, nous vous accompagnons" width="640" style="display:block;width:100%;max-width:640px;height:auto;border:0;" />
+    <img src="{_nl_asset(_hero_img)}" alt="{_hero_alt}" width="640" style="display:block;width:100%;max-width:640px;height:auto;border:0;" />
   </td></tr>
 </table>
 </td></tr>''')
@@ -2771,10 +2794,10 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
       <tr><td style="padding:32px;">
         <table role="presentation" cellpadding="0" cellspacing="0"><tr>
           <td style="vertical-align:top;width:56px;">
-            <img src="{_nl_asset('icone_contact.png' if fmt == 'communication' else 'icone_actu.png')}" alt="" width="56" height="56" style="display:block;border:0;border-radius:50%;" />
+            <img src="{_nl_asset('icone_actu.png' if fmt == 'newsletter' else 'icone_contact.png')}" alt="" width="56" height="56" style="display:block;border:0;border-radius:50%;" />
           </td>
           <td style="padding-left:16px;vertical-align:top;">
-            <div style="font-size:13px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:6px;">{'RESTONS EN CONTACT' if fmt == 'communication' else 'ACTUALIT\u00c9 DU MOIS'}</div>
+            <div style="font-size:13px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:6px;">{'ACTUALIT\u00c9 DU MOIS' if fmt == 'newsletter' else ('BIENVENUE' if fmt == 'bienvenue' else 'RESTONS EN CONTACT')}</div>
           </td>
         </tr></table>
         {titre_html}
@@ -3110,6 +3133,119 @@ def newsletter_test_send():
     escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
     body_html = _nl_parse_balises(escaped)
     full_html = _nl_build_html(objet, titre, body_html, '#', fmt, cta_texte, cta_lien, prenom_test)
+    try:
+        token_zoho = get_zoho_token()
+        account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+        r = requests.post(
+            f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+            headers={'Authorization': f'Zoho-oauthtoken {token_zoho}', 'Content-Type': 'application/json'},
+            json={'fromAddress': 'contact@liliwatt.fr', 'toAddress': test_email,
+                  'subject': f'[TEST] {objet}', 'content': full_html, 'mailFormat': 'html'},
+            timeout=15
+        )
+        if r.status_code >= 400:
+            return jsonify({"success": False, "error": f"Zoho HTTP {r.status_code}"}), 500
+        return jsonify({"success": True, "prenom": prenom_test, "prenom_source": prenom_source})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/bienvenue/defaults')
+@login_required
+def bienvenue_defaults():
+    return jsonify({"success": True, "defaults": BIENVENUE_DEFAUT})
+
+@app.route('/bienvenue/preview', methods=['POST'])
+@login_required
+def bienvenue_preview():
+    d = request.get_json()
+    objet   = (d.get('objet')   or BIENVENUE_DEFAUT['objet']).strip()
+    titre   = (d.get('titre')   or BIENVENUE_DEFAUT['titre']).strip()
+    message = (d.get('message') or BIENVENUE_DEFAUT['message']).strip()
+    cta_texte = (d.get('cta_texte') or '').strip()
+    cta_lien  = (d.get('cta_lien')  or '').strip()
+    escaped = html_mod.escape(message)
+    escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
+    body_html = _nl_parse_balises(escaped)
+    preview_html = _nl_build_html(objet, titre, body_html, '#', 'bienvenue', cta_texte, cta_lien)
+    return jsonify({"success": True, "html": preview_html})
+
+@app.route('/bienvenue/send', methods=['POST'])
+@login_required
+def bienvenue_send():
+    d = request.get_json()
+    objet     = (d.get('objet')     or BIENVENUE_DEFAUT['objet']).strip()
+    titre     = (d.get('titre')     or BIENVENUE_DEFAUT['titre']).strip()
+    message   = (d.get('message')   or BIENVENUE_DEFAUT['message']).strip()
+    email_dest = (d.get('email')    or '').strip().lower()
+    cta_texte = (d.get('cta_texte') or '').strip()
+    cta_lien  = (d.get('cta_lien')  or '').strip()
+    if not email_dest:
+        return jsonify({"success": False, "error": "Email destinataire requis"}), 400
+    # Prénom depuis le Sheet
+    prenom = ''
+    try:
+        gc = get_sheets_client()
+        ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+        for row in ws.get_all_values()[1:]:
+            if len(row) > 22 and row[22].strip().lower() == email_dest:
+                raw_p = row[20].strip() if len(row) > 20 else ''
+                prenom = _nl_normalise_prenom(raw_p)
+                break
+    except Exception:
+        pass
+    escaped = html_mod.escape(message)
+    escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
+    body_html = _nl_parse_balises(escaped)
+    unsub_url = url_for('newsletter_unsubscribe', email=email_dest,
+                        token=_nl_unsub_token(email_dest), _external=True)
+    full_html = _nl_build_html(objet, titre, body_html, unsub_url, 'bienvenue', cta_texte, cta_lien, prenom)
+    try:
+        token_zoho = get_zoho_token()
+        account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+        r = requests.post(
+            f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+            headers={'Authorization': f'Zoho-oauthtoken {token_zoho}', 'Content-Type': 'application/json'},
+            json={'fromAddress': 'contact@liliwatt.fr', 'toAddress': email_dest,
+                  'subject': objet, 'content': full_html, 'mailFormat': 'html'},
+            timeout=15
+        )
+        if r.status_code >= 400:
+            return jsonify({"success": False, "error": f"Zoho HTTP {r.status_code}"}), 500
+        return jsonify({"success": True, "prenom": prenom or ''})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/bienvenue/test-send', methods=['POST'])
+@login_required
+def bienvenue_test_send():
+    d = request.get_json()
+    objet      = (d.get('objet')      or BIENVENUE_DEFAUT['objet']).strip()
+    titre      = (d.get('titre')      or BIENVENUE_DEFAUT['titre']).strip()
+    message    = (d.get('message')    or BIENVENUE_DEFAUT['message']).strip()
+    test_email = (d.get('test_email') or '').strip().lower()
+    cta_texte  = (d.get('cta_texte') or '').strip()
+    cta_lien   = (d.get('cta_lien')  or '').strip()
+    if not test_email:
+        return jsonify({"success": False, "error": "Email de test requis"}), 400
+    prenom_test   = 'Test'
+    prenom_source = 'fallback'
+    try:
+        gc = get_sheets_client()
+        ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+        for row in ws.get_all_values()[1:]:
+            if len(row) > 22 and row[22].strip().lower() == test_email:
+                raw_p = row[20].strip() if len(row) > 20 else ''
+                p = _nl_normalise_prenom(raw_p)
+                if p:
+                    prenom_test   = p
+                    prenom_source = 'sheet'
+                break
+    except Exception:
+        pass
+    escaped = html_mod.escape(message)
+    escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
+    body_html = _nl_parse_balises(escaped)
+    full_html = _nl_build_html(objet, titre, body_html, '#', 'bienvenue', cta_texte, cta_lien, prenom_test)
     try:
         token_zoho = get_zoho_token()
         account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
