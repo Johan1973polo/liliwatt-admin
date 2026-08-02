@@ -470,30 +470,28 @@
         <input type="text" id="nl-titre-actu" placeholder="Ex : Les prix de l'énergie chutent en août" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
 
         <div id="nl-cta-fields" style="background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:16px;margin-bottom:16px;">
-          <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:12px;">Bouton article (centré en bas)</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#7c3aed;text-transform:uppercase;margin-bottom:12px;">Bouton (centré en bas)</div>
           <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Texte du bouton</label>
           <input type="text" id="nl-cta-texte" placeholder="Ex : Lire l'article complet" oninput="nlCheckCtaRequired()" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:10px;font-size:14px;box-sizing:border-box;" />
-          <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Lien de l'article</label>
+          <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Lien de redirection</label>
           <input type="url" id="nl-cta-lien" placeholder="https://..." oninput="nlCheckCtaRequired()" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />
           <div id="nl-cta-required-msg" style="display:none;margin-top:8px;font-size:12px;color:#dc2626;">⚠️ Texte et lien du bouton requis en mode Newsletter pour pouvoir envoyer.</div>
         </div>
 
         <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Destinataires</label>
         <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;">
-          <select id="nl-cible" onchange="document.getElementById('nl-email-unique-wrap').style.display=this.value==='un'?'block':'none'" style="padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+          <select id="nl-cible" onchange="nlCibleChange()" style="padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
             <option value="tous">Tous les clients (dédupliqués)</option>
             <option value="un">Un client précis</option>
           </select>
           <div id="nl-email-unique-wrap" style="display:none;flex:1;">
-            <input type="email" id="nl-email-unique" placeholder="email@client.fr" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />
+            <select id="nl-email-unique-select" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+              <option value="">⏳ Chargement…</option>
+            </select>
           </div>
         </div>
 
         <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Message</label>
-        <div id="nl-balise-tools" style="display:none;gap:8px;margin-bottom:8px;">
-          <button type="button" onclick="nlInsertBalise('bouton')" style="padding:6px 14px;background:#f5f3ff;border:1px solid #d9c8f7;border-radius:6px;font-size:12px;font-weight:600;color:#7c3aed;cursor:pointer;">+ Insérer un bouton</button>
-          <button type="button" onclick="nlInsertBalise('lien')" style="padding:6px 14px;background:#f5f3ff;border:1px solid #d9c8f7;border-radius:6px;font-size:12px;font-weight:600;color:#7c3aed;cursor:pointer;">+ Insérer un lien</button>
-        </div>
         <textarea id="nl-message" rows="10" placeholder="Bonjour,&#10;&#10;Votre message ici...&#10;&#10;[bouton]Texte du bouton|https://url[/bouton]&#10;[lien]Texte du lien|https://url[/lien]" style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:monospace;resize:vertical;box-sizing:border-box;min-height:180px;"></textarea>
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;margin-bottom:4px;">
@@ -506,9 +504,14 @@
           <button onclick="nlSend()" id="nl-btn-send" style="flex:1;padding:12px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">📧 Envoyer</button>
         </div>
 
-        <div style="display:flex;gap:8px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
-          <input type="email" id="nl-test-email" placeholder="email@test.fr" style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;box-sizing:border-box;" />
-          <button onclick="nlTestSend()" id="nl-btn-test" style="padding:10px 18px;background:#374151;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">🧪 Envoi de test</button>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="nl-test-select" onchange="nlTestSelectChange()" style="flex:1;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;">
+              <option value="">⏳ Chargement…</option>
+            </select>
+            <button onclick="nlTestSend()" id="nl-btn-test" style="padding:10px 18px;background:#374151;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">🧪 Envoi de test</button>
+          </div>
+          <input type="email" id="nl-test-email" placeholder="Autre adresse email…" style="display:none;width:100%;margin-top:8px;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;box-sizing:border-box;" />
         </div>
         <div id="nl-test-result" style="display:none;margin-top:8px;font-size:12px;padding:8px 12px;border-radius:8px;"></div>
 
@@ -537,20 +540,7 @@
 
 <!-- Modal Référent -->
 
-<!-- Modal Insertion Balise Newsletter -->
-<div id="nl-modal-balise" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
-  <div style="background:white;border-radius:14px;padding:28px;max-width:420px;width:90%;border:2px solid #7c3aed;">
-    <h3 id="nl-modal-title" style="margin:0 0 16px;color:#1e1b4b;font-size:16px;">Insérer un bouton</h3>
-    <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">Texte affiché</label>
-    <input type="text" id="nl-modal-texte" placeholder="Ex : Découvrir l'offre" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:12px;font-size:14px;box-sizing:border-box;" />
-    <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">URL</label>
-    <input type="url" id="nl-modal-url" placeholder="https://..." style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;" />
-    <div style="display:flex;gap:8px;">
-      <button id="nl-modal-confirm" style="flex:1;padding:10px;background:#7c3aed;color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Insérer</button>
-      <button onclick="document.getElementById('nl-modal-balise').style.display='none'" style="flex:1;padding:10px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Annuler</button>
-    </div>
-  </div>
-</div>
+
 <div id="modalReferent" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
   <div style="background:white;border-radius:14px;padding:28px;max-width:420px;width:90%;border:2px solid #7c3aed;">
     <h3 id="modalRefTitle" style="margin:0 0 6px;color:#1e1b4b;font-size:16px;"></h3>
@@ -576,7 +566,7 @@ function showTab(name) {
   if (name === 'recrutement') loadCandidats();
   if (name === 'ventes') { loadVenteVendeurs(); loadVentes(); }
   if (name === 'premium') { loadBPStats(); loadBPVendeurs(); }
-  if (name === 'newsletter') { nlCount(); nlSetFormat(_nlFormat); }
+  if (name === 'newsletter') { nlCount(); nlSetFormat(_nlFormat); nlLoadClients(); }
 }
 
 function normalize(s) {
@@ -1787,8 +1777,6 @@ function nlSetFormat(fmt) {
   document.getElementById('nl-fmt-newsletter').style.color = fmt === 'newsletter' ? '#fff' : '#374151';
   document.getElementById('nl-fmt-communication').style.background = fmt === 'communication' ? '#7c3aed' : '#f3f4f6';
   document.getElementById('nl-fmt-communication').style.color = fmt === 'communication' ? '#fff' : '#374151';
-  document.getElementById('nl-cta-fields').style.display = fmt === 'newsletter' ? 'block' : 'none';
-  document.getElementById('nl-balise-tools').style.display = fmt === 'communication' ? 'flex' : 'none';
   document.getElementById('nl-titre-label').textContent = fmt === 'newsletter' ? "Titre de l'actualité" : "Titre du message";
   nlCheckCtaRequired();
 }
@@ -1829,28 +1817,45 @@ async function nlCount() {
   }
 }
 
-let _nlBaliseType = 'bouton';
-function nlInsertBalise(type) {
-  _nlBaliseType = type;
-  document.getElementById('nl-modal-title').textContent = type === 'bouton' ? 'Insérer un bouton' : 'Insérer un lien';
-  document.getElementById('nl-modal-texte').value = '';
-  document.getElementById('nl-modal-url').value = '';
-  const modal = document.getElementById('nl-modal-balise');
-  modal.style.display = 'flex';
-  document.getElementById('nl-modal-confirm').onclick = function() {
-    const txt = document.getElementById('nl-modal-texte').value.trim();
-    const url = document.getElementById('nl-modal-url').value.trim();
-    if (!txt || !url) { alert('Texte et URL requis'); return; }
-    const tag = `[${_nlBaliseType}]${txt}|${url}[/${_nlBaliseType}]`;
-    const ta = document.getElementById('nl-message');
-    const start = ta.selectionStart;
-    const before = ta.value.substring(0, start);
-    const after = ta.value.substring(ta.selectionEnd);
-    ta.value = before + tag + after;
-    ta.focus();
-    ta.selectionStart = ta.selectionEnd = start + tag.length;
-    modal.style.display = 'none';
-  };
+function _nlEsc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function nlLoadClients() {
+  function _nlFallback(msg) {
+    // Cas dégradé : impossible de charger la liste — on bascule sur champ libre
+    document.getElementById('nl-email-unique-select').outerHTML =
+      `<input type="email" id="nl-email-unique-select" placeholder="email@client.fr" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;" />`;
+    const ts = document.getElementById('nl-test-select');
+    ts.innerHTML = `<option value="__autre__">${_nlEsc(msg)}</option>`;
+    ts.value = '__autre__';
+    document.getElementById('nl-test-email').style.display = 'block';
+  }
+  try {
+    const r = await fetch('/newsletter/clients');
+    const d = await r.json();
+    if (!d.success || !d.clients || d.clients.length === 0) {
+      _nlFallback('Liste indisponible — saisir une adresse');
+      return;
+    }
+    const opts = d.clients.map(c => `<option value="${_nlEsc(c.email)}">${_nlEsc(c.label)}</option>`).join('');
+    document.getElementById('nl-email-unique-select').innerHTML =
+      '<option value="">— Sélectionner un client —</option>' + opts;
+    document.getElementById('nl-test-select').innerHTML =
+      '<option value="">— Sélectionner —</option>' + opts +
+      '<option value="__autre__">Autre adresse…</option>';
+  } catch(e) {
+    console.error('Erreur chargement clients:', e);
+    _nlFallback('Liste indisponible — saisir une adresse');
+  }
+}
+
+function nlCibleChange() {
+  const cible = document.getElementById('nl-cible').value;
+  document.getElementById('nl-email-unique-wrap').style.display = cible === 'un' ? 'flex' : 'none';
+}
+
+function nlTestSelectChange() {
+  const v = document.getElementById('nl-test-select').value;
+  document.getElementById('nl-test-email').style.display = v === '__autre__' ? 'block' : 'none';
 }
 
 async function nlPreview() {
@@ -1884,14 +1889,14 @@ async function nlSend() {
   const titre = document.getElementById('nl-titre-actu').value.trim();
   const message = document.getElementById('nl-message').value.trim();
   const cible = document.getElementById('nl-cible').value;
-  const emailUnique = document.getElementById('nl-email-unique').value.trim();
+  const emailUnique = cible === 'un' ? document.getElementById('nl-email-unique-select').value.trim() : '';
   const cta_texte = document.getElementById('nl-cta-texte').value.trim();
   const cta_lien = document.getElementById('nl-cta-lien').value.trim();
   if (!objet || !message) { alert('Objet et message requis'); return; }
-  if (cible === 'un' && !emailUnique) { alert('Entrez l\'email du client'); return; }
+  if (cible === 'un' && !emailUnique) { alert('Sélectionnez un client'); return; }
   if (_nlFormat === 'newsletter') {
-    if (!cta_texte || !cta_lien) { alert('Le texte et le lien du bouton article sont requis en mode Newsletter.'); return; }
-    if (!/^https?:\/\//i.test(cta_lien)) { alert('Le lien du bouton article doit commencer par http:// ou https://'); return; }
+    if (!cta_texte || !cta_lien) { alert('Le texte et le lien du bouton sont requis en mode Newsletter.'); return; }
+    if (!/^https?:\/\//i.test(cta_lien)) { alert('Le lien du bouton doit commencer par http:// ou https://'); return; }
   }
   const desc = cible === 'un' ? `à ${emailUnique}` : 'à tous les clients';
   if (!confirm(`Envoyer la newsletter ${desc} ?\n\nObjet : ${objet}`)) return;
@@ -1948,11 +1953,14 @@ async function nlTestSend() {
   const objet = document.getElementById('nl-objet').value.trim();
   const titre = document.getElementById('nl-titre-actu').value.trim();
   const message = document.getElementById('nl-message').value.trim();
-  const testEmail = document.getElementById('nl-test-email').value.trim();
+  const testSelectVal = document.getElementById('nl-test-select').value;
+  const testEmail = testSelectVal === '__autre__'
+    ? document.getElementById('nl-test-email').value.trim()
+    : testSelectVal;
   const cta_texte = document.getElementById('nl-cta-texte').value.trim();
   const cta_lien = document.getElementById('nl-cta-lien').value.trim();
   if (!objet || !message) { alert('Objet et message requis'); return; }
-  if (!testEmail) { alert('Entrez l\'adresse email de test'); return; }
+  if (!testEmail) { alert('Sélectionnez un destinataire ou saisissez une adresse'); return; }
   const btn = document.getElementById('nl-btn-test');
   btn.disabled = true; btn.textContent = '⏳…';
   const res = document.getElementById('nl-test-result');

@@ -49,6 +49,12 @@ NL_ASSETS_VERSION = "5"
 def _nl_asset(nom):
     """Retourne l'URL complète d'un asset newsletter avec cache-busting."""
     return f"{NL_ASSETS_BASE}/{nom}?v={NL_ASSETS_VERSION}"
+
+NL_INTRO = {
+    "newsletter":    "Votre newsletter mensuelle avec les dernières actualités du marché de l'énergie, nos conseils et nos services pour vous accompagner au mieux.",
+    "communication": "Nous avons une information importante à vous transmettre.",
+}
+
 GOOGLE_AVIS_URL = os.environ.get("GOOGLE_AVIS_URL", "https://g.page/r/CUzpowIihy_ZEBM/review")
 PARRAINAGE_URL  = os.environ.get("PARRAINAGE_URL", "https://liliwatt-parrainage.onrender.com/")
 NEWSLETTER_SECRET = os.environ.get("NEWSLETTER_SECRET", "nl-liliwatt-secret-2026")
@@ -2752,7 +2758,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;">
   <tr><td style="padding:28px 40px 12px;">
     <div style="font-size:16px;font-weight:700;color:#1e1b4b;margin-bottom:10px;">{salutation}</div>
-    <div style="font-size:14px;color:#4b5563;line-height:1.65;">Votre newsletter mensuelle avec les derni&#232;res actualit&#233;s du march&#233; de l&#39;&#233;nergie, nos conseils et nos services pour vous accompagner au mieux.</div>
+    <div style="font-size:14px;color:#4b5563;line-height:1.65;">{html_mod.escape(NL_INTRO.get(fmt, NL_INTRO["newsletter"]))}</div>
   </td></tr>
 </table>
 </td></tr>''')
@@ -3010,6 +3016,33 @@ def newsletter_count():
             "desinscrits": desinscrits,
             "destinataires": len(destinataires)
         })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/newsletter/clients')
+@login_required
+def newsletter_clients():
+    try:
+        gc = get_sheets_client()
+        ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+        rows = ws.get_all_values()
+        email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+        unsub = _nl_get_unsub_set()
+        seen = set()
+        clients = []
+        for row in rows[1:]:
+            if len(row) > 22:
+                e = row[22].strip().lower()
+                if not e or not email_re.match(e) or e in seen or e in unsub:
+                    continue
+                seen.add(e)
+                nom    = row[19].strip() if len(row) > 19 else ''
+                prenom = row[20].strip() if len(row) > 20 else ''
+                parts  = [p for p in [prenom, nom] if p]
+                label  = (' '.join(parts) + ' - ' + e) if parts else e
+                clients.append({"email": e, "label": label, "nom": nom, "prenom": prenom})
+        clients.sort(key=lambda c: (c['nom'].lower() or c['email'], c['prenom'].lower()))
+        return jsonify({"success": True, "clients": clients})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
