@@ -35,6 +35,42 @@
   .user-info span { color: #7c3aed; font-size: 12px; display: block; }
   .loading { text-align: center; color: #7c3aed; font-size: 14px; padding: 20px; }
   .bar { height: 3px; background: linear-gradient(135deg, #7c3aed, #d946ef); border-radius: 0 0 0 0; }
+
+  /* ===== DROPZONE CONTRAT PDF ===== */
+  .dz-wrap { position: relative; margin-bottom: 16px; }
+  .dz-box {
+    border: 2px dashed #7c3aed; border-radius: 12px; background: #f5f3ff;
+    height: 140px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: border-style 0.12s, background 0.12s;
+    user-select: none; position: relative;
+  }
+  .dz-box.dz-hover    { border-style: solid; background: #ede9fe; }
+  .dz-box.dz-error    { border-color: #ef4444; background: #fef2f2; }
+  .dz-box.dz-processing { border-style: solid; cursor: wait; }
+  .dz-box.dz-done     { border-style: solid; border-color: #22c55e; background: #f0fdf4; }
+  .dz-inner           { text-align: center; pointer-events: none; }
+  .dz-icon            { font-size: 24px; margin-bottom: 4px; }
+  .dz-main-text       { font-size: 13px; color: #4b5563; }
+  .dz-main-text .dz-link { color: #7c3aed; font-weight: 700; text-decoration: underline; }
+  .dz-sub-text        { font-size: 11px; color: #9ca3af; margin-top: 3px; }
+  .dz-error-msg       { color: #ef4444; font-weight: 600; font-size: 13px; }
+  .dz-filename        { font-size: 12px; font-weight: 700; color: #1e1b4b; margin-bottom: 3px; }
+  .dz-success-msg     { font-size: 12px; color: #16a34a; }
+  .dz-remove-btn      {
+    position: absolute; top: 8px; right: 10px;
+    background: none; border: none; font-size: 18px;
+    cursor: pointer; color: #9ca3af; line-height: 1; pointer-events: all;
+  }
+  .dz-remove-btn:hover { color: #374151; }
+  .dz-not-found       { font-size: 11px; color: #6b7280; margin-top: 6px; font-style: italic; }
+  .dz-pdl-alert {
+    background: #fefce8; border: 2px solid #fbbf24;
+    border-radius: 10px; padding: 10px 14px; margin-top: 10px;
+  }
+  .dz-pdl-label       { font-size: 10px; font-weight: 700; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .dz-pdl-value       { font-family: monospace; font-size: 26px; font-weight: 800; color: #1e1b4b; letter-spacing: 3px; margin-top: 2px; }
+  .dz-pdl-warn        { font-size: 10px; color: #b45309; margin-top: 2px; }
+  input.dz-prefilled, select.dz-prefilled { background-color: #fef9c3 !important; border-color: #fbbf24 !important; }
 </style>
 <script src="/static/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -248,6 +284,26 @@
           <button onclick="loadVentes()" class="btn" style="font-size:12px;padding:8px 16px;">🔄</button>
         </div>
       </h2>
+
+      <!-- Extracteur contrat PDF -->
+      <div class="dz-wrap" id="dzWrap">
+        <input type="file" id="dzInput" accept=".pdf,application/pdf" style="display:none">
+        <div class="dz-box" id="dzBox">
+          <div class="dz-inner" id="dzInner">
+            <div class="dz-icon">📄</div>
+            <div class="dz-main-text">Glissez le contrat PDF ici</div>
+            <div class="dz-sub-text">ou cliquez n'importe où dans cette zone · PDF · Max 10 Mo</div>
+          </div>
+        </div>
+        <div id="dzPdlAlert" style="display:none" class="dz-pdl-alert">
+          <div class="dz-pdl-label">N° PDL / PCE — <strong>À vérifier sur le contrat</strong></div>
+          <div class="dz-pdl-value" id="dzPdlValue">—</div>
+          <div class="dz-pdl-warn">14 chiffres · champ critique · confirmer visuellement avant enregistrement</div>
+        </div>
+        <div id="dzNotFound" class="dz-not-found" style="display:none"></div>
+        <div id="dzWarnings" class="dz-not-found" style="display:none;color:#92400e;background:#fef3c7;"></div>
+        <button id="dzClearBtn" onclick="dzReset()" style="display:none;margin-top:8px;padding:6px 14px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">✕ Effacer le pré-remplissage</button>
+      </div>
 
       <!-- Formulaire saisie -->
       <div id="venteForm" style="display:none;background:#faf5ff;border-radius:12px;padding:20px;margin-bottom:20px;border:1.5px solid #e9d5ff;">
@@ -2181,6 +2237,248 @@ async function bvTestSend() {
     res.textContent = `❌ Erreur réseau : ${e.message}`;
   } finally { btn.disabled = false; btn.textContent = '🧪 Envoi de test'; }
 }
+
+// ===== DROPZONE CONTRAT PDF =====
+
+// Garde-fou global : empêche le navigateur d'ouvrir un fichier déposé hors zone
+document.addEventListener('dragover', function(e){ e.preventDefault(); });
+document.addEventListener('drop',     function(e){ e.preventDefault(); });
+
+(function(){
+  const box   = document.getElementById('dzBox');
+  const input = document.getElementById('dzInput');
+  if (!box) return;
+
+  // Champs extraits → id HTML du formulaire (hors fournisseur et type traités séparément)
+  const FIELD_MAP = {
+    ref_client:    'v_ref_client',
+    societe:       'v_societe',
+    periode:       'v_periode',
+    date_debut:    'v_date_debut',
+    date_fin:      'v_date_fin',
+    nom_client:    'v_nom_client',
+    prenom_client: 'v_prenom_client',
+    tel_client:    'v_tel_client',
+    email_client:  'v_email_client',
+    volume_gaz:    'v_vol_gaz',
+    volume_elec:   'v_vol_elec',
+  };
+
+  let _extractedIds = [];   // ids HTML des champs pré-remplis (pour effacement)
+  let _currentState = 'idle';
+
+  // ── États visuels de la zone ────────────────────────────────────────────
+  function dzSetState(state, opts){
+    opts = opts || {};
+    _currentState = state;
+    box.className = 'dz-box' + ({processing:' dz-processing', done:' dz-done', error:' dz-error'}[state]||'');
+    const inner = document.getElementById('dzInner');
+
+    if(state === 'idle'){
+      inner.innerHTML =
+        '<div class="dz-icon">📄</div>'
+        +'<div class="dz-main-text">Glissez le contrat PDF ici</div>'
+        +'<div class="dz-sub-text">PDF uniquement · Max 10 Mo</div>';
+    } else if(state === 'processing'){
+      inner.innerHTML =
+        '<div class="dz-icon">⏳</div>'
+        +'<div class="dz-filename">'+_esc(opts.filename||'')+'</div>'
+        +'<div class="dz-sub-text">Extraction en cours…</div>';
+    } else if(state === 'done'){
+      const w = (opts.warnings||[]).length ? ' · ⚠️ '+(opts.warnings||[]).length+' avert.' : '';
+      inner.innerHTML =
+        '<div class="dz-icon">✅</div>'
+        +'<div class="dz-filename">'+_esc(opts.filename||'')+'</div>'
+        +'<div class="dz-success-msg">'+(opts.count||0)+' champs pré-remplis'+w+'</div>'
+        +'<button class="dz-remove-btn" onclick="dzReset()" title="Effacer le pré-remplissage">✕</button>';
+      document.getElementById('dzClearBtn').style.display = 'inline-block';
+    } else if(state === 'error'){
+      inner.innerHTML =
+        '<div class="dz-icon">⚠️</div>'
+        +'<div class="dz-error-msg">'+_esc(opts.message||'Erreur')+'</div>'
+        +'<div class="dz-sub-text" style="margin-top:5px;">Cliquez pour réessayer</div>';
+    }
+  }
+
+  function _esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // ── Drag handlers ───────────────────────────────────────────────────────
+  box.addEventListener('dragenter', function(e){ e.preventDefault(); e.stopPropagation(); box.classList.add('dz-hover'); });
+  box.addEventListener('dragover',  function(e){ e.preventDefault(); e.stopPropagation(); box.classList.add('dz-hover'); });
+  box.addEventListener('dragleave', function(e){
+    e.preventDefault(); e.stopPropagation();
+    if(!box.contains(e.relatedTarget)) box.classList.remove('dz-hover');
+  });
+  box.addEventListener('drop', function(e){
+    e.preventDefault(); e.stopPropagation();
+    box.classList.remove('dz-hover');
+    if(_currentState === 'processing') return;  // ignorer drop pendant extraction
+    _handleFiles(e.dataTransfer.files);
+  });
+
+  // ── Clic → sélecteur fichiers ───────────────────────────────────────────
+  box.addEventListener('click', function(e){
+    if(e.target.classList.contains('dz-remove-btn')) return;
+    if(_currentState === 'processing') return;
+    input.click();
+  });
+  input.addEventListener('change', function(){ _handleFiles(input.files); });
+
+  // ── Validation ──────────────────────────────────────────────────────────
+  function _handleFiles(files){
+    if(!files || !files.length) return;
+    const file = files[0];
+    let extraWarn = '';
+    if(files.length > 1) extraWarn = 'Plusieurs fichiers détectés — seul le premier est traité.';
+    if(!file.name.toLowerCase().endsWith('.pdf') || file.type !== 'application/pdf'){
+      dzSetState('error', {message:'Fichier non valide — PDF uniquement (.pdf requis).'});
+      return;
+    }
+    if(file.size > 10*1024*1024){
+      dzSetState('error', {message:'Fichier trop volumineux ('+(file.size/1048576).toFixed(1)+' Mo > 10 Mo).'});
+      return;
+    }
+    _upload(file, extraWarn);
+  }
+
+  // ── Upload et extraction ─────────────────────────────────────────────────
+  async function _upload(file, extraWarn){
+    dzSetState('processing', {filename: file.name});
+    const fd = new FormData();
+    fd.append('pdf', file);
+    try {
+      const r = await fetch('/ventes/extraire-contrat', {method:'POST', body:fd});
+      const data = await r.json();
+      if(!r.ok || !data.success) throw new Error(data.error||'Erreur serveur');
+      _applyFields(data.champs, data.avertissements||[], file.name, extraWarn);
+    } catch(err) {
+      dzSetState('error', {message: err.message||"Erreur lors de l'extraction."});
+    }
+  }
+
+  // ── Pré-remplissage des champs ──────────────────────────────────────────
+  function _prefill(el, val){
+    el.value = val;
+    // Vérification post-affectation : si le navigateur a rejeté la valeur
+    // (ex: input[type=date] avec un format invalide), ne pas surligner
+    if(!el.value && val){
+      return false; // valeur rejetée — le champ reste vide et non surligné
+    }
+    el.classList.add('dz-prefilled');
+    // Retirer le surlignage à la première modification manuelle
+    const off = function(){ el.classList.remove('dz-prefilled'); el.removeEventListener('input',off); el.removeEventListener('change',off); };
+    el.addEventListener('input', off);
+    el.addEventListener('change', off);
+    _extractedIds.push(el.id);
+    return true;
+  }
+
+  // Convertit JJ/MM/AAAA → YYYY-MM-DD pour input[type=date]
+  function _toIsoDate(v){
+    if(!v) return v;
+    const m = String(v).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m ? m[3]+'-'+m[2]+'-'+m[1] : v;
+  }
+
+  function _applyFields(champs, avertissements, filename, extraWarn){
+    _extractedIds = [];
+    let filled = 0;
+    const nullFields = [];
+
+    // Ouvrir le formulaire (sans forcer la fermeture s'il était déjà ouvert)
+    document.getElementById('venteForm').style.display = 'block';
+
+    // Champs texte simples — avec conversion date si nécessaire
+    Object.entries(FIELD_MAP).forEach(function([key, id]){
+      let val = champs[key];
+      if(val === null || val === undefined || val === ''){
+        nullFields.push(key); return;
+      }
+      // Convertir dates pour input[type=date]
+      if(id === 'v_date_debut' || id === 'v_date_fin') val = _toIsoDate(val);
+      const el = document.getElementById(id);
+      if(!el) return;
+      if(_prefill(el, val)){ filled++; }
+      else { nullFields.push(key); }
+    });
+
+    // TYPE : boutons radio
+    if(champs.type_energie){
+      const tv = champs.type_energie.toLowerCase().includes('gaz') ? 'Gaz' : 'Électricité';
+      document.querySelectorAll('input[name="v_type"]').forEach(function(r){ r.checked = (r.value === tv); });
+      _extractedIds.push('_type_radio'); filled++;
+    } else { nullFields.push('type_energie'); }
+
+    // SEGMENT : select (options : C5-BASE, C5-HPHC, C4, C2, GAZ)
+    if(champs.segment){
+      const sel = document.getElementById('v_segment');
+      const opt = sel && Array.from(sel.options).find(o => o.value.trim().toUpperCase() === champs.segment.trim().toUpperCase());
+      if(opt){ _prefill(sel, opt.value); filled++; }
+      else nullFields.push('segment');
+    } else { nullFields.push('segment'); }
+
+    // FOURNISSEUR : select — correspondance EXACTE uniquement (trim + majuscules)
+    if(champs.fournisseur){
+      const sel = document.getElementById('v_fournisseur');
+      const autre = document.getElementById('v_fournisseur_autre');
+      const needle = champs.fournisseur.trim().toUpperCase();
+      const match = sel && Array.from(sel.options).find(o =>
+        o.value && o.value.trim().toUpperCase() === needle
+      );
+      if(match){ _prefill(sel, match.value); autre.style.display='none'; filled++; }
+      else { nullFields.push('fournisseur'); }
+    } else { nullFields.push('fournisseur'); }
+
+    // PDL_PCE : champ + bloc alerte visuelle
+    if(champs.pdl_pce){
+      const el = document.getElementById('v_pdl');
+      if(el){ _prefill(el, champs.pdl_pce); filled++; }
+      document.getElementById('dzPdlValue').textContent = champs.pdl_pce;
+      document.getElementById('dzPdlAlert').style.display = 'block';
+    } else {
+      nullFields.push('pdl_pce');
+      document.getElementById('dzPdlAlert').style.display = 'none';
+    }
+
+    // Liste champs non trouvés
+    const nf = document.getElementById('dzNotFound');
+    if(nullFields.length){ nf.style.display='block'; nf.textContent='Non trouvés : '+nullFields.join(', '); }
+    else { nf.style.display='none'; }
+
+    const allW = extraWarn ? [extraWarn, ...avertissements] : avertissements;
+    // Afficher les avertissements en toutes lettres
+    const wDiv = document.getElementById('dzWarnings');
+    if(allW.length){
+      wDiv.style.display = 'block';
+      wDiv.innerHTML = '⚠️ <strong>Avertissements :</strong><br>' + allW.map(function(w){ return '• ' + _esc(w); }).join('<br>');
+    } else { wDiv.style.display = 'none'; }
+    dzSetState('done', {filename:filename, count:filled, warnings:allW});
+    if(typeof calcMarge==='function') calcMarge();
+  }
+
+  // ── Effacer le pré-remplissage ──────────────────────────────────────────
+  window._dzApplyFields = _applyFields;  // exposé pour tests
+
+  window.dzReset = function(){
+    _extractedIds.forEach(function(id){
+      if(id==='_type_radio'){ const r=document.querySelector('input[name="v_type"][value="Électricité"]'); if(r) r.checked=true; return; }
+      const el=document.getElementById(id);
+      if(el){ el.value=''; el.classList.remove('dz-prefilled'); }
+    });
+    _extractedIds=[];
+    document.getElementById('dzPdlAlert').style.display='none';
+    document.getElementById('dzNotFound').style.display='none';
+    document.getElementById('dzWarnings').style.display='none';
+    document.getElementById('dzClearBtn').style.display='none';
+    const autre=document.getElementById('v_fournisseur_autre');
+    if(autre){ autre.style.display='none'; }
+    input.value='';
+    dzSetState('idle');
+    if(typeof calcMarge==='function') calcMarge();
+  };
+
+  dzSetState('idle');
+})();
 </script>
 </body>
 </html>

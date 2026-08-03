@@ -1744,6 +1744,174 @@ def contrats_generer():
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ===== EXTRACTEUR DE CONTRATS PDF =====
+
+_CONTRAT_SYSTEM_PROMPT = """Tu es un extracteur de données contractuelles pour des contrats d'énergie (gaz ou électricité).
+Tu reçois le texte brut et les tableaux sérialisés d'un PDF de contrat.
+Réponds UNIQUEMENT avec un objet JSON valide. Pas de texte autour, pas de balise markdown, pas de backtick.
+Un champ introuvable vaut null. Ne pas inventer de valeur.
+
+Règles d'extraction :
+
+ref_client : Numéro MIB, format "MIB-XXXXXXXXXX". Il apparaît souvent sous la forme "MIB-XXXXXXXXXX: Offre du..." — extraire uniquement le numéro, sans les deux-points ni ce qui suit.
+
+societe : Raison sociale du CLIENT. Dans le contrat, chercher le paragraphe qui commence par "Et" ou "d'autre part" — c'est le nom qui suit immédiatement, avant la virgule. Ne PAS prendre le nom du fournisseur (qui est entre "Entre" et "D'une part").
+
+periode : Mois de SIGNATURE du contrat, format AAAA-MM (ex: 2026-07). Chercher "Fait à ... le <jour> <mois> <année>" dans le corps du contrat. Convertir le nom du mois français en numéro (janvier=01, février=02, mars=03, avril=04, mai=05, juin=06, juillet=07, août=08, septembre=09, octobre=10, novembre=11, décembre=12).
+
+date_debut : Date de DÉBUT de fourniture au format AAAA-MM-JJ (ex: 2026-08-10). Se trouve dans le tableau des sites, colonne "Date de début". Convertir depuis JJ/MM/AAAA si nécessaire.
+
+date_fin : Date de FIN de fourniture au format AAAA-MM-JJ (ex: 2030-12-31). Chercher la phrase "se termine le JJ/MM/AAAA". Convertir depuis JJ/MM/AAAA si nécessaire.
+
+ATTENTION : periode, date_debut et date_fin sont trois dates différentes — ne jamais les confondre.
+
+type_energie : "gaz" si c'est un contrat de gaz naturel, "elec" si c'est un contrat d'électricité. Déduire du titre du contrat.
+
+pdl_pce : Numéro(s) à 14 chiffres figurant dans la colonne "N° du Point de Comptage et d'Estimation (PCE)". ATTENTION : le SIRET fait aussi 14 chiffres mais se trouve dans une colonne distincte intitulée "SIRET du site" — ne pas les confondre. Si plusieurs sites, concaténer tous les PCE avec " / ".
+
+fournisseur : Nom du fournisseur d'énergie. Se trouve entre "Entre" et "D'une part" dans l'en-tête du contrat.
+
+segment : "GAZ" si type_energie vaut "gaz". null si type_energie vaut "elec".
+
+nom_client : NOM (en majuscules) de la ligne du tableau Contacts dont la colonne Type contient exactement "Le signataire du contrat". Identifier la ligne par ce libellé, pas par sa position dans le tableau.
+
+prenom_client : PRÉNOM de cette même ligne.
+
+tel_client : Téléphone de cette même ligne (chiffres uniquement, sans espace ni tiret).
+
+email_client : Email de cette même ligne.
+
+volume_gaz : Si type_energie est "gaz" — volume annuel de fourniture en MWh (nombre décimal), lu dans la colonne TOTAL du tableau des sous-périodes.
+Compare la date de début de fourniture à chaque sous-période. Toute sous-période dont l'année correspond à une fourniture partielle (début en cours d'année) doit être ignorée. Retiens la première sous-période couvrant une année civile entière.
+Exemple : début 10/08/2026 → la sous-période 2026 est partielle (seulement quelques mois), IGNORER. Retenir la sous-période 2027 (première année complète).
+Si plusieurs sites, additionner les TOTAL de chaque site pour cette même sous-période. Renvoyer uniquement la valeur numérique (ex: 14.4). null si type_energie est "elec".
+
+volume_elec : Même règle exacte pour un contrat d'électricité — colonne TOTAL, ignorer la sous-période partielle, retenir la première année complète. Exemple : début 06/08/2026 → ignorer 2026 (38.3 MWh, partiel), retenir 2027 (95.1 MWh, année complète). null si type_energie est "gaz".
+
+Tu ne dois jamais inventer, deviner ou approximer une valeur absente du contrat. Si une donnée ne figure pas dans le document, renvoie null et ajoute un avertissement.
+En revanche, additionner des volumes qui figurent LITTÉRALEMENT dans le contrat est autorisé et attendu : sur un contrat multi-sites, le volume retenu est la somme des volumes annuels de tous les sites, sur une année complète. Cette somme porte uniquement sur des valeurs lues dans le document.
+
+Champs toujours null (ne pas extraire) : vendeur, referent, montant_ht, commission_vendeur, commission_referent, statut_paiement, date_paiement_1, date_paiement_2, lien_drive."""
+
+
+def _contrat_extraire_contenu(pdf_bytes):
+    """Extrait texte brut + tableaux des 8 premières pages (traitement en mémoire).
+
+    Renvoie une chaîne structurée. Lève ValueError si le PDF est sans texte.
+    """
+    import pdfplumber
+    import io as _io
+
+    parties = []
+    total_chars = 0
+
+    with pdfplumber.open(_io.BytesIO(pdf_bytes)) as pdf:
+        for i, page in enumerate(pdf.pages[:8], start=1):
+            texte = page.extract_text() or ''
+            total_chars += len(texte)
+            parties.append(f'=== PAGE {i} / TEXTE ===\n{texte}')
+
+            for j, table in enumerate(page.extract_tables(), start=1):
+                lignes = []
+                for row in table:
+                    cells = [str(c).strip() if c else '' for c in row]
+                    lignes.append(' | '.join(cells))
+                parties.append(f'=== PAGE {i} / TABLEAU {j} ===\n' + '\n'.join(lignes))
+
+    if total_chars < 200:
+        raise ValueError('PDF sans texte exploitable (document scanné ?) — saisie manuelle nécessaire.')
+
+    return '\n\n'.join(parties)
+
+
+def _contrat_extraire_champs(contenu):
+    """Envoie le contenu structuré à GPT-4o-mini et retourne (champs_dict, usage)."""
+    import openai
+
+    _CHAMPS_ATTENDUS = [
+        'ref_client', 'societe', 'periode', 'date_debut', 'date_fin',
+        'type_energie', 'pdl_pce', 'fournisseur', 'segment',
+        'nom_client', 'prenom_client', 'tel_client', 'email_client',
+        'volume_elec', 'volume_gaz',
+        'vendeur', 'referent', 'montant_ht', 'commission_vendeur',
+        'commission_referent', 'statut_paiement', 'date_paiement_1',
+        'date_paiement_2', 'lien_drive',
+    ]
+
+    client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY', ''))
+    resp = client.chat.completions.create(
+        model='gpt-4o-mini',
+        messages=[
+            {'role': 'system', 'content': _CONTRAT_SYSTEM_PROMPT},
+            {'role': 'user',   'content': contenu},
+        ],
+        temperature=0,
+        response_format={'type': 'json_object'},
+    )
+
+    raw = resp.choices[0].message.content.strip()
+    extracted = json.loads(raw)
+
+    # Garantir tous les champs attendus (null par défaut)
+    champs = {k: None for k in _CHAMPS_ATTENDUS}
+    champs.update({k: v for k, v in extracted.items() if k in champs})
+
+    return champs, raw, resp.usage
+
+
+@app.route('/ventes/extraire-contrat', methods=['POST'])
+@login_required
+def extraire_contrat():
+    """Reçoit un PDF en multipart, extrait les champs contractuels, renvoie du JSON.
+    Ne stocke jamais le PDF sur disque."""
+    if 'pdf' not in request.files:
+        return jsonify({'success': False, 'error': 'Aucun fichier reçu'}), 400
+
+    f = request.files['pdf']
+    if not f.filename.lower().endswith('.pdf'):
+        return jsonify({'success': False, 'error': 'Extension invalide — PDF uniquement'}), 400
+
+    pdf_bytes = f.read()
+    if len(pdf_bytes) > 10 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'Fichier trop volumineux (max 10 Mo)'}), 400
+    if len(pdf_bytes) == 0:
+        return jsonify({'success': False, 'error': 'Fichier vide'}), 400
+
+    try:
+        contenu = _contrat_extraire_contenu(pdf_bytes)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 422
+    except Exception as e:
+        print(f'[CONTRAT] Erreur pdfplumber: {e}')
+        return jsonify({'success': False, 'error': "Ce fichier n'est pas un PDF valide."}), 500
+
+    try:
+        champs, _raw_json, usage = _contrat_extraire_champs(contenu)
+    except Exception as e:
+        print(f'[CONTRAT] Erreur OpenAI: {e}')
+        return jsonify({'success': False, 'error': "Erreur lors de l'analyse du contrat — réessayez ou saisissez manuellement."}), 500
+
+    avertissements = []
+    if not champs.get('pdl_pce'):
+        avertissements.append('PDL/PCE non trouvé — vérification manuelle obligatoire')
+    if not champs.get('ref_client'):
+        avertissements.append('REF_CLIENT (MIB) non trouvé')
+
+    print(f'[CONTRAT] OK — {usage.total_tokens} tokens '
+          f'(prompt: {usage.prompt_tokens}, completion: {usage.completion_tokens})')
+
+    return jsonify({
+        'success': True,
+        'champs': champs,
+        'avertissements': avertissements,
+        'usage': {
+            'prompt_tokens':     usage.prompt_tokens,
+            'completion_tokens': usage.completion_tokens,
+            'total_tokens':      usage.total_tokens,
+        },
+    })
+
+
 # ===== SUIVI DES VENTES =====
 
 def get_suivi_sheet_id():
