@@ -2367,17 +2367,31 @@ function echRender(){
       if(d.details_enc.length){
         html += '<div style="margin:8px 0 4px;font-size:11px;font-weight:700;color:#16a34a;">Encaissements</div>';
         html += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
+        var stEnc = {};
         d.details_enc.forEach(function(e){
           html += '<tr><td style="padding:2px 8px;">'+_echEsc(e.societe)+'</td><td style="padding:2px 8px;color:#6b7280;">'+_echEsc(e.ref)+'</td><td style="padding:2px 8px;color:#6b7280;font-style:italic;">'+_echEsc(e.part)+'</td><td style="padding:2px 8px;text-align:right;font-weight:600;">'+echFmt(e.montant)+'</td></tr>';
+          var k = e.part; if(!stEnc[k]) stEnc[k]={n:0,s:0}; stEnc[k].n++; stEnc[k].s+=e.montant;
         });
+        // Sous-totaux par catégorie
+        var stSep = 'border-top:1px solid #d1d5db;padding:4px 8px;font-weight:700;font-size:11px;';
+        var stKeys = ['100%','1re moitié (50-50)','2e moitié (50-50)'];
+        var stTotal = {n:0,s:0};
+        stKeys.forEach(function(k){ if(stEnc[k]){ stTotal.n+=stEnc[k].n; stTotal.s+=stEnc[k].s;
+          html += '<tr><td style="'+stSep+'">'+k+'</td><td style="'+stSep+'color:#6b7280;">'+stEnc[k].n+' lignes</td><td style="'+stSep+'"></td><td style="'+stSep+'text-align:right;">'+echFmt(Math.round(stEnc[k].s*100)/100)+'</td></tr>';
+        }});
+        html += '<tr><td style="'+stSep+'color:#16a34a;">TOTAL</td><td style="'+stSep+'color:#16a34a;">'+stTotal.n+' lignes</td><td style="'+stSep+'"></td><td style="'+stSep+'text-align:right;color:#16a34a;">'+echFmt(Math.round(stTotal.s*100)/100)+'</td></tr>';
         html += '</table>';
       }
       if(d.details_dec.length){
         html += '<div style="margin:8px 0 4px;font-size:11px;font-weight:700;color:#ef4444;">Décaissements</div>';
         html += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
+        var stDecN = 0, stDecS = 0;
         d.details_dec.forEach(function(e){
           html += '<tr><td style="padding:2px 8px;">'+_echEsc(e.societe)+'</td><td style="padding:2px 8px;color:#6b7280;">'+_echEsc(e.ref)+'</td><td style="padding:2px 8px;color:#6b7280;font-style:italic;">'+_echEsc(e.part)+'</td><td style="padding:2px 8px;text-align:right;font-weight:600;">'+echFmt(e.montant)+'</td></tr>';
+          stDecN++; stDecS+=e.montant;
         });
+        var stSep2 = 'border-top:1px solid #d1d5db;padding:4px 8px;font-weight:700;font-size:11px;';
+        html += '<tr><td style="'+stSep2+'color:#ef4444;">TOTAL</td><td style="'+stSep2+'color:#ef4444;">'+stDecN+' lignes</td><td style="'+stSep2+'"></td><td style="'+stSep2+'text-align:right;color:#ef4444;">'+echFmt(Math.round(stDecS*100)/100)+'</td></tr>';
         html += '</table>';
       }
       html += '</td></tr>';
