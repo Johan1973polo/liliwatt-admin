@@ -1912,6 +1912,163 @@ def extraire_contrat():
     })
 
 
+# ===== ÉCHÉANCIER =====
+
+@app.route('/api/echeancier')
+@login_required
+def api_echeancier():
+    """Calcule l'échéancier encaissements / décaissements à la volée.
+
+    Lecture seule — une seule lecture du Sheet par appel.
+    """
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Credentials Google non configurées'}), 500
+        ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+        rows = ws.get_all_values()
+
+        def g(row, i):
+            return row[i].strip() if len(row) > i else ''
+
+        def _parse_montant(val, ref, societe, champ):
+            """Parse un montant avec virgule/point/espaces. Remonte une anomalie si échec."""
+            if not val:
+                return 0.0, None
+            cleaned = str(val).replace('\u202f', '').replace(' ', '').replace('€', '').replace(',', '.')
+            try:
+                return round(float(cleaned), 2), None
+            except ValueError:
+                return 0.0, {
+                    'ref': ref, 'societe': societe,
+                    'message': f'{champ} non numérique : « {val} »'
+                }
+
+        def _add_months(ym, n):
+            if not ym or len(ym) < 7:
+                return ''
+            try:
+                y, m = int(ym[:4]), int(ym[5:7])
+            except ValueError:
+                return ''
+            m += n
+            while m > 12:
+                m -= 12; y += 1
+            while m < 1:
+                m += 12; y -= 1
+            return f'{y:04d}-{m:02d}'
+
+        # {mois_AAAA-MM: {enc: float, dec: float, details_enc: [], details_dec: []}}
+        mois_data = {}
+        anomalies = []
+        annees_set = set()
+
+        def _ensure_mois(ym):
+            if ym and ym not in mois_data:
+                mois_data[ym] = {'enc': 0.0, 'dec': 0.0, 'details_enc': [], 'details_dec': []}
+
+        for row in rows[1:]:
+            if len(row) < 18:
+                continue
+            ref     = g(row, 0)
+            societe = g(row, 2)
+            periode = g(row, 5)
+            debut   = g(row, 6)
+            statut  = g(row, 15)
+            date_p1 = g(row, 16)
+            date_p2 = g(row, 17)
+
+            montant, err = _parse_montant(g(row, 11), ref, societe, 'MONTANT')
+            if err:
+                anomalies.append(err)
+            comm_v, err = _parse_montant(g(row, 12), ref, societe, 'COMM_VENDEUR')
+            if err:
+                anomalies.append(err)
+            comm_r, err = _parse_montant(g(row, 13), ref, societe, 'COMM_REFERENT')
+            if err:
+                anomalies.append(err)
+
+            # --- Anomalies métier ---
+            if montant > 0 and not date_p1:
+                anomalies.append({
+                    'ref': ref, 'societe': societe,
+                    'message': 'DATE_P1 vide alors que MONTANT est renseigné'
+                })
+            if statut == '50-50' and not date_p2:
+                anomalies.append({
+                    'ref': ref, 'societe': societe,
+                    'message': 'Statut 50-50 mais DATE_P2 vide — la moitié de la commission est invisible'
+                })
+            if date_p1 and date_p2 and date_p2 < date_p1:
+                anomalies.append({
+                    'ref': ref, 'societe': societe,
+                    'message': f'DATE_P2 ({date_p2}) antérieure à DATE_P1 ({date_p1})'
+                })
+            if societe and ref and not g(row, 11):
+                anomalies.append({
+                    'ref': ref, 'societe': societe,
+                    'message': 'MONTANT vide alors que le contrat est signé'
+                })
+
+            # --- Encaissements ---
+            if montant > 0 and date_p1:
+                if statut == '50-50':
+                    moitie1 = round(montant / 2, 2)
+                    moitie2 = round(montant - moitie1, 2)
+                    _ensure_mois(date_p1)
+                    mois_data[date_p1]['enc'] += moitie1
+                    mois_data[date_p1]['details_enc'].append({
+                        'ref': ref, 'societe': societe, 'montant': moitie1,
+                        'part': '1re moitié (50-50)'
+                    })
+                    if date_p2:
+                        _ensure_mois(date_p2)
+                        mois_data[date_p2]['enc'] += moitie2
+                        mois_data[date_p2]['details_enc'].append({
+                            'ref': ref, 'societe': societe, 'montant': moitie2,
+                            'part': '2e moitié (50-50)'
+                        })
+                else:
+                    _ensure_mois(date_p1)
+                    mois_data[date_p1]['enc'] += montant
+                    mois_data[date_p1]['details_enc'].append({
+                        'ref': ref, 'societe': societe, 'montant': montant,
+                        'part': '100%'
+                    })
+
+            # --- Décaissements : COMM_VENDEUR + COMM_REFERENT sur PERIODE + 1 mois ---
+            total_comm = round(comm_v + comm_r, 2)
+            if total_comm > 0 and periode:
+                mois_dec = _add_months(periode, 1)
+                if mois_dec:
+                    _ensure_mois(mois_dec)
+                    mois_data[mois_dec]['dec'] += total_comm
+                    mois_data[mois_dec]['details_dec'].append({
+                        'ref': ref, 'societe': societe, 'montant': total_comm,
+                        'part': f'Comm. vendeur {comm_v:.2f} + référent {comm_r:.2f}'
+                    })
+
+        # Collecter les années
+        for ym in mois_data:
+            if len(ym) >= 4:
+                annees_set.add(ym[:4])
+
+        # Arrondir les totaux
+        for ym in mois_data:
+            mois_data[ym]['enc'] = round(mois_data[ym]['enc'], 2)
+            mois_data[ym]['dec'] = round(mois_data[ym]['dec'], 2)
+
+        return jsonify({
+            'success': True,
+            'mois': mois_data,
+            'anomalies': anomalies,
+            'annees': sorted(annees_set),
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ===== SUIVI DES VENTES =====
 
 def get_suivi_sheet_id():

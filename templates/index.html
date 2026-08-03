@@ -94,6 +94,7 @@
     <div class="tab" onclick="showTab('contrats')">📄 Contrats</div>
     <div class="tab" onclick="showTab('newsletter')">📩 Newsletter</div>
     <div class="tab" onclick="showTab('bienvenue')">👋 Bienvenue</div>
+    <div class="tab" onclick="showTab('echeancier')">📊 Échéancier</div>
   </div>
 
   <!-- Créer -->
@@ -350,7 +351,7 @@
           <div class="form-group"><label>Comm. référent (€)</label><input type="number" step="0.01" id="v_comm_r" value="0" oninput="calcMarge()"></div>
           <div class="form-group"><label>Marge société (€)</label><input type="text" id="v_marge" readonly style="background:#f3f4f6;font-weight:700;color:#22c55e;"></div>
           <div class="form-group"><label>Statut paiement</label>
-            <select id="v_statut_p" onchange="document.getElementById('v_dates_p').style.display=this.value==='50-50'?'grid':'none'">
+            <select id="v_statut_p" onchange="onStatutChange(this.value)">
               <option value="100%">100%</option><option value="50-50">50-50</option>
             </select>
           </div>
@@ -646,6 +647,42 @@
     </div>
   </div>
 
+  <!-- Échéancier -->
+  <div class="panel" id="tab-echeancier">
+    <div style="max-width:960px;margin:0 auto;padding:24px 0;">
+      <h2 style="color:#1e1b4b;font-size:22px;font-weight:800;margin-bottom:4px;">📊 Échéancier des commissions</h2>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:20px;">Prévisionnel calculé depuis les contrats — ne reflète pas les encaissements réels.</p>
+
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+        <label style="font-size:13px;font-weight:700;color:#374151;">Année :</label>
+        <select id="echAnnee" onchange="echRender()" style="padding:8px 14px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;font-weight:600;"></select>
+        <button onclick="echLoad()" style="padding:6px 14px;background:#f3f4f6;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">🔄</button>
+        <span id="echLoading" style="display:none;color:#7c3aed;font-size:12px;">Chargement…</span>
+      </div>
+
+      <div id="echTableWrap" style="overflow-x:auto;">
+        <table id="echTable" style="width:100%;border-collapse:collapse;font-size:13px;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+          <thead>
+            <tr style="background:#1e1b4b;color:white;text-align:right;">
+              <th style="text-align:left;padding:10px 14px;font-weight:700;">Mois</th>
+              <th style="padding:10px 14px;font-weight:700;">Encaissements</th>
+              <th style="padding:10px 14px;font-weight:700;">Décaissements</th>
+              <th style="padding:10px 14px;font-weight:700;">Solde</th>
+              <th style="padding:10px 14px;font-weight:700;">Cumul annuel</th>
+            </tr>
+          </thead>
+          <tbody id="echBody"></tbody>
+          <tfoot id="echFoot"></tfoot>
+        </table>
+      </div>
+
+      <div id="echAnomalies" style="display:none;margin-top:20px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:16px;">
+        <h3 style="margin:0 0 10px;font-size:14px;font-weight:800;color:#991b1b;">⚠ Anomalies détectées</h3>
+        <div id="echAnomaliesList" style="font-size:12px;color:#7f1d1d;"></div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Modal Référent -->
@@ -668,7 +705,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter'];
+    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -678,6 +715,7 @@ function showTab(name) {
   if (name === 'premium') { loadBPStats(); loadBPVendeurs(); }
   if (name === 'newsletter') { nlCount(); nlSetFormat(_nlFormat); nlLoadClients(); }
   if (name === 'bienvenue') { bvInit(); }
+  if (name === 'echeancier') { echLoad(); }
 }
 
 function normalize(s) {
@@ -2236,6 +2274,154 @@ async function bvTestSend() {
     res.style.display = 'block'; res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
     res.textContent = `❌ Erreur réseau : ${e.message}`;
   } finally { btn.disabled = false; btn.textContent = '🧪 Envoi de test'; }
+}
+
+// ===== PRÉ-REMPLISSAGE DATE_P2 =====
+function onStatutChange(val){
+  document.getElementById('v_dates_p').style.display = val === '50-50' ? 'grid' : 'none';
+  if(val === '50-50'){
+    var debut = document.getElementById('v_date_debut').value; // AAAA-MM-JJ
+    if(debut && debut.length >= 7){
+      var y = parseInt(debut.substring(0,4), 10);
+      var m = parseInt(debut.substring(5,7), 10);
+      m += 3;
+      if(m > 12){ m -= 12; y += 1; }
+      document.getElementById('v_date_p2').value = y + '-' + String(m).padStart(2,'0');
+    }
+  }
+}
+
+// ===== ÉCHÉANCIER =====
+
+var _echData = null;
+var _echMoisNoms = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+async function echLoad(){
+  var loading = document.getElementById('echLoading');
+  if(loading) loading.style.display = 'inline';
+  try {
+    var r = await fetch('/api/echeancier');
+    var d = await r.json();
+    if(!d.success) throw new Error(d.error||'Erreur');
+    _echData = d;
+    // Alimenter le sélecteur d'années
+    var sel = document.getElementById('echAnnee');
+    var prev = sel.value;
+    sel.innerHTML = '';
+    d.annees.forEach(function(a){
+      var o = document.createElement('option');
+      o.value = a; o.textContent = a;
+      sel.appendChild(o);
+    });
+    // Sélectionner l'année courante si présente, sinon garder la précédente
+    var now = new Date().getFullYear().toString();
+    if(d.annees.indexOf(now) >= 0) sel.value = now;
+    else if(prev && d.annees.indexOf(prev) >= 0) sel.value = prev;
+    echRender();
+    echRenderAnomalies(d.anomalies);
+  } catch(e) {
+    document.getElementById('echBody').innerHTML = '<tr><td colspan="5" style="padding:20px;color:#ef4444;text-align:center;">'+e.message+'</td></tr>';
+  } finally {
+    if(loading) loading.style.display = 'none';
+  }
+}
+
+function echRender(){
+  if(!_echData) return;
+  var annee = document.getElementById('echAnnee').value;
+  var body = document.getElementById('echBody');
+  var foot = document.getElementById('echFoot');
+  var mois = _echData.mois;
+  var now = new Date();
+  var nowYM = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+
+  var totalEnc = 0, totalDec = 0, cumul = 0;
+  var html = '';
+
+  for(var m = 1; m <= 12; m++){
+    var ym = annee + '-' + String(m).padStart(2,'0');
+    var d = mois[ym] || {enc:0, dec:0, details_enc:[], details_dec:[]};
+    var enc = d.enc, dec = d.dec;
+    var solde = Math.round((enc - dec)*100)/100;
+    cumul = Math.round((cumul + solde)*100)/100;
+    totalEnc += enc; totalDec += dec;
+
+    var echu = ym <= nowYM;
+    var rowStyle = echu ? 'background:#fff;' : 'background:#faf5ff;font-style:italic;';
+    var badge = echu ? '<span style="font-size:10px;color:#6b7280;margin-left:6px;">échu</span>' : '';
+    var hasDetail = d.details_enc.length > 0 || d.details_dec.length > 0;
+    var cursor = hasDetail ? 'cursor:pointer;' : '';
+
+    html += '<tr onclick="echToggle(this)" style="border-bottom:1px solid #f3f4f6;'+rowStyle+cursor+'">';
+    html += '<td style="padding:10px 14px;font-weight:600;">'+_echMoisNoms[m-1]+badge+(hasDetail?' <span style="color:#c4b5fd;font-size:10px;">▶</span>':'')+'</td>';
+    html += '<td style="padding:10px 14px;text-align:right;color:#16a34a;font-weight:600;">'+(enc?echFmt(enc):'-')+'</td>';
+    html += '<td style="padding:10px 14px;text-align:right;color:#ef4444;font-weight:600;">'+(dec?echFmt(dec):'-')+'</td>';
+    html += '<td style="padding:10px 14px;text-align:right;font-weight:700;color:'+(solde>=0?'#1e1b4b':'#ef4444')+';">'+echFmt(solde)+'</td>';
+    html += '<td style="padding:10px 14px;text-align:right;font-weight:700;color:'+(cumul>=0?'#7c3aed':'#ef4444')+';">'+echFmt(cumul)+'</td>';
+    html += '</tr>';
+
+    // Ligne de détail (masquée par défaut)
+    if(hasDetail){
+      html += '<tr class="ech-detail" style="display:none;"><td colspan="5" style="padding:0 14px 12px 30px;background:#f9fafb;">';
+      if(d.details_enc.length){
+        html += '<div style="margin:8px 0 4px;font-size:11px;font-weight:700;color:#16a34a;">Encaissements</div>';
+        html += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
+        d.details_enc.forEach(function(e){
+          html += '<tr><td style="padding:2px 8px;">'+_echEsc(e.societe)+'</td><td style="padding:2px 8px;color:#6b7280;">'+_echEsc(e.ref)+'</td><td style="padding:2px 8px;color:#6b7280;font-style:italic;">'+_echEsc(e.part)+'</td><td style="padding:2px 8px;text-align:right;font-weight:600;">'+echFmt(e.montant)+'</td></tr>';
+        });
+        html += '</table>';
+      }
+      if(d.details_dec.length){
+        html += '<div style="margin:8px 0 4px;font-size:11px;font-weight:700;color:#ef4444;">Décaissements</div>';
+        html += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
+        d.details_dec.forEach(function(e){
+          html += '<tr><td style="padding:2px 8px;">'+_echEsc(e.societe)+'</td><td style="padding:2px 8px;color:#6b7280;">'+_echEsc(e.ref)+'</td><td style="padding:2px 8px;color:#6b7280;font-style:italic;">'+_echEsc(e.part)+'</td><td style="padding:2px 8px;text-align:right;font-weight:600;">'+echFmt(e.montant)+'</td></tr>';
+        });
+        html += '</table>';
+      }
+      html += '</td></tr>';
+    }
+  }
+  body.innerHTML = html;
+
+  totalEnc = Math.round(totalEnc*100)/100;
+  totalDec = Math.round(totalDec*100)/100;
+  var totalSolde = Math.round((totalEnc - totalDec)*100)/100;
+  foot.innerHTML = '<tr style="background:#1e1b4b;color:white;font-weight:700;">'
+    +'<td style="padding:10px 14px;">Total '+annee+'</td>'
+    +'<td style="padding:10px 14px;text-align:right;">'+echFmt(totalEnc)+'</td>'
+    +'<td style="padding:10px 14px;text-align:right;">'+echFmt(totalDec)+'</td>'
+    +'<td style="padding:10px 14px;text-align:right;">'+echFmt(totalSolde)+'</td>'
+    +'<td style="padding:10px 14px;text-align:right;">'+echFmt(cumul)+'</td>'
+    +'</tr>';
+}
+
+function echToggle(tr){
+  var next = tr.nextElementSibling;
+  if(!next || !next.classList.contains('ech-detail')) return;
+  var visible = next.style.display !== 'none';
+  next.style.display = visible ? 'none' : 'table-row';
+  // Basculer le chevron
+  var chev = tr.querySelector('span:last-child');
+  if(chev && (chev.textContent === '▶' || chev.textContent === '▼')){
+    chev.textContent = visible ? '▶' : '▼';
+  }
+}
+
+function echFmt(n){
+  return n.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2})+' €';
+}
+
+function _echEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function echRenderAnomalies(list){
+  var wrap = document.getElementById('echAnomalies');
+  var div = document.getElementById('echAnomaliesList');
+  if(!list || !list.length){ wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  div.innerHTML = list.map(function(a){
+    return '<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>'+_echEsc(a.ref)+'</strong> — '+_echEsc(a.societe)+' : '+_echEsc(a.message)+'</div>';
+  }).join('');
 }
 
 // ===== DROPZONE CONTRAT PDF =====
