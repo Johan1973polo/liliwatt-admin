@@ -11,8 +11,8 @@
   header h1 { color: white; font-size: 20px; font-weight: 800; letter-spacing: 2px; }
   header a { color: rgba(255,255,255,0.7); font-size: 13px; text-decoration: none; }
   .container { max-width: 900px; margin: 40px auto; padding: 0 20px; }
-  .tabs { display: flex; gap: 8px; margin-bottom: 28px; }
-  .tab { padding: 10px 24px; border-radius: 50px; font-size: 13px; font-weight: 700; cursor: pointer; border: 2px solid #7c3aed; color: #7c3aed; background: white; transition: all 0.2s; }
+  .tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 28px; padding: 0 16px; max-width: 1100px; margin-left: auto; margin-right: auto; }
+  .tab { flex: 0 0 auto; white-space: nowrap; padding: 10px 16px; border-radius: 50px; font-size: 13px; font-weight: 700; cursor: pointer; border: 2px solid #7c3aed; color: #7c3aed; background: white; transition: all 0.2s; }
   .tab.active { background: #7c3aed; color: white; }
   .panel { display: none; }
   .panel.active { display: block; }
@@ -83,8 +83,8 @@
   <a href="/logout">Déconnexion</a>
 </header>
 
-<div class="container">
-  <div class="tabs">
+<div class="tabs">
+
     <div class="tab active" onclick="showTab('creer')">+ Créer un commercial</div>
     <div class="tab" onclick="showTab('gerer')">Gérer les commerciaux</div>
     <div class="tab" onclick="showTab('recrutement')">👥 Recrutement</div>
@@ -95,8 +95,9 @@
     <div class="tab" onclick="showTab('newsletter')">📩 Newsletter</div>
     <div class="tab" onclick="showTab('bienvenue')">👋 Bienvenue</div>
     <div class="tab" onclick="showTab('echeancier')">📊 Échéancier</div>
-  </div>
+</div>
 
+<div class="container">
   <!-- Créer -->
   <div class="panel active" id="tab-creer">
     <div class="card">
