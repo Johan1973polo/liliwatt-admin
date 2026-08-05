@@ -287,29 +287,30 @@
         </div>
       </h2>
 
-      <!-- Extracteur contrat PDF -->
-      <div class="dz-wrap" id="dzWrap">
-        <input type="file" id="dzInput" accept=".pdf,application/pdf" style="display:none">
-        <div class="dz-box" id="dzBox">
-          <div class="dz-inner" id="dzInner">
-            <div class="dz-icon">📄</div>
-            <div class="dz-main-text">Glissez le contrat PDF ici</div>
-            <div class="dz-sub-text">ou cliquez n'importe où dans cette zone · PDF · Max 10 Mo</div>
-          </div>
-        </div>
-        <div id="dzPdlAlert" style="display:none" class="dz-pdl-alert">
-          <div class="dz-pdl-label">N° PDL / PCE — <strong>À vérifier sur le contrat</strong></div>
-          <div class="dz-pdl-value" id="dzPdlValue">—</div>
-          <div class="dz-pdl-warn">14 chiffres · champ critique · confirmer visuellement avant enregistrement</div>
-        </div>
-        <div id="dzNotFound" class="dz-not-found" style="display:none"></div>
-        <div id="dzWarnings" class="dz-not-found" style="display:none;color:#92400e;background:#fef3c7;"></div>
-        <button id="dzClearBtn" onclick="dzReset()" style="display:none;margin-top:8px;padding:6px 14px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">✕ Effacer le pré-remplissage</button>
-      </div>
-
       <!-- Formulaire saisie -->
       <div id="venteForm" style="display:none;background:#faf5ff;border-radius:12px;padding:20px;margin-bottom:20px;border:1.5px solid #e9d5ff;">
-        <button onclick="document.getElementById('venteForm').style.display='none'" style="padding:6px 14px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;margin-bottom:12px;">← Retour</button>
+        <button onclick="venteRetour()" style="padding:6px 14px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;margin-bottom:12px;">← Retour</button>
+
+        <!-- Extracteur contrat PDF -->
+        <div class="dz-wrap" id="dzWrap">
+          <input type="file" id="dzInput" accept=".pdf,application/pdf" style="display:none">
+          <div class="dz-box" id="dzBox">
+            <div class="dz-inner" id="dzInner">
+              <div class="dz-icon">📄</div>
+              <div class="dz-main-text">Glissez le contrat PDF ici</div>
+              <div class="dz-sub-text">ou cliquez n'importe où dans cette zone · PDF · Max 10 Mo</div>
+            </div>
+          </div>
+          <div id="dzPdlAlert" style="display:none" class="dz-pdl-alert">
+            <div class="dz-pdl-label">N° PDL / PCE — <strong>À vérifier sur le contrat</strong></div>
+            <div class="dz-pdl-value" id="dzPdlValue">—</div>
+            <div class="dz-pdl-warn">14 chiffres · champ critique · confirmer visuellement avant enregistrement</div>
+          </div>
+          <div id="dzNotFound" class="dz-not-found" style="display:none"></div>
+          <div id="dzWarnings" class="dz-not-found" style="display:none;color:#92400e;background:#fef3c7;"></div>
+          <button id="dzClearBtn" onclick="dzReset()" style="display:none;margin-top:8px;padding:6px 14px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">✕ Effacer le pré-remplissage</button>
+        </div>
+
         <h4 style="color:#7c3aed;margin-bottom:12px;">📝 Informations contrat</h4>
         <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
           <div class="form-group"><label>Société *</label><input type="text" id="v_societe" required></div>
@@ -2275,6 +2276,12 @@ async function bvTestSend() {
     res.style.display = 'block'; res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
     res.textContent = `❌ Erreur réseau : ${e.message}`;
   } finally { btn.disabled = false; btn.textContent = '🧪 Envoi de test'; }
+}
+
+// ===== RETOUR FORMULAIRE VENTE =====
+function venteRetour(){
+  if(typeof dzReset === 'function') dzReset();
+  document.getElementById('venteForm').style.display = 'none';
 }
 
 // ===== PRÉ-REMPLISSAGE DATE_P2 =====
