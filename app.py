@@ -2233,17 +2233,46 @@ def export_vendeur():
         ws = gc.open_by_key(sheet_id).sheet1
         rows = ws.get_all_values()
 
-        # Colonnes export : tout sauf col 14 (MARGE)
-        export_cols = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,15,16,17,18,19,20,21,22,23,24,25]
-        header = [SUIVI_HEADERS[i] for i in export_cols if i < len(SUIVI_HEADERS)]
-        csv_lines = [','.join(header)]
+        def g(row, i):
+            return row[i] if len(row) > i else ''
+
+        csv_lines = ['ROLE,REF,SOCIETE,VENDEUR,PERIODE,COMMISSION']
+        total = 0.0
+
         for row in rows[1:]:
-            if len(row) < 14: continue
-            if email and row[3] != email: continue
-            if periode and row[5] != periode: continue
-            if annee and not row[5].startswith(annee): continue
-            vals = [str(row[i]) if i < len(row) else '' for i in export_cols]
-            csv_lines.append(','.join(f'"{v}"' for v in vals))
+            if len(row) < 14:
+                continue
+            row_periode = g(row, 5)
+            if periode and row_periode != periode:
+                continue
+            if annee and not row_periode.startswith(annee):
+                continue
+
+            ref = g(row, 0)
+            societe = g(row, 2)
+            vendeur = g(row, 3)
+            referent = g(row, 4)
+            comm_v = parse_float(g(row, 12))
+            comm_r = parse_float(g(row, 13))
+
+            # Ligne vendeur
+            if email:
+                if vendeur == email and comm_v > 0:
+                    csv_lines.append(f'"Vendeur","{ref}","{societe}","{vendeur}","{row_periode}","{comm_v:.2f}"')
+                    total += comm_v
+                if referent == email and vendeur != email and comm_r > 0:
+                    csv_lines.append(f'"Referent","{ref}","{societe}","{vendeur}","{row_periode}","{comm_r:.2f}"')
+                    total += comm_r
+            else:
+                # Export global : une ligne par commission non nulle
+                if comm_v > 0:
+                    csv_lines.append(f'"Vendeur","{ref}","{societe}","{vendeur}","{row_periode}","{comm_v:.2f}"')
+                    total += comm_v
+                if comm_r > 0 and referent:
+                    csv_lines.append(f'"Referent","{ref}","{societe}","{referent}","{row_periode}","{comm_r:.2f}"')
+                    total += comm_r
+
+        csv_lines.append(f'"TOTAL","","","","","{total:.2f}"')
 
         from flask import Response
         label = email.split('@')[0] if email else 'tous'

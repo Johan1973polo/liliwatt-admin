@@ -400,6 +400,12 @@
 
       <!-- Tableau -->
       <div id="ventes-list" style="font-size:12px;overflow-x:auto;"><div class="loading">Cliquez sur 🔄</div></div>
+
+      <!-- Panneau anomalies commissions -->
+      <div id="ventesAnomalies" style="display:none;margin-top:16px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:16px;">
+        <h4 style="margin:0 0 8px;font-size:13px;font-weight:800;color:#991b1b;">⚠ Anomalies commissions</h4>
+        <div id="ventesAnomaliesList" style="font-size:11px;color:#7f1d1d;"></div>
+      </div>
     </div>
 
     <!-- Modal fiche client -->
@@ -1345,6 +1351,21 @@ async function loadVentes() {
         '<td style="padding:6px 8px;">' + (v.statut_paiement||'') + '</td></tr>'
       ).join('') + '</tbody></table>';
     updateTotaux(ft);
+    // Anomalies commissions (sur toutes les ventes, pas filtrées)
+    var anomalies = [];
+    (_toutesVentes || []).forEach(function(v) {
+      if (v.referent && v.comm_referent === 0) {
+        anomalies.push('<div style="padding:3px 0;border-bottom:1px solid #fecaca;"><strong>' + (v.ref||'') + '</strong> — ' + (v.societe||'') + ' : référent désigné (' + v.referent.split('@')[0] + ') mais COMM_REFERENT = 0. Montant HT : ' + (v.montant_ht||'') + ' €</div>');
+      }
+      if (v.vendeur && v.comm_vendeur === 0 && parseFloat(v.montant_ht || '0') > 0) {
+        anomalies.push('<div style="padding:3px 0;border-bottom:1px solid #fecaca;"><strong>' + (v.ref||'') + '</strong> — ' + (v.societe||'') + ' : vendeur désigné (' + v.vendeur.split('@')[0] + ') mais COMM_VENDEUR = 0. Montant HT : ' + (v.montant_ht||'') + ' €</div>');
+      }
+    });
+    var aw = document.getElementById('ventesAnomalies');
+    if (anomalies.length) {
+      aw.style.display = 'block';
+      document.getElementById('ventesAnomaliesList').innerHTML = anomalies.join('');
+    } else { aw.style.display = 'none'; }
   } catch(e) { div.innerHTML = '<div class="loading">Erreur réseau</div>'; }
 }
 
@@ -1379,9 +1400,11 @@ function showFiche(idx) {
 function exportVendeur() {
   const v = document.getElementById('vf_vendeur').value;
   const a = document.getElementById('vf_annee').value;
+  const m = document.getElementById('vf_mois').value;
   const params = new URLSearchParams();
   if (v) params.set('vendeur', v);
   if (a) params.set('annee', a);
+  if (m && a) params.set('periode', a + '-' + m);
   window.open('/api/suivi-ventes/export-vendeur?' + params, '_blank');
 }
 
@@ -1419,56 +1442,74 @@ function emailToNom(e) { return (e||'').split('@')[0].replace('.',' ').split(' '
 
 let _referentEmails = new Set();
 
-// Récapitulatif intelligent — vendeur ou référent selon le profil
-function exportPdfRecap() {
-  const email = document.getElementById('vf_vendeur').value;
-  if (!email) { alert('Sélectionnez un vendeur ou référent dans le filtre'); return; }
-  if (_referentEmails.has(email)) {
-    _exportPdfReferent(email);
-  } else {
-    _exportPdfVendeur(email);
+// Sous-titre avec mois de versement (production + 1)
+function getRecapSubtitle() {
+  var a = document.getElementById('vf_annee')?.value || '';
+  var m = document.getElementById('vf_mois')?.value || '';
+  var moisNoms = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  if (m && a) {
+    var mi = parseInt(m, 10);
+    var yi = parseInt(a, 10);
+    var mv = mi + 1; var yv = yi;
+    if (mv > 12) { mv = 1; yv++; }
+    return 'Ventes produites en ' + moisNoms[mi] + ' ' + a + ' — versement en ' + moisNoms[mv] + ' ' + yv;
   }
+  if (a) return 'Ventes produites en ' + a;
+  return 'Toutes périodes';
 }
 
-function _exportPdfVendeur(vendeur) {
-  const ventes = _allVentes.filter(v => v.vendeur === vendeur);
-  if (!ventes.length) { alert('Aucune vente pour ce vendeur'); return; }
-  const nom = emailToNom(vendeur);
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-  pdfHeader(doc, 'Récapitulatif des ventes — ' + nom, getPeriodeLabel());
+// Récapitulatif unifié — vendeur ET référent sur _allVentes (filtrée)
+function exportPdfRecap() {
+  var email = document.getElementById('vf_vendeur').value;
+  if (!email) { alert('Sélectionnez un vendeur ou référent dans le filtre'); return; }
+  var ref = email.toLowerCase().trim();
+  var nom = emailToNom(email);
 
-  let totC = 0;
-  const rows = ventes.map(v => { totC+=v.comm_vendeur; return [v.ref, v.societe||'', typeLabel(v.type), v.pdl_pce||'', v.fournisseur||'', v.periode_prod||'', v.comm_vendeur.toFixed(2)+' €']; });
-  rows.push(['', '', '', '', '', 'TOTAL À FACTURER', totC.toFixed(2)+' €']);
-  pdfTable(doc, ['Réf','Société','Type','PDL/PCE','Fournisseur','Période','Votre commission'], rows);
+  // Deux sections, toutes deux filtrées par période via _allVentes
+  var ventesVendeur = _allVentes.filter(function(v) { return (v.vendeur || '').toLowerCase().trim() === ref && v.comm_vendeur > 0; });
+  var ventesReferent = _allVentes.filter(function(v) { return (v.referent || '').toLowerCase().trim() === ref && (v.vendeur || '').toLowerCase().trim() !== ref && v.comm_referent > 0; });
+
+  if (!ventesVendeur.length && !ventesReferent.length) { alert('Aucune vente pour cette personne sur la période'); return; }
+
+  var jsPDF = window.jspdf.jsPDF;
+  var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  pdfHeader(doc, 'Récapitulatif — ' + nom, getRecapSubtitle());
+
+  var startY = 28;
+  var totalDu = 0;
+
+  // Section "Ventes réalisées" (vendeur)
+  if (ventesVendeur.length) {
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 27, 75);
+    doc.text('Ventes réalisées', 14, startY);
+    startY += 4;
+    var totV = 0;
+    var rowsV = ventesVendeur.map(function(v) { totV += v.comm_vendeur; return [v.ref, v.societe || '', typeLabel(v.type), v.fournisseur || '', v.periode_prod || '', v.comm_vendeur.toFixed(2) + ' €']; });
+    rowsV.push(['', '', '', '', 'Sous-total vendeur', totV.toFixed(2) + ' €']);
+    doc.autoTable({ head: [['Réf', 'Société', 'Type', 'Fournisseur', 'Période', 'Commission']], body: rowsV, startY: startY, theme: 'grid', styles: { fontSize: 8, cellPadding: 2 }, headStyles: { fillColor: [30, 27, 75], textColor: [255, 255, 255], fontStyle: 'bold' }, alternateRowStyles: { fillColor: [243, 240, 255] }, didParseCell: function(d) { if (d.row.index === rowsV.length - 1) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [237, 233, 254]; } } });
+    totalDu += totV;
+    startY = doc.lastAutoTable.finalY + 6;
+  }
+
+  // Section "Ventes suivies" (référent)
+  if (ventesReferent.length) {
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 27, 75);
+    doc.text('Ventes suivies (référent)', 14, startY);
+    startY += 4;
+    var totR = 0;
+    var rowsR = ventesReferent.map(function(v) { totR += v.comm_referent; return [v.ref, v.societe || '', emailToNom(v.vendeur), typeLabel(v.type), v.fournisseur || '', v.periode_prod || '', v.comm_referent.toFixed(2) + ' €']; });
+    rowsR.push(['', '', '', '', '', 'Sous-total référent', totR.toFixed(2) + ' €']);
+    doc.autoTable({ head: [['Réf', 'Société', 'Vendeur', 'Type', 'Fournisseur', 'Période', 'Commission']], body: rowsR, startY: startY, theme: 'grid', styles: { fontSize: 8, cellPadding: 2 }, headStyles: { fillColor: [30, 27, 75], textColor: [255, 255, 255], fontStyle: 'bold' }, alternateRowStyles: { fillColor: [243, 240, 255] }, didParseCell: function(d) { if (d.row.index === rowsR.length - 1) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [237, 233, 254]; } } });
+    totalDu += totR;
+    startY = doc.lastAutoTable.finalY + 6;
+  }
+
+  // Total dû
+  doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(124, 58, 237);
+  doc.text('TOTAL DÛ : ' + totalDu.toFixed(2) + ' €', 14, startY + 2);
+
   pdfFooter(doc);
-  doc.save('recap_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
-}
-
-function _exportPdfReferent(refEmail) {
-  const ref = refEmail.toLowerCase().trim();
-  const nom = emailToNom(refEmail);
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-  pdfHeader(doc, 'Récapitulatif des ventes — ' + nom + ' (Référent)', getPeriodeLabel());
-
-  let totCr = 0;
-  const propres = _toutesVentes.filter(v => (v.vendeur||'').toLowerCase().trim() === ref);
-  const equipe = _toutesVentes.filter(v => (v.referent||'').toLowerCase().trim() === ref && (v.vendeur||'').toLowerCase().trim() !== ref);
-  const toutes = [...propres, ...equipe];
-  console.log('📋 PDF Référent:', refEmail, '| Directes:', propres.length, '| Équipe:', equipe.length, '| Total:', toutes.length);
-  if (!toutes.length) { alert('Aucune vente pour ce référent'); return; }
-
-  const rows = toutes.map(v => {
-    const cr = (v.vendeur||'').toLowerCase().trim() === ref ? v.comm_vendeur : v.comm_referent;
-    totCr += cr;
-    return [v.ref, v.societe||'', emailToNom(v.vendeur), typeLabel(v.type), v.fournisseur||'', v.periode_prod||'', cr.toFixed(2)+' €'];
-  });
-  rows.push(['', '', '', '', '', 'TOTAL À FACTURER', totCr.toFixed(2)+' €']);
-  pdfTable(doc, ['Réf','Société','Vendeur','Type','Fournisseur','Période','Commission'], rows);
-  pdfFooter(doc);
-  doc.save('recap_referent_'+nom.replace(/ /g,'_')+'_'+getPeriodeLabel()+'.pdf');
+  doc.save('recap_' + nom.replace(/ /g, '_') + '_' + getPeriodeLabel() + '.pdf');
 }
 
 // 3. PDF ADMIN — toutes colonnes + marge
