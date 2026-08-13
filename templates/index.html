@@ -1351,15 +1351,39 @@ async function loadVentes() {
         '<td style="padding:6px 8px;">' + (v.statut_paiement||'') + '</td></tr>'
       ).join('') + '</tbody></table>';
     updateTotaux(ft);
-    // Anomalies commissions (sur toutes les ventes, pas filtrées)
-    var anomalies = [];
+    // Anomalies commissions — regroupées par société
+    // Sociétés exclues (vérifiées manuellement, anomalies normales)
+    var _anomExclusions = [];
+    var grp = {};
     (_toutesVentes || []).forEach(function(v) {
-      if (v.referent && v.comm_referent === 0) {
-        anomalies.push('<div style="padding:3px 0;border-bottom:1px solid #fecaca;"><strong>' + (v.ref||'') + '</strong> — ' + (v.societe||'') + ' : référent désigné (' + v.referent.split('@')[0] + ') mais COMM_REFERENT = 0. Montant HT : ' + (v.montant_ht||'') + ' €</div>');
+      var s = v.societe || ''; if (!s) return;
+      if (!grp[s]) grp[s] = { refs: [], vendeurs: new Set(), referents: new Set(), sum_cv: 0, sum_cr: 0, sum_mt: 0 };
+      grp[s].refs.push(v.ref);
+      if (v.vendeur) grp[s].vendeurs.add(v.vendeur);
+      if (v.referent) grp[s].referents.add(v.referent);
+      grp[s].sum_cv += v.comm_vendeur;
+      grp[s].sum_cr += v.comm_referent;
+      grp[s].sum_mt += parseFloat(String(v.montant_ht || '0').replace(/,/g, '.').replace(/[^\d.]/g, '')) || 0;
+    });
+    var anomalies = [];
+    Object.keys(grp).sort().forEach(function(soc) {
+      if (_anomExclusions.indexOf(soc) >= 0) return;
+      var g = grp[soc];
+      var mt = g.sum_mt.toFixed(2);
+      var vendNoms = Array.from(g.vendeurs).map(function(e){return e.split('@')[0];}).join(', ');
+      var refNoms = Array.from(g.referents).map(function(e){return e.split('@')[0];}).join(', ');
+      var missV = g.vendeurs.size > 0 && g.sum_cv === 0 && g.sum_mt > 0;
+      var missR = g.referents.size > 0 && g.sum_cr === 0;
+      if (!missV && !missR) return;
+      var detail = '';
+      if (missV && missR) {
+        detail = 'ni au vendeur (' + vendNoms + ') ni au référent (' + refNoms + ')';
+      } else if (missV) {
+        detail = 'rien au vendeur (' + vendNoms + ')';
+      } else {
+        detail = g.sum_cv.toFixed(2) + ' € versés au vendeur, rien au référent (' + refNoms + ')';
       }
-      if (v.vendeur && v.comm_vendeur === 0 && parseFloat(v.montant_ht || '0') > 0) {
-        anomalies.push('<div style="padding:3px 0;border-bottom:1px solid #fecaca;"><strong>' + (v.ref||'') + '</strong> — ' + (v.societe||'') + ' : vendeur désigné (' + v.vendeur.split('@')[0] + ') mais COMM_VENDEUR = 0. Montant HT : ' + (v.montant_ht||'') + ' €</div>');
-      }
+      anomalies.push('<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>' + soc + '</strong> : ' + mt + ' € encaissés, 0 € versé — ' + detail + '</div>');
     });
     var aw = document.getElementById('ventesAnomalies');
     if (anomalies.length) {
