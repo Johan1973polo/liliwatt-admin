@@ -2016,10 +2016,21 @@ def extraire_contrat():
     print(f'[CONTRAT] OK — {usage.total_tokens} tokens '
           f'(prompt: {usage.prompt_tokens}, completion: {usage.completion_tokens})')
 
+    # Debug : 6 premières lignes de la page 1
+    debug_page1 = []
+    try:
+        import pdfplumber, io as _dbg_io
+        with pdfplumber.open(_dbg_io.BytesIO(pdf_bytes)) as _dbg_pdf:
+            txt = (_dbg_pdf.pages[0].extract_text() or '').strip()
+            debug_page1 = [l.strip() for l in txt.split('\n') if l.strip()][:6]
+    except Exception:
+        pass
+
     return jsonify({
         'success': True,
         'champs': champs,
         'avertissements': avertissements,
+        'debug_page1': debug_page1,
         'usage': {
             'prompt_tokens':     usage.prompt_tokens,
             'completion_tokens': usage.completion_tokens,
@@ -2067,6 +2078,16 @@ def reprise_rapprocher():
     except Exception:
         pass
 
+    # Debug page 1
+    debug_page1 = []
+    try:
+        import pdfplumber as _dbg_plumber, io as _dbg_io2
+        with _dbg_plumber.open(_dbg_io2.BytesIO(pdf_bytes)) as _dbg_pdf:
+            txt = (_dbg_pdf.pages[0].extract_text() or '').strip()
+            debug_page1 = [l.strip() for l in txt.split('\n') if l.strip()][:6]
+    except Exception:
+        pass
+
     # Normalisation des PDL
     def _norm_pdl(s):
         return re.sub(r'[^0-9]', '', str(s or ''))
@@ -2086,7 +2107,7 @@ def reprise_rapprocher():
 
     if not cpv_pdls:
         return jsonify({'success': True, 'champs': champs, 'match': 'absent',
-                        'raison': 'Aucun PDL extrait du contrat'})
+                        'raison': 'Aucun PDL extrait du contrat', 'debug_page1': debug_page1})
 
     # Lire le Sheet
     gc = get_sheets_client()
@@ -2181,12 +2202,14 @@ def reprise_rapprocher():
             'ligne': matches[0],
             'comparaison': _build_comparaison(row),
             'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+            'debug_page1': debug_page1,
         })
     elif len(matches) > 1:
         return jsonify({
             'success': True, 'match': 'ambigu', 'champs': champs,
             'lignes': matches,
             'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+            'debug_page1': debug_page1,
         })
 
     # Aucune correspondance PDL -> tenter par nom de société
@@ -2209,6 +2232,7 @@ def reprise_rapprocher():
             'ligne': matches[0],
             'comparaison': _build_comparaison(row),
             'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+            'debug_page1': debug_page1,
         })
     elif len(matches) > 1:
         return jsonify({
@@ -2216,12 +2240,14 @@ def reprise_rapprocher():
             'raison': 'Plusieurs sociétés correspondent par nom (pas de PDL commun)',
             'lignes': matches,
             'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+            'debug_page1': debug_page1,
         })
 
     return jsonify({
         'success': True, 'match': 'absent', 'champs': champs,
         'raison': 'Aucune correspondance par PDL ni par nom de société',
         'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+        'debug_page1': debug_page1,
     })
 
 
