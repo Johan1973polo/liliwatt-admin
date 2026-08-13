@@ -2776,24 +2776,23 @@ function rpParseBloc(type){
   var r = _ohmParseBlock(text);
   var filled = 0;
 
+  // Comptabiliser raison_sociale et marge_ohm comme reconnus
+  if(r.champs['_raison_sociale']) filled++;
+  if(r.champs['_marge_ohm']) filled++;
+
+  // Mapping id HTML -> champ backend
+  var _htmlToBackend = {
+    'v_ref_vente':'ref_vente', 'v_ref_client':'ref_client', 'v_commercial_ohm':'commercial_ohm',
+    'v_date_signature':'date_signature', 'v_siren':'siren', 'v_adresse':'adresse_client',
+    'v_score':'score', 'v_pay_rank':'pay_rank', 'v_typologie':'typologie', 'v_nbr_sites':'nbr_sites'
+  };
+
   // Enrichir le tableau comparatif
   Object.keys(r.champs).forEach(function(id){
     if(id === '_raison_sociale' || id === '_marge_ohm') return;
     var val = r.champs[id];
     if(!val) return;
-    // Traduire l'id HTML en nom de champ backend
-    var champ = null;
-    Object.keys(_OHM_FIELD_MAP).forEach(function(k){
-      if(_OHM_FIELD_MAP[k] === id){
-        // Trouver le champ backend correspondant à l'id HTML
-        var htmlToBackend = {
-          'v_ref_vente':'ref_vente', 'v_ref_client':'ref_client', 'v_commercial_ohm':'commercial_ohm',
-          'v_date_signature':'date_signature', 'v_siren':'siren', 'v_adresse':'adresse_client',
-          'v_score':'score', 'v_pay_rank':'pay_rank', 'v_typologie':'typologie', 'v_nbr_sites':'nbr_sites'
-        };
-        champ = htmlToBackend[id] || null;
-      }
-    });
+    var champ = _htmlToBackend[id] || null;
     if(!champ) return;
     filled++;
 
@@ -3223,9 +3222,16 @@ function ohmParseBloc(type){
   status.textContent = mappedCount + ' champs reconnus';
   status.style.color = '#16a34a';
 
+  // Non trouvés limités aux champs attendus pour ce bloc
+  var _blocAttendus = {
+    gen: ['ref de la vente','client ref','commercial ohm','date de signature'],
+    cli: ['raison sociale','siren client','adresse','score','pay rank du client','typologie contrat','nbr sites actifs'],
+    comm: ['marge totale courtier']
+  };
+  var attendus = _blocAttendus[type] || [];
   var html = '';
-  if(r.nonTrouves.length){
-    var displayNT = r.nonTrouves.filter(function(k){ var v = _OHM_FIELD_MAP[k]; return v !== '_raison_sociale' && v !== '_marge_ohm'; });
+  if(r.nonTrouves.length && attendus.length){
+    var displayNT = r.nonTrouves.filter(function(k){ return attendus.indexOf(k) >= 0; });
     if(displayNT.length) html += '<div style="color:#b45309;">Non trouvés : ' + displayNT.join(', ') + '</div>';
   }
   if(r.ignores.length){
