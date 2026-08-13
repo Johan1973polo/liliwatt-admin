@@ -95,6 +95,7 @@
     <div class="tab" onclick="showTab('newsletter')">📩 Newsletter</div>
     <div class="tab" onclick="showTab('bienvenue')">👋 Bienvenue</div>
     <div class="tab" onclick="showTab('echeancier')">📊 Échéancier</div>
+    <div class="tab" onclick="showTab('aaf')">🔍 Vérif. AAF</div>
 </div>
 
 <div class="container">
@@ -745,6 +746,73 @@
 
 </div>
 
+  <!-- Vérificateur AAF -->
+  <div class="panel" id="tab-aaf">
+    <div style="max-width:960px;margin:0 auto;padding:24px 0;">
+      <h2 style="color:#1e1b4b;font-size:22px;font-weight:800;margin-bottom:4px;">🔍 Vérificateur AAF</h2>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:20px;">Déposez le fichier AAF Excel reçu d'OHM ENERGIE. Lecture seule — aucune écriture dans le Sheet.</p>
+
+      <!-- Dropzone AAF -->
+      <div id="aafDropBox" style="border:2px dashed #7c3aed;border-radius:12px;background:#f5f3ff;height:100px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;margin-bottom:16px;" onclick="document.getElementById('aafFileInput').click()">
+        <input type="file" id="aafFileInput" accept=".xlsx,.xls" style="display:none" onchange="aafUpload(this.files)">
+        <div id="aafDropInner" style="text-align:center;pointer-events:none;">
+          <div style="font-size:20px;">📊</div>
+          <div style="font-size:13px;color:#4b5563;">Glissez le fichier AAF ici</div>
+          <div style="font-size:11px;color:#9ca3af;">Excel .xlsx · Max 10 Mo</div>
+        </div>
+      </div>
+
+      <!-- Bandeau fiabilité -->
+      <div id="aafFiabilite" style="display:none;margin-bottom:12px;padding:10px 16px;border-radius:8px;font-size:12px;font-weight:700;"></div>
+
+      <!-- Bandeau synthèse -->
+      <div id="aafSynthese" style="display:none;margin-bottom:16px;padding:12px 16px;background:#ede9fe;border-radius:10px;font-size:13px;color:#1e1b4b;"></div>
+
+      <!-- Résultats -->
+      <div id="aafResults" style="display:none;">
+        <!-- Manquants -->
+        <div id="aafManquants" class="aaf-bloc" style="display:none;margin-bottom:12px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:14px;">
+          <h4 style="margin:0 0 8px;color:#991b1b;font-size:13px;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">⚠ Manquants — à réclamer <span id="aafManquantsCount"></span></h4>
+          <div id="aafManquantsList" style="font-size:12px;"></div>
+        </div>
+        <!-- À vérifier -->
+        <div id="aafAVerifier" class="aaf-bloc" style="display:none;margin-bottom:12px;background:#fffbeb;border:1.5px solid #fbbf24;border-radius:10px;padding:14px;">
+          <h4 style="margin:0 0 8px;color:#92400e;font-size:13px;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">🔶 À vérifier — correspondance incertaine <span id="aafAVerifierCount"></span></h4>
+          <div id="aafAVerifierList" style="font-size:12px;"></div>
+        </div>
+        <!-- Écarts -->
+        <div id="aafEcarts" class="aaf-bloc" style="display:none;margin-bottom:12px;background:#fef3c7;border:1.5px solid #f59e0b;border-radius:10px;padding:14px;">
+          <h4 style="margin:0 0 8px;color:#92400e;font-size:13px;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">📊 Écarts de montant <span id="aafEcartsCount"></span></h4>
+          <div id="aafEcartsList" style="font-size:12px;"></div>
+        </div>
+        <!-- Décommissions -->
+        <div id="aafDecomms" class="aaf-bloc" style="display:none;margin-bottom:12px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:14px;">
+          <h4 style="margin:0 0 8px;color:#991b1b;font-size:13px;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">🔻 Décommissions <span id="aafDecommsCount"></span></h4>
+          <div id="aafDecommsList" style="font-size:12px;"></div>
+        </div>
+        <!-- Primes -->
+        <div id="aafPrimes" class="aaf-bloc" style="display:none;margin-bottom:12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:14px;">
+          <h4 style="margin:0 0 8px;color:#166534;font-size:13px;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">🎁 Primes / Challenges <span id="aafPrimesCount"></span></h4>
+          <div id="aafPrimesList" style="font-size:12px;"></div>
+        </div>
+        <!-- OK -->
+        <div id="aafOk" class="aaf-bloc" style="display:none;margin-bottom:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px;">
+          <h4 style="margin:0 0 8px;color:#374151;font-size:13px;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">✅ Rapprochés sans écart <span id="aafOkCount"></span></h4>
+          <div id="aafOkList" style="font-size:12px;display:none;"></div>
+        </div>
+        <!-- Brouillon mail -->
+        <div style="margin-top:20px;">
+          <button onclick="aafGenererMail()" style="padding:10px 20px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">📧 Préparer le mail</button>
+        </div>
+        <div id="aafMailWrap" style="display:none;margin-top:12px;">
+          <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">Brouillon — modifiez avant de copier</label>
+          <textarea id="aafMailText" rows="16" style="width:100%;padding:12px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+          <button onclick="navigator.clipboard.writeText(document.getElementById('aafMailText').value);this.textContent='✓ Copié !';setTimeout(()=>this.textContent='📋 Copier',2000)" style="margin-top:6px;padding:8px 16px;background:#1e1b4b;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">📋 Copier</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <!-- Modal Référent -->
 
 
@@ -765,7 +833,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier'];
+    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier','aaf'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -2475,6 +2543,199 @@ async function bvTestSend() {
     res.style.display = 'block'; res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
     res.textContent = `❌ Erreur réseau : ${e.message}`;
   } finally { btn.disabled = false; btn.textContent = '🧪 Envoi de test'; }
+}
+
+// ===== VÉRIFICATEUR AAF =====
+
+// Drag & drop sur la zone AAF
+(function(){
+  var box = document.getElementById('aafDropBox');
+  if(!box) return;
+  box.addEventListener('dragover', function(e){ e.preventDefault(); box.style.borderStyle='solid'; box.style.background='#ede9fe'; });
+  box.addEventListener('dragleave', function(e){ e.preventDefault(); box.style.borderStyle='dashed'; box.style.background='#f5f3ff'; });
+  box.addEventListener('drop', function(e){ e.preventDefault(); box.style.borderStyle='dashed'; box.style.background='#f5f3ff'; aafUpload(e.dataTransfer.files); });
+})();
+
+var _aafData = null;
+
+async function aafUpload(files){
+  if(!files || !files.length) return;
+  var file = files[0];
+  if(!file.name.toLowerCase().match(/\.xlsx?$/)){
+    document.getElementById('aafDropInner').innerHTML = '<div style="color:#ef4444;font-weight:700;">Fichier Excel requis (.xlsx)</div>';
+    return;
+  }
+  document.getElementById('aafDropInner').innerHTML = '<div style="font-size:20px;">⏳</div><div style="font-size:13px;">Analyse en cours…</div>';
+  var fd = new FormData(); fd.append('file', file);
+  try {
+    var r = await fetch('/api/aaf/analyser', {method:'POST', body:fd});
+    var d = await r.json();
+    if(!r.ok || !d.success) throw new Error(d.error||'Erreur');
+    _aafData = d;
+    document.getElementById('aafDropInner').innerHTML = '<div style="font-size:20px;">✅</div><div style="font-size:13px;color:#16a34a;">'+file.name+' — '+d.nb_lignes_aaf+' lignes analysées</div>';
+    aafRender(d);
+  } catch(e){
+    document.getElementById('aafDropInner').innerHTML = '<div style="color:#ef4444;font-weight:700;">'+e.message+'</div><div style="font-size:11px;color:#9ca3af;margin-top:4px;">Cliquez pour réessayer</div>';
+  }
+}
+
+function _aafFmt(n){ return n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
+function _aafEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function _aafCheckbox(id, checked, label){
+  return '<label style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;"><input type="checkbox" class="aaf-check" data-id="'+id+'" '+(checked?'checked':'')+' style="margin:0;"> <span>'+label+'</span></label>';
+}
+
+function aafRender(d){
+  document.getElementById('aafResults').style.display = 'block';
+  var hasHaute = d.nb_haute > 0;
+  var allBasse = d.nb_total_rapproches > 0 && d.nb_haute === 0;
+
+  // Fiabilité
+  var fb = document.getElementById('aafFiabilite');
+  if(allBasse){
+    fb.style.display='block'; fb.style.background='#fef3c7'; fb.style.color='#92400e';
+    fb.textContent = 'Aucune de vos ventes de cette période n\'a de référence MIB renseignée. Vérifiez chaque anomalie avant de la réclamer.';
+  } else {
+    fb.style.display='block'; fb.style.background='#f0fdf4'; fb.style.color='#166534';
+    fb.textContent = d.nb_haute+' rapprochement(s) sur '+d.nb_total_rapproches+' en fiabilité HAUTE (par MIB). Les autres reposent sur le nom de société et peuvent être erronés.';
+  }
+
+  // Synthèse
+  var sy = document.getElementById('aafSynthese');
+  sy.style.display='block';
+  var totalVerse = d.total_gen.part1 || 0;
+  sy.innerHTML = d.nb_lignes_aaf+' lignes AAF · '+d.nb_total_rapproches+' rapprochées · '+d.manquants.length+' manquant(s) · '+d.ecarts.length+' écart(s) · '+d.a_verifier.length+' à vérifier<br>'
+    +'Total versé (commissions) : <strong>'+_aafFmt(totalVerse)+'</strong> · Challenges : <strong>'+_aafFmt(d.challenge_total)+'</strong> · Décommissions : <strong>'+_aafFmt(d.total_gen.decomm)+'</strong>';
+
+  // Manquants
+  var mDiv = document.getElementById('aafManquants');
+  if(d.manquants.length){
+    mDiv.style.display='block';
+    document.getElementById('aafManquantsCount').textContent = '('+d.manquants.length+')';
+    document.getElementById('aafManquantsList').innerHTML = d.manquants.map(function(m,i){
+      return _aafCheckbox('mq_'+i, hasHaute, '<strong>'+_aafEsc(m.societe)+'</strong> ('+m.ref+') — attendu '+_aafFmt(m.attendu)+' (statut '+m.statut+')');
+    }).join('');
+  } else { mDiv.style.display='none'; }
+
+  // À vérifier
+  var avDiv = document.getElementById('aafAVerifier');
+  if(d.a_verifier.length){
+    avDiv.style.display='block';
+    document.getElementById('aafAVerifierCount').textContent = '('+d.a_verifier.length+')';
+    document.getElementById('aafAVerifierList').innerHTML = d.a_verifier.map(function(v){
+      return '<div style="padding:6px 0;border-bottom:1px solid #fde68a;">'
+        +'<div>Mon Sheet : <strong>'+_aafEsc(v.sheet_societe)+'</strong> ('+v.sheet_ref+') — attendu '+_aafFmt(v.sheet_attendu)+'</div>'
+        +'<div>AAF : <strong>'+_aafEsc(v.aaf_societe)+'</strong> ('+v.aaf_refs.join(', ')+') — versé '+_aafFmt(v.aaf_total)+'</div>'
+        +'<div style="color:#6b7280;font-style:italic;">Écart : '+_aafFmt(v.ecart)+'</div></div>';
+    }).join('');
+  } else { avDiv.style.display='none'; }
+
+  // Écarts
+  var eDiv = document.getElementById('aafEcarts');
+  if(d.ecarts.length){
+    eDiv.style.display='block';
+    document.getElementById('aafEcartsCount').textContent = '('+d.ecarts.length+')';
+    document.getElementById('aafEcartsList').innerHTML = d.ecarts.map(function(e,i){
+      var pct = e.attendu>0 ? (e.ecart/e.attendu*100).toFixed(1) : '0';
+      return _aafCheckbox('ec_'+i, hasHaute && e.fiabilite==='HAUTE',
+        '<strong>'+_aafEsc(e.societe)+'</strong> ('+e.ref+') — attendu '+_aafFmt(e.attendu)+' · AAF '+_aafFmt(e.aaf)+' · écart <strong>'+_aafFmt(e.ecart)+'</strong> ('+pct+'%) ['+e.fiabilite+']');
+    }).join('');
+  } else { eDiv.style.display='none'; }
+
+  // Décommissions
+  var dDiv = document.getElementById('aafDecomms');
+  if(d.decomms.length){
+    dDiv.style.display='block';
+    document.getElementById('aafDecommsCount').textContent = '('+d.decomms.length+')';
+    document.getElementById('aafDecommsList').innerHTML = d.decomms.map(function(dc,i){
+      return _aafCheckbox('dc_'+i, hasHaute,
+        '<strong>'+_aafEsc(dc.ref)+'</strong> — '+_aafEsc(dc.societe)+' : '+_aafFmt(dc.decomm)+' ('+_aafEsc(dc.commentaire)+')');
+    }).join('');
+  } else { dDiv.style.display='none'; }
+
+  // Primes
+  var pDiv = document.getElementById('aafPrimes');
+  if(d.challenges.length){
+    pDiv.style.display='block';
+    document.getElementById('aafPrimesCount').textContent = '('+d.challenges.length+' lignes, '+_aafFmt(d.challenge_total)+')';
+    document.getElementById('aafPrimesList').innerHTML = d.challenges.map(function(c){
+      return '<div style="padding:3px 0;border-bottom:1px solid #bbf7d0;">'+_aafEsc(c.ref)+' — '+_aafEsc(c.societe)+' : '+_aafFmt(c.part1)+' ('+_aafEsc(c.commentaire)+')</div>';
+    }).join('');
+  } else { pDiv.style.display='none'; }
+
+  // OK
+  var oDiv = document.getElementById('aafOk');
+  if(d.oks.length){
+    oDiv.style.display='block';
+    document.getElementById('aafOkCount').textContent = '('+d.oks.length+')';
+    document.getElementById('aafOkList').innerHTML = d.oks.map(function(o){
+      return '<div style="padding:3px 0;border-bottom:1px solid #e5e7eb;">'+_aafEsc(o.societe)+' ('+o.ref+') — '+_aafFmt(o.attendu)+' ['+o.fiabilite+']</div>';
+    }).join('');
+  } else { oDiv.style.display='none'; }
+}
+
+function aafGenererMail(){
+  if(!_aafData) return;
+  var d = _aafData;
+  var mois = d.aaf_mois || '—';
+  var lines = [];
+  lines.push('Objet : AAF '+mois+' — demande de précisions');
+  lines.push('');
+  lines.push('Bonjour,');
+  lines.push('');
+  lines.push('Suite à la réception de l\'AAF '+mois+', je souhaite vous soumettre les points suivants :');
+
+  // Manquants cochés
+  var mqs = document.querySelectorAll('.aaf-check[data-id^="mq_"]:checked');
+  if(mqs.length){
+    lines.push('');
+    lines.push('CONTRATS MANQUANTS (non présents dans l\'AAF) :');
+    mqs.forEach(function(cb){
+      var i = parseInt(cb.dataset.id.split('_')[1]);
+      var m = d.manquants[i];
+      if(m) lines.push('  - '+m.societe+(m.ref_vente?' ('+m.ref_vente+')':'')+' — montant attendu : '+m.attendu.toFixed(2)+' €');
+    });
+  }
+
+  // Écarts cochés
+  var ecs = document.querySelectorAll('.aaf-check[data-id^="ec_"]:checked');
+  if(ecs.length){
+    lines.push('');
+    lines.push('ÉCARTS DE MONTANT :');
+    ecs.forEach(function(cb){
+      var i = parseInt(cb.dataset.id.split('_')[1]);
+      var e = d.ecarts[i];
+      if(e) lines.push('  - '+e.societe+(e.ref_vente?' ('+e.ref_vente+')':'')+' — attendu '+e.attendu.toFixed(2)+' €, reçu '+e.aaf.toFixed(2)+' € (écart '+e.ecart.toFixed(2)+' €)');
+    });
+  }
+
+  // Décommissions cochées
+  var dcs = document.querySelectorAll('.aaf-check[data-id^="dc_"]:checked');
+  if(dcs.length){
+    lines.push('');
+    lines.push('DÉCOMMISSIONS — demande de justification :');
+    dcs.forEach(function(cb){
+      var i = parseInt(cb.dataset.id.split('_')[1]);
+      var dc = d.decomms[i];
+      if(dc) lines.push('  - '+dc.ref+' ('+dc.societe+') : '+dc.decomm.toFixed(2)+' € — motif : '+dc.commentaire);
+    });
+  }
+
+  if(!mqs.length && !ecs.length && !dcs.length){
+    lines.push('');
+    lines.push('(Aucun élément sélectionné — cochez les anomalies à inclure dans le mail.)');
+  }
+
+  lines.push('');
+  lines.push('Pourriez-vous vérifier ces points et me revenir à votre convenance ?');
+  lines.push('');
+  lines.push('Cordialement,');
+  lines.push('Johan Mallet');
+  lines.push('LILIWATT');
+
+  document.getElementById('aafMailText').value = lines.join('\n');
+  document.getElementById('aafMailWrap').style.display = 'block';
 }
 
 // ===== RETOUR FORMULAIRE VENTE =====

@@ -1912,6 +1912,220 @@ def extraire_contrat():
     })
 
 
+# ===== VÉRIFICATEUR AAF =====
+
+@app.route('/api/aaf/analyser', methods=['POST'])
+@login_required
+def analyser_aaf():
+    """Analyse un fichier AAF Excel et le rapproche du Sheet. Lecture seule."""
+    import openpyxl, io as _io, unicodedata, re
+    from collections import defaultdict
+
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'Aucun fichier reçu'}), 400
+    f = request.files['file']
+    if not f.filename.lower().endswith(('.xlsx', '.xls')):
+        return jsonify({'success': False, 'error': 'Fichier Excel requis (.xlsx)'}), 400
+    file_bytes = f.read()
+    if len(file_bytes) > 10 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'Fichier trop volumineux (max 10 Mo)'}), 400
+
+    def _norm(s):
+        s = unicodedata.normalize('NFD', str(s))
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        return re.sub(r'[^a-z0-9 ]', '', s.lower()).strip()
+
+    def _pf(v):
+        if v is None: return 0.0
+        return round(float(v), 2)
+
+    try:
+        wb = openpyxl.load_workbook(_io.BytesIO(file_bytes), data_only=True)
+    except Exception:
+        return jsonify({'success': False, 'error': "Ce fichier n'est pas un Excel valide."}), 422
+
+    ws = wb.worksheets[0]
+    sheet_name = ws.title.strip()
+
+    # Déduire le mois depuis le nom de la feuille
+    m_match = re.search(r'(\d{2})-(\d{4})', sheet_name)
+    aaf_mois = f'{m_match.group(2)}-{m_match.group(1)}' if m_match else None
+
+    # Vérifier en-têtes ligne 3
+    row3 = [str(c.value or '').strip() for c in ws[3]]
+    if not any('eference' in str(h) for h in row3[:2]):
+        return jsonify({'success': False, 'error': f"Structure inattendue : en-tête ligne 3 = {row3[:6]}. Vérifiez le fichier."}), 422
+
+    # Extraire les données
+    aaf_lignes = []
+    total_gen = {'part1': 0, 'decomm': 0, 'total': 0}
+    for row in ws.iter_rows(min_row=4, max_row=ws.max_row, values_only=True):
+        ref = str(row[0] or '').strip()
+        if not ref:
+            continue
+        if ref == 'Total général':
+            total_gen = {'part1': _pf(row[3]), 'decomm': _pf(row[4]), 'total': _pf(row[5])}
+            continue
+        aaf_lignes.append({
+            'ref': ref,
+            'societe': str(row[1] or '').strip(),
+            'commentaire': str(row[2] or '').strip(),
+            'part1': _pf(row[3]),
+            'decomm': _pf(row[4]),
+            'total': _pf(row[5]),
+        })
+
+    # Classifier
+    challenges = [l for l in aaf_lignes if 'challenge' in l['commentaire'].lower()]
+    decomms = [l for l in aaf_lignes if l['decomm'] != 0]
+    commissions = [l for l in aaf_lignes if l not in challenges and l not in decomms]
+
+    # Période de production = AAF - 1 mois
+    if aaf_mois:
+        ay, am = int(aaf_mois[:4]), int(aaf_mois[5:7])
+        pm = am - 1; py = ay
+        if pm < 1:
+            pm = 12; py -= 1
+        periode_prod = f'{py:04d}-{pm:02d}'
+    else:
+        periode_prod = None
+
+    # Regrouper commissions par ref et par société normalisée
+    aaf_par_ref = {}
+    aaf_par_societe = defaultdict(lambda: {'refs': [], 'societe': '', 'total_part1': 0.0, 'lignes': []})
+    for l in commissions:
+        aaf_par_ref[l['ref']] = l
+        sn = _norm(l['societe'])
+        aaf_par_societe[sn]['refs'].append(l['ref'])
+        aaf_par_societe[sn]['societe'] = l['societe']
+        aaf_par_societe[sn]['total_part1'] = round(aaf_par_societe[sn]['total_part1'] + l['part1'], 2)
+        aaf_par_societe[sn]['lignes'].append(l)
+
+    # Charger le Sheet
+    gc = get_sheets_client()
+    if not gc:
+        return jsonify({'success': False, 'error': 'Google Sheets non configuré'}), 500
+    ws_sheet = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+    rows = ws_sheet.get_all_values()
+
+    def g(row, i):
+        return row[i].strip() if len(row) > i else ''
+
+    # Filtrer mes ventes de la période
+    mes_ventes = []
+    if periode_prod:
+        for row in rows[1:]:
+            if g(row, 5) != periode_prod:
+                continue
+            montant = parse_float(g(row, 11))
+            statut = g(row, 15)
+            attendu = round(montant / 2, 2) if statut == '50-50' else round(montant, 2)
+            mes_ventes.append({
+                'ref': g(row, 0), 'ref_vente': g(row, 26), 'societe': g(row, 2),
+                'montant': montant, 'statut': statut, 'attendu': attendu,
+                'societe_norm': _norm(g(row, 2)),
+            })
+
+    # Rapprochement
+    matched_aaf_refs = set()
+    matched_aaf_societes = set()
+    rapproches = []
+    manquants = []
+    nb_haute = 0
+
+    for v in mes_ventes:
+        match = None
+        fiabilite = None
+        aaf_montant = 0
+
+        if v['ref_vente'] and v['ref_vente'] in aaf_par_ref:
+            match = aaf_par_ref[v['ref_vente']]
+            fiabilite = 'HAUTE'
+            aaf_montant = match['part1']
+            matched_aaf_refs.add(v['ref_vente'])
+            nb_haute += 1
+        elif v['societe_norm'] in aaf_par_societe and v['societe_norm'] not in matched_aaf_societes:
+            grp = aaf_par_societe[v['societe_norm']]
+            fiabilite = 'BASSE'
+            aaf_montant = grp['total_part1']
+            for r in grp['refs']:
+                matched_aaf_refs.add(r)
+            matched_aaf_societes.add(v['societe_norm'])
+            match = grp
+
+        if match:
+            ecart = round(aaf_montant - v['attendu'], 2)
+            rapproches.append({
+                'type': 'ECART' if abs(ecart) > 0.02 else 'OK',
+                'ref': v['ref'], 'ref_vente': v['ref_vente'], 'societe': v['societe'],
+                'attendu': v['attendu'], 'aaf': aaf_montant, 'ecart': ecart,
+                'fiabilite': fiabilite, 'statut': v['statut'],
+            })
+        else:
+            manquants.append({
+                'ref': v['ref'], 'ref_vente': v['ref_vente'], 'societe': v['societe'],
+                'attendu': v['attendu'], 'montant': v['montant'], 'statut': v['statut'],
+                'societe_norm': v['societe_norm'],
+            })
+
+    # Inconnus
+    inconnus = []
+    for l in commissions:
+        if l['ref'] not in matched_aaf_refs:
+            sn = _norm(l['societe'])
+            if sn not in matched_aaf_societes:
+                inconnus.append(l)
+
+    # "À vérifier" : correspondance partielle entre manquants et inconnus
+    a_verifier = []
+    manquants_restants = []
+    inconnus_restants = list(inconnus)
+
+    for mq in manquants:
+        found_match = False
+        for inc in inconnus_restants:
+            inc_norm = _norm(inc['societe'])
+            if mq['societe_norm'] in inc_norm or inc_norm in mq['societe_norm']:
+                # Regrouper les inconnus de la même société normalisée
+                inc_group = [x for x in inconnus_restants if _norm(x['societe']) == inc_norm]
+                inc_total = round(sum(x['part1'] for x in inc_group), 2)
+                a_verifier.append({
+                    'sheet_ref': mq['ref'], 'sheet_societe': mq['societe'], 'sheet_attendu': mq['attendu'],
+                    'aaf_societe': inc['societe'], 'aaf_total': inc_total,
+                    'aaf_refs': [x['ref'] for x in inc_group],
+                    'ecart': round(inc_total - mq['attendu'], 2),
+                })
+                for x in inc_group:
+                    if x in inconnus_restants:
+                        inconnus_restants.remove(x)
+                found_match = True
+                break
+        if not found_match:
+            manquants_restants.append(mq)
+
+    ecarts = [r for r in rapproches if r['type'] == 'ECART']
+    oks = [r for r in rapproches if r['type'] == 'OK']
+
+    return jsonify({
+        'success': True,
+        'aaf_mois': aaf_mois,
+        'periode_prod': periode_prod,
+        'nb_lignes_aaf': len(aaf_lignes),
+        'nb_haute': nb_haute,
+        'nb_total_rapproches': len(rapproches),
+        'total_gen': total_gen,
+        'manquants': manquants_restants,
+        'a_verifier': a_verifier,
+        'ecarts': ecarts,
+        'oks': oks,
+        'decomms': decomms,
+        'challenges': challenges,
+        'challenge_total': round(sum(l['part1'] for l in challenges), 2),
+        'inconnus': inconnus_restants,
+        'mes_ventes_count': len(mes_ventes),
+    })
+
+
 # ===== ÉCHÉANCIER =====
 
 @app.route('/api/echeancier')
