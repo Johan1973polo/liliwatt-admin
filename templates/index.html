@@ -322,7 +322,7 @@
           <div class="form-group"><label>Email client</label><input type="email" id="v_email_client"></div>
           <div class="form-group"><label>Vendeur</label><select id="v_vendeur"><option value="">Chargement...</option></select></div>
           <div class="form-group"><label>Référent</label><select id="v_referent"><option value="">Aucun</option></select></div>
-          <div class="form-group"><label>Segment</label><select id="v_segment"><option>C5-BASE</option><option>C5-HPHC</option><option>C4</option><option>C2</option><option>GAZ</option></select></div>
+          <div class="form-group"><label>Segment</label><select id="v_segment"><option>C5-BASE</option><option>C5-HPHC</option><option>C4</option><option>C2</option><option>GAZ</option><option>MULTISITE</option></select></div>
           <div class="form-group"><label>Période production</label><input type="month" id="v_periode"></div>
           <div class="form-group"><label>Date début contrat</label><input type="date" id="v_date_debut"></div>
           <div class="form-group"><label>Date fin contrat</label><input type="date" id="v_date_fin"></div>
@@ -382,6 +382,15 @@
             <div id="ohm_cli_details" style="display:none;margin-top:6px;font-size:10px;color:#6b7280;"></div>
           </div>
         </div>
+        <div style="margin-bottom:16px;">
+          <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">Données de commissionnement</label>
+          <textarea id="ohm_bloc_comm" rows="4" placeholder="Coller ici le bloc « Données de commissionnement » du back-office OHM..." style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:11px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+            <button onclick="ohmParseBloc('comm')" style="padding:5px 12px;background:#7c3aed;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Analyser</button>
+            <span id="ohm_comm_status" style="font-size:11px;color:#6b7280;"></span>
+          </div>
+          <div id="ohm_comm_details" style="display:none;margin-top:6px;font-size:10px;color:#6b7280;"></div>
+        </div>
 
         <h4 style="color:#7c3aed;margin:16px 0 12px;">💶 Commissions</h4>
         <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;">
@@ -435,7 +444,7 @@
           <option value="">Tous types</option><option value="Électricité">⚡ Élec</option><option value="Gaz">🔥 Gaz</option>
         </select>
         <select id="vf_segment" onchange="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;">
-          <option value="">Tous segments</option><option>C5-BASE</option><option>C5-HPHC</option><option>C4</option><option>C3</option><option>C2</option><option>GAZ</option>
+          <option value="">Tous segments</option><option>C5-BASE</option><option>C5-HPHC</option><option>C4</option><option>C3</option><option>C2</option><option>GAZ</option><option>MULTISITE</option>
         </select>
         <input type="text" id="vf_fournisseur" placeholder="Fournisseur" oninput="loadVentes()" style="padding:6px 10px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:12px;width:120px;">
         <button onclick="exportVendeur()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📥 CSV</button>
@@ -2749,13 +2758,9 @@ function venteRetour(){
     if(el){ el.value = ''; el.classList.remove('dz-prefilled'); }
   });
   _ohmFilledIds = [];
-  document.getElementById('ohm_bloc_gen').value = '';
-  document.getElementById('ohm_bloc_cli').value = '';
-  document.getElementById('ohm_gen_status').textContent = '';
-  document.getElementById('ohm_cli_status').textContent = '';
-  document.getElementById('ohm_gen_details').style.display = 'none';
-  document.getElementById('ohm_cli_details').style.display = 'none';
-  document.getElementById('ohmCoherenceAlert').style.display = 'none';
+  ['ohm_bloc_gen','ohm_bloc_cli','ohm_bloc_comm'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+  ['ohm_gen_status','ohm_cli_status','ohm_comm_status'].forEach(function(id){ var el=document.getElementById(id); if(el) el.textContent=''; });
+  ['ohm_gen_details','ohm_cli_details','ohm_comm_details','ohmCoherenceAlert'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.style.display='none'; el.innerHTML=''; } });
   document.getElementById('venteForm').style.display = 'none';
 }
 
@@ -2766,10 +2771,13 @@ var _OHM_FIELD_MAP = {
   'commercial ohm':'v_commercial_ohm', 'date de signature':'v_date_signature',
   'siren client':'v_siren', 'adresse':'v_adresse', 'score':'v_score',
   'pay rank du client':'v_pay_rank', 'typologie contrat':'v_typologie',
-  'nbr sites actifs':'v_nbr_sites', 'raison sociale':'_raison_sociale'
+  'nbr sites actifs':'v_nbr_sites', 'raison sociale':'_raison_sociale',
+  'marge totale courtier':'_marge_ohm'
 };
 var _OHM_IGNORED = ['id','l energie','le mode de paiement','type de contrat',
-  'courtier','manager courtier','le courtier final','observation pay rank'];
+  'courtier','manager courtier','le courtier final','observation pay rank',
+  'options fee','la part de ohm energie de la commission',
+  'le client peut','l appel de bienvenue','date de creation'];
 
 function _ohmNorm(s){
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()
@@ -2789,7 +2797,16 @@ function _ohmParseBlock(text){
   var labelIdx = [];
   lines.forEach(function(line, i){
     var n = _ohmNorm(line);
-    if(allKnown.has(n)) labelIdx.push({i:i, norm:n, mapped: n in normMap});
+    // Match exact ou par préfixe (pour les libellés à ignorer longs)
+    if(allKnown.has(n)){
+      labelIdx.push({i:i, norm:n, mapped: n in normMap});
+    } else if(n in normMap){
+      labelIdx.push({i:i, norm:n, mapped: true});
+    } else {
+      // Vérifier si le début du libellé matche un ignoré
+      var isIgnored = _OHM_IGNORED.some(function(ig){ return n.startsWith(ig); });
+      if(isIgnored) labelIdx.push({i:i, norm:n, mapped: false});
+    }
   });
 
   var champs = {}, ignores = [];
@@ -2817,9 +2834,11 @@ function _ohmParseBlock(text){
 var _ohmFilledIds = [];
 
 function ohmParseBloc(type){
-  var ta = document.getElementById(type==='gen'?'ohm_bloc_gen':'ohm_bloc_cli');
-  var status = document.getElementById(type==='gen'?'ohm_gen_status':'ohm_cli_status');
-  var details = document.getElementById(type==='gen'?'ohm_gen_details':'ohm_cli_details');
+  var ids = {gen:['ohm_bloc_gen','ohm_gen_status','ohm_gen_details'], cli:['ohm_bloc_cli','ohm_cli_status','ohm_cli_details'], comm:['ohm_bloc_comm','ohm_comm_status','ohm_comm_details']};
+  var t = ids[type] || ids.gen;
+  var ta = document.getElementById(t[0]);
+  var status = document.getElementById(t[1]);
+  var details = document.getElementById(t[2]);
   var text = ta.value.trim();
   if(!text){ status.textContent='Rien à analyser.'; details.style.display='none'; return; }
 
@@ -2859,14 +2878,31 @@ function ohmParseBloc(type){
     }
   }
 
+  // Contrôle marge OHM vs MONTANT Sheet
+  if(r.champs['_marge_ohm']){
+    var margeOhm = parseFloat(String(r.champs['_marge_ohm']).replace(/,/g,'.').replace(/[^\d.\-]/g,'')) || 0;
+    var montantSheet = parseFloat(document.getElementById('v_montant')?.value || '0') || 0;
+    var alertDiv = document.getElementById('ohmCoherenceAlert');
+    if(montantSheet > 0){
+      var ecart = Math.round((margeOhm - montantSheet)*100)/100;
+      if(Math.abs(ecart) > 0.02){
+        alertDiv.innerHTML += '<div style="margin-top:6px;color:#991b1b;font-weight:700;">⚠ MONTANT Sheet '+montantSheet.toFixed(2)+' € / OHM '+margeOhm.toFixed(2)+' € — ÉCART '+(ecart>0?'+':'')+ecart.toFixed(2)+' € — à vérifier</div>';
+        alertDiv.style.display = 'block';
+      } else {
+        alertDiv.innerHTML += '<div style="margin-top:6px;color:#166534;">✓ MONTANT concordant : Sheet '+montantSheet.toFixed(2)+' € / OHM '+margeOhm.toFixed(2)+' €</div>';
+        alertDiv.style.display = 'block';
+      }
+    }
+  }
+
   // Afficher le résultat
-  var mappedCount = Object.keys(r.champs).filter(function(k){ return k !== '_raison_sociale' && r.champs[k]; }).length;
+  var mappedCount = Object.keys(r.champs).filter(function(k){ return k !== '_raison_sociale' && k !== '_marge_ohm' && r.champs[k]; }).length;
   status.textContent = mappedCount + ' champs reconnus';
   status.style.color = '#16a34a';
 
   var html = '';
   if(r.nonTrouves.length){
-    var displayNT = r.nonTrouves.filter(function(k){ return _OHM_FIELD_MAP[k] !== '_raison_sociale'; });
+    var displayNT = r.nonTrouves.filter(function(k){ var v = _OHM_FIELD_MAP[k]; return v !== '_raison_sociale' && v !== '_marge_ohm'; });
     if(displayNT.length) html += '<div style="color:#b45309;">Non trouvés : ' + displayNT.join(', ') + '</div>';
   }
   if(r.ignores.length){
@@ -3052,6 +3088,7 @@ document.addEventListener('drop',     function(e){ e.preventDefault(); });
   // Champs extraits → id HTML du formulaire (hors fournisseur et type traités séparément)
   const FIELD_MAP = {
     ref_client:    'v_ref_client',
+    ref_vente:     'v_ref_vente',
     societe:       'v_societe',
     periode:       'v_periode',
     date_debut:    'v_date_debut',
@@ -3062,6 +3099,9 @@ document.addEventListener('drop',     function(e){ e.preventDefault(); });
     email_client:  'v_email_client',
     volume_gaz:    'v_vol_gaz',
     volume_elec:   'v_vol_elec',
+    siren:         'v_siren',
+    adresse_client:'v_adresse',
+    date_signature:'v_date_signature',
   };
 
   let _extractedIds = [];   // ids HTML des champs pré-remplis (pour effacement)
@@ -3158,6 +3198,10 @@ document.addEventListener('drop',     function(e){ e.preventDefault(); });
 
   // ── Pré-remplissage des champs ──────────────────────────────────────────
   function _prefill(el, val){
+    // Ne pas écraser un champ issu du collage OHM (le collage prime toujours)
+    if(typeof _ohmFilledIds !== 'undefined' && _ohmFilledIds.indexOf(el.id) >= 0){
+      return false;
+    }
     el.value = val;
     // Vérification post-affectation : si le navigateur a rejeté la valeur
     // (ex: input[type=date] avec un format invalide), ne pas surligner
@@ -3277,9 +3321,9 @@ document.addEventListener('drop',     function(e){ e.preventDefault(); });
       _ohmFilledIds.forEach(function(id){ var el=document.getElementById(id); if(el){ el.value=''; el.classList.remove('dz-prefilled'); } });
       _ohmFilledIds=[];
     }
-    var _ohmEls = ['ohm_bloc_gen','ohm_bloc_cli','ohm_gen_status','ohm_cli_status'];
+    var _ohmEls = ['ohm_bloc_gen','ohm_bloc_cli','ohm_bloc_comm','ohm_gen_status','ohm_cli_status','ohm_comm_status'];
     _ohmEls.forEach(function(id){ var el=document.getElementById(id); if(el){ el.value=''; el.textContent=''; } });
-    ['ohm_gen_details','ohm_cli_details','ohmCoherenceAlert'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
+    ['ohm_gen_details','ohm_cli_details','ohm_comm_details','ohmCoherenceAlert'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
     input.value='';
     dzSetState('idle');
     if(typeof calcMarge==='function') calcMarge();

@@ -1753,7 +1753,15 @@ Un champ introuvable vaut null. Ne pas inventer de valeur.
 
 Règles d'extraction :
 
-ref_client : Numéro MIB, format "MIB-XXXXXXXXXX". Il apparaît souvent sous la forme "MIB-XXXXXXXXXX: Offre du..." — extraire uniquement le numéro, sans les deux-points ni ce qui suit.
+ref_client : null. La référence client (MB-...) provient du back-office, pas du CPV. Ne pas la chercher dans le contrat.
+
+ref_vente : Numéro MIB, format "MIB-XXXXXXXXXX". Il apparaît souvent sous la forme "MIB-XXXXXXXXXX: Offre du..." — extraire uniquement le numéro, sans les deux-points ni ce qui suit.
+
+siren : Numéro SIREN à 9 chiffres du CLIENT (pas du fournisseur). Se trouve dans le paragraphe décrivant le client, après "immatriculée sous le SIREN". NE PAS confondre avec le SIRET (14 chiffres) qui apparaît dans le tableau des sites.
+
+adresse_client : Adresse du siège social du CLIENT. Se trouve dans le paragraphe "dont le siège social est situé à". Prendre l'adresse complète.
+
+date_signature : Date de signature du contrat au format AAAA-MM-JJ. Chercher "Fait à ... le <jour> <mois en lettres> <année>". Convertir le mois français en numéro.
 
 societe : Raison sociale du CLIENT. Dans le contrat, chercher le paragraphe qui commence par "Et" ou "d'autre part" — c'est le nom qui suit immédiatement, avant la virgule. Ne PAS prendre le nom du fournisseur (qui est entre "Entre" et "D'une part").
 
@@ -1771,7 +1779,7 @@ pdl_pce : Numéro(s) à 14 chiffres figurant dans la colonne "N° du Point de Co
 
 fournisseur : Nom du fournisseur d'énergie. Se trouve entre "Entre" et "D'une part" dans l'en-tête du contrat.
 
-segment : "GAZ" si type_energie vaut "gaz". null si type_energie vaut "elec".
+segment : null. Le segment est déduit automatiquement par l'application, ne pas le remplir.
 
 nom_client : NOM (en majuscules) de la ligne du tableau Contacts dont la colonne Type contient exactement "Le signataire du contrat". Identifier la ligne par ce libellé, pas par sa position dans le tableau.
 
@@ -1824,15 +1832,113 @@ def _contrat_extraire_contenu(pdf_bytes):
     return '\n\n'.join(parties)
 
 
+def _contrat_analyser_tableaux(pdf_bytes):
+    """Analyse les tableaux du CPV pour déduire le SEGMENT et l'adresse du premier site.
+
+    Retourne {'segment': str|None, 'adresse_site': str|None}.
+    """
+    import pdfplumber
+    import io as _io
+
+    segments_sites = []
+    cadrans_volumes = set()
+    est_gaz = False
+    adresse_premier_site = None
+
+    with pdfplumber.open(_io.BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages[:8]:
+            for table in page.extract_tables():
+                if not table or len(table) < 2:
+                    continue
+                headers = [str(c or '').strip().upper() for c in table[0]]
+
+                # Détecter le tableau des sites (colonne "Nom et adresse du Site")
+                addr_col = None
+                for ci, h in enumerate(headers):
+                    if 'NOM' in h and 'ADRESSE' in h and 'SITE' in h:
+                        addr_col = ci
+                        break
+
+                if addr_col is not None and adresse_premier_site is None:
+                    for row in table[1:]:
+                        val = str(row[addr_col] or '').strip()
+                        if val:
+                            adresse_premier_site = ' '.join(val.replace('\n', ' ').split())
+                            break
+
+                # Tableau des sites ELEC : colonne "Segment (C4 ou C5)"
+                seg_col = None
+                for ci, h in enumerate(headers):
+                    if 'SEGMENT' in h and ('C4' in h or 'C5' in h):
+                        seg_col = ci
+                        break
+
+                if seg_col is not None:
+                    for row in table[1:]:
+                        val = str(row[seg_col] or '').strip().upper()
+                        if val in ('C5', 'C4', 'C2'):
+                            segments_sites.append(val)
+
+                # Tableau des sites GAZ : colonne "Profil"
+                profil_col = None
+                for ci, h in enumerate(headers):
+                    if 'PROFIL' in h and 'SEGMENT' not in h:
+                        profil_col = ci
+                        break
+
+                if profil_col is not None:
+                    for row in table[1:]:
+                        val = str(row[profil_col] or '').strip().upper()
+                        if val.startswith('P0'):
+                            est_gaz = True
+
+                # Tableau des volumes : détecter les cadrans
+                if any('SEGMENT C' in h or 'PROFILE P' in h for h in headers):
+                    for h in headers:
+                        h_clean = h.strip().upper()
+                        if h_clean == 'HP':
+                            cadrans_volumes.add('HP')
+                        elif h_clean == 'HC':
+                            cadrans_volumes.add('HC')
+                        elif h_clean == 'BASE':
+                            cadrans_volumes.add('BASE')
+
+    # Déduction segment
+    segment = None
+    if est_gaz and not segments_sites:
+        segment = 'GAZ'
+    elif segments_sites:
+        unique = set(segments_sites)
+        if len(unique) > 1:
+            segment = 'MULTISITE'
+        else:
+            seg = unique.pop()
+            if seg in ('C4', 'C2'):
+                segment = seg
+            elif seg == 'C5':
+                has_hp = 'HP' in cadrans_volumes
+                has_hc = 'HC' in cadrans_volumes
+                has_base = 'BASE' in cadrans_volumes
+                if has_hp and has_hc and has_base:
+                    segment = 'MULTISITE'
+                elif has_hp or has_hc:
+                    segment = 'C5-HPHC'
+                elif has_base:
+                    segment = 'C5-BASE'
+
+    return {'segment': segment, 'adresse_site': adresse_premier_site}
+
+
 def _contrat_extraire_champs(contenu):
     """Envoie le contenu structuré à GPT-4o-mini et retourne (champs_dict, usage)."""
     import openai
 
     _CHAMPS_ATTENDUS = [
-        'ref_client', 'societe', 'periode', 'date_debut', 'date_fin',
+        'ref_client', 'ref_vente', 'societe', 'periode', 'date_debut', 'date_fin',
         'type_energie', 'pdl_pce', 'fournisseur', 'segment',
         'nom_client', 'prenom_client', 'tel_client', 'email_client',
         'volume_elec', 'volume_gaz',
+        'siren', 'adresse_client', 'date_signature',
         'vendeur', 'referent', 'montant_ht', 'commission_vendeur',
         'commission_referent', 'statut_paiement', 'date_paiement_1',
         'date_paiement_2', 'lien_drive',
@@ -1891,11 +1997,21 @@ def extraire_contrat():
         print(f'[CONTRAT] Erreur OpenAI: {e}')
         return jsonify({'success': False, 'error': "Erreur lors de l'analyse du contrat — réessayez ou saisissez manuellement."}), 500
 
+    # Déduire segment et adresse depuis les tableaux (pas le LLM)
+    try:
+        tableaux = _contrat_analyser_tableaux(pdf_bytes)
+        if tableaux.get('segment'):
+            champs['segment'] = tableaux['segment']
+        if tableaux.get('adresse_site'):
+            champs['adresse_client'] = tableaux['adresse_site']
+    except Exception as e:
+        print(f'[CONTRAT] Erreur analyse tableaux: {e}')
+
     avertissements = []
     if not champs.get('pdl_pce'):
         avertissements.append('PDL/PCE non trouvé — vérification manuelle obligatoire')
-    if not champs.get('ref_client'):
-        avertissements.append('REF_CLIENT (MIB) non trouvé')
+    if not champs.get('ref_vente'):
+        avertissements.append('REF_VENTE (MIB) non trouvé')
 
     print(f'[CONTRAT] OK — {usage.total_tokens} tokens '
           f'(prompt: {usage.prompt_tokens}, completion: {usage.completion_tokens})')
