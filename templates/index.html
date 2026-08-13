@@ -2606,7 +2606,9 @@ function aafRender(d){
   sy.style.display='block';
   var totalVerse = d.total_gen.part1 || 0;
   sy.innerHTML = d.nb_lignes_aaf+' lignes AAF · '+d.nb_total_rapproches+' rapprochées · '+d.manquants.length+' manquant(s) · '+d.ecarts.length+' écart(s) · '+d.a_verifier.length+' à vérifier<br>'
-    +'Total versé (commissions) : <strong>'+_aafFmt(totalVerse)+'</strong> · Challenges : <strong>'+_aafFmt(d.challenge_total)+'</strong> · Décommissions : <strong>'+_aafFmt(d.total_gen.decomm)+'</strong>';
+    +'Total versé (commissions) : <strong>'+_aafFmt(totalVerse)+'</strong> · Challenges : <strong>'+_aafFmt(d.challenge_total)+'</strong>'
+    +(d.has_decomm ? ' · Décommissions : <strong>'+_aafFmt(d.total_gen.decomm)+'</strong>' : '')
+    +(d.facture ? '<br>Facture à établir : <strong>'+_aafFmt(d.facture.ht)+' HT</strong> / <strong>'+_aafFmt(d.facture.ttc)+' TTC</strong>' : '');
 
   // Manquants
   var mDiv = document.getElementById('aafManquants');
@@ -2627,7 +2629,7 @@ function aafRender(d){
       return '<div style="padding:6px 0;border-bottom:1px solid #fde68a;">'
         +'<div>Mon Sheet : <strong>'+_aafEsc(v.sheet_societe)+'</strong> ('+v.sheet_ref+') — attendu '+_aafFmt(v.sheet_attendu)+'</div>'
         +'<div>AAF : <strong>'+_aafEsc(v.aaf_societe)+'</strong> ('+v.aaf_refs.join(', ')+') — versé '+_aafFmt(v.aaf_total)+'</div>'
-        +'<div style="color:#6b7280;font-style:italic;">Écart : '+_aafFmt(v.ecart)+'</div></div>';
+        +'<div style="color:#6b7280;font-style:italic;">Écart : '+_aafFmt(v.ecart)+' · Raison : '+(v.raison||'nom partiel')+'</div></div>';
     }).join('');
   } else { avDiv.style.display='none'; }
 

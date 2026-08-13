@@ -1937,7 +1937,8 @@ def analyser_aaf():
 
     def _pf(v):
         if v is None: return 0.0
-        return round(float(v), 2)
+        try: return round(float(v), 2)
+        except (ValueError, TypeError): return 0.0
 
     try:
         wb = openpyxl.load_workbook(_io.BytesIO(file_bytes), data_only=True)
@@ -1951,33 +1952,94 @@ def analyser_aaf():
     m_match = re.search(r'(\d{2})-(\d{4})', sheet_name)
     aaf_mois = f'{m_match.group(2)}-{m_match.group(1)}' if m_match else None
 
-    # Vérifier en-têtes ligne 3
+    # ── Détecter les colonnes par en-tête (ligne 3) ──
     row3 = [str(c.value or '').strip() for c in ws[3]]
-    if not any('eference' in str(h) for h in row3[:2]):
-        return jsonify({'success': False, 'error': f"Structure inattendue : en-tête ligne 3 = {row3[:6]}. Vérifiez le fichier."}), 422
+    def _norm_col(s):
+        """Normalise un nom de colonne : tout en minuscules, sans accents, sans séparateurs."""
+        s = unicodedata.normalize('NFD', str(s))
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        return re.sub(r'[^a-z0-9]', '', s.lower()).strip()
 
-    # Extraire les données
+    COL_MAP = {
+        'reference': None, 'raisonsociale': None, 'commentaire': None,
+        'premierepartiecommission': None, 'secondepartiecommission': None,
+        'decommission': None, 'totalgeneral': None,
+    }
+    unknown_cols = []
+    for idx, header in enumerate(row3):
+        if not header:
+            continue
+        hn = _norm_col(header)
+        matched = False
+        for key in COL_MAP:
+            if hn.startswith(key[:10]):
+                COL_MAP[key] = idx
+                matched = True
+                break
+        if not matched and idx < 8:
+            unknown_cols.append(header)
+
+    col_ref = COL_MAP.get('reference')
+    col_soc = COL_MAP.get('raisonsociale')
+    col_com = COL_MAP.get('commentaire')
+    col_p1 = COL_MAP.get('premierepartiecommission')
+    col_p2 = COL_MAP.get('secondepartiecommission')
+    col_dec = COL_MAP.get('decommission')
+    col_tot = COL_MAP.get('totalgeneral')
+
+    has_decomm_col = col_dec is not None
+    has_part2_col = col_p2 is not None
+
+    if col_ref is None or col_soc is None:
+        return jsonify({'success': False, 'error': f"Colonnes Reference/Raison_Sociale introuvables. En-têtes trouvés : {row3[:8]}"}), 422
+
+    # ── Détecter le bloc "Facture à établir" (colonnes I-K) ──
+    facture = None
+    for row in ws.iter_rows(min_row=4, max_row=12, values_only=True):
+        vals = list(row)
+        for i, v in enumerate(vals[7:14], start=7):
+            if str(v or '').strip().upper() == 'TOTAL':
+                # La ligne suivante devrait avoir les montants
+                ht_idx = i + 1
+                ttc_idx = i + 3 if len(vals) > i + 3 else None
+                # Chercher dans cette même ligne
+                ht = _pf(vals[ht_idx] if len(vals) > ht_idx else None)
+                ttc = _pf(vals[ht_idx + 2] if len(vals) > ht_idx + 2 else None)
+                if ht > 0:
+                    facture = {'ht': ht, 'ttc': ttc}
+                break
+        if facture:
+            break
+
+    # ── Extraire les données ──
     aaf_lignes = []
-    total_gen = {'part1': 0, 'decomm': 0, 'total': 0}
+    total_gen = {'part1': 0, 'part2': 0, 'decomm': 0, 'total': 0}
     for row in ws.iter_rows(min_row=4, max_row=ws.max_row, values_only=True):
-        ref = str(row[0] or '').strip()
+        vals = list(row)
+        ref = str(vals[col_ref] if col_ref is not None and col_ref < len(vals) else '' or '').strip()
         if not ref:
             continue
         if ref == 'Total général':
-            total_gen = {'part1': _pf(row[3]), 'decomm': _pf(row[4]), 'total': _pf(row[5])}
+            total_gen['part1'] = _pf(vals[col_p1] if col_p1 is not None and col_p1 < len(vals) else None)
+            total_gen['part2'] = _pf(vals[col_p2] if col_p2 is not None and col_p2 < len(vals) else None)
+            total_gen['decomm'] = _pf(vals[col_dec] if col_dec is not None and col_dec < len(vals) else None)
+            total_gen['total'] = _pf(vals[col_tot] if col_tot is not None and col_tot < len(vals) else None)
             continue
+        p1 = _pf(vals[col_p1] if col_p1 is not None and col_p1 < len(vals) else None)
+        p2 = _pf(vals[col_p2] if col_p2 is not None and col_p2 < len(vals) else None)
+        dec = _pf(vals[col_dec] if col_dec is not None and col_dec < len(vals) else None)
+        tot = _pf(vals[col_tot] if col_tot is not None and col_tot < len(vals) else None)
         aaf_lignes.append({
             'ref': ref,
-            'societe': str(row[1] or '').strip(),
-            'commentaire': str(row[2] or '').strip(),
-            'part1': _pf(row[3]),
-            'decomm': _pf(row[4]),
-            'total': _pf(row[5]),
+            'societe': str(vals[col_soc] if col_soc is not None and col_soc < len(vals) else '' or '').strip(),
+            'commentaire': str(vals[col_com] if col_com is not None and col_com < len(vals) else '' or '').strip(),
+            'part1': p1, 'part2': p2, 'decomm': dec, 'total': tot,
+            'verse': round(p1 + p2, 2),  # montant réellement versé
         })
 
-    # Classifier
+    # ── Classifier ──
     challenges = [l for l in aaf_lignes if 'challenge' in l['commentaire'].lower()]
-    decomms = [l for l in aaf_lignes if l['decomm'] != 0]
+    decomms = [l for l in aaf_lignes if has_decomm_col and l['decomm'] != 0]
     commissions = [l for l in aaf_lignes if l not in challenges and l not in decomms]
 
     # Période de production = AAF - 1 mois
@@ -1992,16 +2054,21 @@ def analyser_aaf():
 
     # Regrouper commissions par ref et par société normalisée
     aaf_par_ref = {}
-    aaf_par_societe = defaultdict(lambda: {'refs': [], 'societe': '', 'total_part1': 0.0, 'lignes': []})
+    aaf_par_societe = defaultdict(lambda: {'refs': [], 'societe': '', 'total_verse': 0.0, 'lignes': []})
     for l in commissions:
         aaf_par_ref[l['ref']] = l
         sn = _norm(l['societe'])
         aaf_par_societe[sn]['refs'].append(l['ref'])
         aaf_par_societe[sn]['societe'] = l['societe']
-        aaf_par_societe[sn]['total_part1'] = round(aaf_par_societe[sn]['total_part1'] + l['part1'], 2)
+        aaf_par_societe[sn]['total_verse'] = round(aaf_par_societe[sn]['total_verse'] + l['verse'], 2)
         aaf_par_societe[sn]['lignes'].append(l)
 
-    # Charger le Sheet
+    # Index des montants versés pour rapprochement par montant
+    aaf_montants = defaultdict(list)
+    for sn, grp in aaf_par_societe.items():
+        aaf_montants[grp['total_verse']].append(sn)
+
+    # ── Charger le Sheet ──
     gc = get_sheets_client()
     if not gc:
         return jsonify({'success': False, 'error': 'Google Sheets non configuré'}), 500
@@ -2011,7 +2078,6 @@ def analyser_aaf():
     def g(row, i):
         return row[i].strip() if len(row) > i else ''
 
-    # Filtrer mes ventes de la période
     mes_ventes = []
     if periode_prod:
         for row in rows[1:]:
@@ -2026,7 +2092,7 @@ def analyser_aaf():
                 'societe_norm': _norm(g(row, 2)),
             })
 
-    # Rapprochement
+    # ── Rapprochement ──
     matched_aaf_refs = set()
     matched_aaf_societes = set()
     rapproches = []
@@ -2038,16 +2104,19 @@ def analyser_aaf():
         fiabilite = None
         aaf_montant = 0
 
+        # Niveau 1 : REF_VENTE exacte
         if v['ref_vente'] and v['ref_vente'] in aaf_par_ref:
-            match = aaf_par_ref[v['ref_vente']]
+            entry = aaf_par_ref[v['ref_vente']]
             fiabilite = 'HAUTE'
-            aaf_montant = match['part1']
+            aaf_montant = entry['verse']
             matched_aaf_refs.add(v['ref_vente'])
             nb_haute += 1
+            match = entry
+        # Niveau 2 : société normalisée
         elif v['societe_norm'] in aaf_par_societe and v['societe_norm'] not in matched_aaf_societes:
             grp = aaf_par_societe[v['societe_norm']]
             fiabilite = 'BASSE'
-            aaf_montant = grp['total_part1']
+            aaf_montant = grp['total_verse']
             for r in grp['refs']:
                 matched_aaf_refs.add(r)
             matched_aaf_societes.add(v['societe_norm'])
@@ -2076,30 +2145,50 @@ def analyser_aaf():
             if sn not in matched_aaf_societes:
                 inconnus.append(l)
 
-    # "À vérifier" : correspondance partielle entre manquants et inconnus
+    # ── "À vérifier" : correspondance partielle OU par montant exact ──
     a_verifier = []
     manquants_restants = []
     inconnus_restants = list(inconnus)
 
     for mq in manquants:
         found_match = False
+        # 1) Correspondance partielle par nom
         for inc in inconnus_restants:
             inc_norm = _norm(inc['societe'])
             if mq['societe_norm'] in inc_norm or inc_norm in mq['societe_norm']:
-                # Regrouper les inconnus de la même société normalisée
                 inc_group = [x for x in inconnus_restants if _norm(x['societe']) == inc_norm]
-                inc_total = round(sum(x['part1'] for x in inc_group), 2)
+                inc_total = round(sum(x['verse'] for x in inc_group), 2)
                 a_verifier.append({
                     'sheet_ref': mq['ref'], 'sheet_societe': mq['societe'], 'sheet_attendu': mq['attendu'],
                     'aaf_societe': inc['societe'], 'aaf_total': inc_total,
                     'aaf_refs': [x['ref'] for x in inc_group],
                     'ecart': round(inc_total - mq['attendu'], 2),
+                    'raison': 'nom partiel',
                 })
                 for x in inc_group:
                     if x in inconnus_restants:
                         inconnus_restants.remove(x)
                 found_match = True
                 break
+        # 2) Correspondance par montant exact
+        if not found_match:
+            for inc in inconnus_restants:
+                inc_norm = _norm(inc['societe'])
+                inc_group = [x for x in inconnus_restants if _norm(x['societe']) == inc_norm]
+                inc_total = round(sum(x['verse'] for x in inc_group), 2)
+                if abs(inc_total - mq['attendu']) <= 0.02:
+                    a_verifier.append({
+                        'sheet_ref': mq['ref'], 'sheet_societe': mq['societe'], 'sheet_attendu': mq['attendu'],
+                        'aaf_societe': inc['societe'], 'aaf_total': inc_total,
+                        'aaf_refs': [x['ref'] for x in inc_group],
+                        'ecart': round(inc_total - mq['attendu'], 2),
+                        'raison': 'montant identique',
+                    })
+                    for x in inc_group:
+                        if x in inconnus_restants:
+                            inconnus_restants.remove(x)
+                    found_match = True
+                    break
         if not found_match:
             manquants_restants.append(mq)
 
@@ -2114,13 +2203,17 @@ def analyser_aaf():
         'nb_haute': nb_haute,
         'nb_total_rapproches': len(rapproches),
         'total_gen': total_gen,
+        'facture': facture,
+        'has_part2': has_part2_col,
+        'has_decomm': has_decomm_col,
+        'unknown_cols': unknown_cols,
         'manquants': manquants_restants,
         'a_verifier': a_verifier,
         'ecarts': ecarts,
         'oks': oks,
         'decomms': decomms,
         'challenges': challenges,
-        'challenge_total': round(sum(l['part1'] for l in challenges), 2),
+        'challenge_total': round(sum(l['verse'] for l in challenges), 2),
         'inconnus': inconnus_restants,
         'mes_ventes_count': len(mes_ventes),
     })
