@@ -345,7 +345,43 @@
           <div class="form-group"><label>Volume élec (MWh/an)</label><input type="number" step="0.01" id="v_vol_elec"></div>
           <div class="form-group"><label>Volume gaz (MWh/an)</label><input type="number" step="0.01" id="v_vol_gaz"></div>
           <div class="form-group"><label>Lien Drive</label><input type="text" id="v_lien_drive" placeholder="https://drive.google.com/..."></div>
+          <div class="form-group"><label>Réf vente (MIB)</label><input type="text" id="v_ref_vente" placeholder="MIB-..."></div>
+          <div class="form-group"><label>SIREN</label><input type="text" id="v_siren"></div>
+          <div class="form-group"><label>Adresse</label><input type="text" id="v_adresse"></div>
+          <div class="form-group"><label>Score</label><input type="text" id="v_score"></div>
+          <div class="form-group"><label>Pay Rank</label><input type="text" id="v_pay_rank"></div>
+          <div class="form-group"><label>Typologie</label><input type="text" id="v_typologie"></div>
+          <div class="form-group"><label>Nbr sites</label><input type="text" id="v_nbr_sites"></div>
+          <div class="form-group"><label>Commercial OHM</label><input type="text" id="v_commercial_ohm"></div>
+          <div class="form-group"><label>Date signature</label><input type="date" id="v_date_signature"></div>
         </div>
+
+        <!-- Alerte cohérence raison sociale -->
+        <div id="ohmCoherenceAlert" style="display:none;margin:12px 0;padding:12px 16px;background:#fef2f2;border:2px solid #ef4444;border-radius:10px;font-size:13px;font-weight:700;color:#991b1b;"></div>
+
+        <!-- Enrichissement OHM -->
+        <h4 style="color:#7c3aed;margin:16px 0 12px;">🔗 Enrichissement OHM (copier-coller)</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">Données génériques</label>
+            <textarea id="ohm_bloc_gen" rows="6" placeholder="Coller ici le bloc « Données génériques » du back-office OHM..." style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:11px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+              <button onclick="ohmParseBloc('gen')" style="padding:5px 12px;background:#7c3aed;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Analyser</button>
+              <span id="ohm_gen_status" style="font-size:11px;color:#6b7280;"></span>
+            </div>
+            <div id="ohm_gen_details" style="display:none;margin-top:6px;font-size:10px;color:#6b7280;"></div>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">Données du client</label>
+            <textarea id="ohm_bloc_cli" rows="6" placeholder="Coller ici le bloc « Données du client » du back-office OHM..." style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:11px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+              <button onclick="ohmParseBloc('cli')" style="padding:5px 12px;background:#7c3aed;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Analyser</button>
+              <span id="ohm_cli_status" style="font-size:11px;color:#6b7280;"></span>
+            </div>
+            <div id="ohm_cli_details" style="display:none;margin-top:6px;font-size:10px;color:#6b7280;"></div>
+          </div>
+        </div>
+
         <h4 style="color:#7c3aed;margin:16px 0 12px;">💶 Commissions</h4>
         <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;">
           <div class="form-group"><label>Montant HT (€)</label><input type="number" step="0.01" id="v_montant" oninput="calcMarge()"></div>
@@ -1284,6 +1320,15 @@ async function ajouterVente() {
     volume_elec: document.getElementById('v_vol_elec')?.value || '',
     volume_gaz: document.getElementById('v_vol_gaz')?.value || '',
     lien_drive: document.getElementById('v_lien_drive')?.value || '',
+    ref_vente: document.getElementById('v_ref_vente')?.value || '',
+    siren: document.getElementById('v_siren')?.value || '',
+    adresse: document.getElementById('v_adresse')?.value || '',
+    score: document.getElementById('v_score')?.value || '',
+    pay_rank: document.getElementById('v_pay_rank')?.value || '',
+    typologie: document.getElementById('v_typologie')?.value || '',
+    nbr_sites: document.getElementById('v_nbr_sites')?.value || '',
+    commercial_ohm: document.getElementById('v_commercial_ohm')?.value || '',
+    date_signature: document.getElementById('v_date_signature')?.value || '',
     statut_paiement: document.getElementById('v_statut_p').value,
     date_paiement_1: document.getElementById('v_date_p1')?.value || '',
     date_paiement_2: document.getElementById('v_date_p2')?.value || ''
@@ -2346,7 +2391,137 @@ async function bvTestSend() {
 // ===== RETOUR FORMULAIRE VENTE =====
 function venteRetour(){
   if(typeof dzReset === 'function') dzReset();
+  // Nettoyer les champs OHM
+  _ohmFilledIds.forEach(function(id){
+    var el = document.getElementById(id);
+    if(el){ el.value = ''; el.classList.remove('dz-prefilled'); }
+  });
+  _ohmFilledIds = [];
+  document.getElementById('ohm_bloc_gen').value = '';
+  document.getElementById('ohm_bloc_cli').value = '';
+  document.getElementById('ohm_gen_status').textContent = '';
+  document.getElementById('ohm_cli_status').textContent = '';
+  document.getElementById('ohm_gen_details').style.display = 'none';
+  document.getElementById('ohm_cli_details').style.display = 'none';
+  document.getElementById('ohmCoherenceAlert').style.display = 'none';
   document.getElementById('venteForm').style.display = 'none';
+}
+
+// ===== PARSEUR OHM (copier-coller back-office) =====
+
+var _OHM_FIELD_MAP = {
+  'ref de la vente':'v_ref_vente', 'client ref':'v_ref_client',
+  'commercial ohm':'v_commercial_ohm', 'date de signature':'v_date_signature',
+  'siren client':'v_siren', 'adresse':'v_adresse', 'score':'v_score',
+  'pay rank du client':'v_pay_rank', 'typologie contrat':'v_typologie',
+  'nbr sites actifs':'v_nbr_sites', 'raison sociale':'_raison_sociale'
+};
+var _OHM_IGNORED = ['id','l energie','le mode de paiement','type de contrat',
+  'courtier','manager courtier','le courtier final','observation pay rank'];
+
+function _ohmNorm(s){
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()
+    .replace(/['\u2019]/g,' ').replace(/\s+/g,' ');
+}
+
+function _ohmConvertDate(v){
+  var m = v.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? m[3]+'-'+m[2]+'-'+m[1] : v;
+}
+
+function _ohmParseBlock(text){
+  var lines = text.trim().split('\n').map(function(l){return l.trim();}).filter(function(l){return l;});
+  var normMap = {}; Object.keys(_OHM_FIELD_MAP).forEach(function(k){ normMap[_ohmNorm(k)] = _OHM_FIELD_MAP[k]; });
+  var allKnown = new Set(Object.keys(normMap).concat(_OHM_IGNORED));
+
+  var labelIdx = [];
+  lines.forEach(function(line, i){
+    var n = _ohmNorm(line);
+    if(allKnown.has(n)) labelIdx.push({i:i, norm:n, mapped: n in normMap});
+  });
+
+  var champs = {}, ignores = [];
+  labelIdx.forEach(function(lb, pos){
+    var nextI = pos+1 < labelIdx.length ? labelIdx[pos+1].i : lines.length;
+    var valLines = lines.slice(lb.i+1, nextI);
+    var val = valLines.length ? valLines.join(' ').trim() : null;
+    if(lb.mapped){
+      var id = normMap[lb.norm];
+      if(id === 'v_date_signature' && val) val = _ohmConvertDate(val);
+      champs[id] = val;
+    } else {
+      ignores.push(lines[lb.i]);
+    }
+  });
+
+  var nonTrouves = [];
+  Object.keys(_OHM_FIELD_MAP).forEach(function(k){
+    var id = _OHM_FIELD_MAP[k];
+    if(!(id in champs)) nonTrouves.push(k);
+  });
+  return {champs:champs, nonTrouves:nonTrouves, ignores:ignores};
+}
+
+var _ohmFilledIds = [];
+
+function ohmParseBloc(type){
+  var ta = document.getElementById(type==='gen'?'ohm_bloc_gen':'ohm_bloc_cli');
+  var status = document.getElementById(type==='gen'?'ohm_gen_status':'ohm_cli_status');
+  var details = document.getElementById(type==='gen'?'ohm_gen_details':'ohm_cli_details');
+  var text = ta.value.trim();
+  if(!text){ status.textContent='Rien à analyser.'; details.style.display='none'; return; }
+
+  var r = _ohmParseBlock(text);
+  var filled = 0;
+
+  // Pré-remplir les champs (sauf _raison_sociale qui sert au contrôle)
+  Object.keys(r.champs).forEach(function(id){
+    if(id === '_raison_sociale') return;
+    var val = r.champs[id];
+    if(!val) return;
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.value = val;
+    // Vérification post-affectation
+    if(!el.value && val) return;
+    el.classList.add('dz-prefilled');
+    var off = function(){ el.classList.remove('dz-prefilled'); el.removeEventListener('input',off); el.removeEventListener('change',off); };
+    el.addEventListener('input', off);
+    el.addEventListener('change', off);
+    if(_ohmFilledIds.indexOf(id) < 0) _ohmFilledIds.push(id);
+    filled++;
+  });
+
+  // Contrôle de cohérence raison sociale
+  if(r.champs['_raison_sociale']){
+    var raisonSociale = r.champs['_raison_sociale'];
+    var societeForm = (document.getElementById('v_societe').value || '').trim();
+    if(societeForm){
+      var nRS = _ohmNorm(raisonSociale);
+      var nSF = _ohmNorm(societeForm);
+      if(nRS !== nSF){
+        var alert_div = document.getElementById('ohmCoherenceAlert');
+        alert_div.innerHTML = '⚠ Attention : le bloc collé concerne <strong>«\u00a0' + raisonSociale + '\u00a0»</strong> alors que le contrat chargé est <strong>«\u00a0' + societeForm + '\u00a0»</strong>';
+        alert_div.style.display = 'block';
+      }
+    }
+  }
+
+  // Afficher le résultat
+  var mappedCount = Object.keys(r.champs).filter(function(k){ return k !== '_raison_sociale' && r.champs[k]; }).length;
+  status.textContent = mappedCount + ' champs reconnus';
+  status.style.color = '#16a34a';
+
+  var html = '';
+  if(r.nonTrouves.length){
+    var displayNT = r.nonTrouves.filter(function(k){ return _OHM_FIELD_MAP[k] !== '_raison_sociale'; });
+    if(displayNT.length) html += '<div style="color:#b45309;">Non trouvés : ' + displayNT.join(', ') + '</div>';
+  }
+  if(r.ignores.length){
+    html += '<div>Ignorés : ' + r.ignores.join(', ') + '</div>';
+  }
+  details.innerHTML = html;
+  details.style.display = html ? 'block' : 'none';
 }
 
 // ===== PRÉ-REMPLISSAGE DATE_P2 =====
@@ -2745,6 +2920,14 @@ document.addEventListener('drop',     function(e){ e.preventDefault(); });
     document.getElementById('dzClearBtn').style.display='none';
     const autre=document.getElementById('v_fournisseur_autre');
     if(autre){ autre.style.display='none'; }
+    // Nettoyer les champs OHM
+    if(typeof _ohmFilledIds !== 'undefined'){
+      _ohmFilledIds.forEach(function(id){ var el=document.getElementById(id); if(el){ el.value=''; el.classList.remove('dz-prefilled'); } });
+      _ohmFilledIds=[];
+    }
+    var _ohmEls = ['ohm_bloc_gen','ohm_bloc_cli','ohm_gen_status','ohm_cli_status'];
+    _ohmEls.forEach(function(id){ var el=document.getElementById(id); if(el){ el.value=''; el.textContent=''; } });
+    ['ohm_gen_details','ohm_cli_details','ohmCoherenceAlert'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
     input.value='';
     dzSetState('idle');
     if(typeof calcMarge==='function') calcMarge();

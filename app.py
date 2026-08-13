@@ -2078,7 +2078,9 @@ SUIVI_HEADERS = ['REF','REF_CLIENT','SOCIETE','VENDEUR','REFERENT','PERIODE','DE
     'FIN','TYPE','PDL_PCE','FOURNISSEUR','MONTANT','COMM_VENDEUR',
     'COMM_REFERENT','MARGE','STATUT_PAIEMENT','DATE_P1','DATE_P2','SEGMENT',
     'NOM_CLIENT','PRENOM_CLIENT','TEL_CLIENT','EMAIL_CLIENT',
-    'VOLUME_ELEC_MWH','VOLUME_GAZ_MWH','LIEN_DRIVE']
+    'VOLUME_ELEC_MWH','VOLUME_GAZ_MWH','LIEN_DRIVE',
+    'REF_VENTE','SIREN','ADRESSE','SCORE','PAY_RANK',
+    'TYPOLOGIE','NBR_SITES','COMMERCIAL_OHM','DATE_SIGNATURE']
 
 @app.route('/api/suivi-ventes/init-sheet')
 @login_required
@@ -2087,8 +2089,9 @@ def init_suivi_sheet():
         gc = get_sheets_client()
         sh = gc.open_by_key(SUIVI_VENTES_SHEET_ID)
         ws = sh.sheet1
-        ws.update('A1:Z1', [SUIVI_HEADERS])
-        ws.format('A1:Z1', {
+        _end_col = chr(64 + len(SUIVI_HEADERS)) if len(SUIVI_HEADERS) <= 26 else 'A' + chr(64 + len(SUIVI_HEADERS) - 26)
+        ws.update(f'A1:{_end_col}1', [SUIVI_HEADERS])
+        ws.format(f'A1:{_end_col}1', {
             'backgroundColor': {'red': 0.118, 'green': 0.106, 'blue': 0.294},
             'textFormat': {'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}, 'bold': True, 'fontSize': 10}
         })
@@ -2142,7 +2145,10 @@ def ajouter_vente():
             d.get('statut_paiement', ''), d.get('date_paiement_1', ''), d.get('date_paiement_2', ''),
             d.get('segment', ''), d.get('nom_client', ''), d.get('prenom_client', ''),
             d.get('tel_client', ''), d.get('email_client', ''),
-            vol_elec, vol_gaz, d.get('lien_drive', '')
+            vol_elec, vol_gaz, d.get('lien_drive', ''),
+            d.get('ref_vente', ''), d.get('siren', ''), d.get('adresse', ''),
+            d.get('score', ''), d.get('pay_rank', ''), d.get('typologie', ''),
+            d.get('nbr_sites', ''), d.get('commercial_ohm', ''), d.get('date_signature', ''),
         ]
 
         import time
@@ -2213,7 +2219,10 @@ def liste_ventes():
                 'statut_paiement': g(row,15), 'date_p1': g(row,16), 'date_p2': g(row,17),
                 'segment': g(row,18), 'nom_client': g(row,19), 'prenom_client': g(row,20),
                 'tel_client': g(row,21), 'email_client': g(row,22),
-                'volume_elec': g(row,23), 'volume_gaz': g(row,24), 'lien_drive': g(row,25)
+                'volume_elec': g(row,23), 'volume_gaz': g(row,24), 'lien_drive': g(row,25),
+                'ref_vente': g(row,26), 'siren': g(row,27), 'adresse': g(row,28),
+                'score': g(row,29), 'pay_rank': g(row,30), 'typologie': g(row,31),
+                'nbr_sites': g(row,32), 'commercial_ohm': g(row,33), 'date_signature': g(row,34)
             })
         return jsonify({'success': True, 'ventes': ventes, 'totaux': {'comm_vendeur': total_cv, 'comm_referent': total_cr, 'marge': total_m, 'nb': len(ventes)}})
     except Exception as e:
