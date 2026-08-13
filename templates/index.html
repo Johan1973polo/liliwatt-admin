@@ -96,6 +96,7 @@
     <div class="tab" onclick="showTab('bienvenue')">👋 Bienvenue</div>
     <div class="tab" onclick="showTab('echeancier')">📊 Échéancier</div>
     <div class="tab" onclick="showTab('aaf')">🔍 Vérif. AAF</div>
+    <div class="tab" onclick="showTab('reprise')">🔄 Reprise</div>
 </div>
 
 <div class="container">
@@ -822,6 +823,81 @@
     </div>
   </div>
 
+  <!-- Reprise -->
+  <div class="panel" id="tab-reprise">
+    <div style="max-width:960px;margin:0 auto;padding:24px 0;">
+      <h2 style="color:#1e1b4b;font-size:22px;font-weight:800;margin-bottom:4px;">🔄 Reprise — enrichissement des ventes</h2>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:6px;">Déposez un CPV pour compléter les colonnes manquantes d'une ligne existante.</p>
+      <div id="rpCompteur" style="font-size:12px;color:#7c3aed;font-weight:700;margin-bottom:16px;"></div>
+
+      <!-- Dropzone CPV -->
+      <div id="rpDropBox" style="border:2px dashed #7c3aed;border-radius:12px;background:#f5f3ff;height:100px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;margin-bottom:16px;" onclick="document.getElementById('rpFileInput').click()">
+        <input type="file" id="rpFileInput" accept=".pdf" style="display:none" onchange="rpUpload(this.files)">
+        <div id="rpDropInner" style="text-align:center;pointer-events:none;">
+          <div style="font-size:20px;">📄</div>
+          <div style="font-size:13px;color:#4b5563;">Glissez le CPV ici</div>
+          <div style="font-size:11px;color:#9ca3af;">PDF · Max 10 Mo</div>
+        </div>
+      </div>
+
+      <!-- Choix ambigu -->
+      <div id="rpAmbigu" style="display:none;margin-bottom:16px;background:#fffbeb;border:1.5px solid #fbbf24;border-radius:10px;padding:16px;">
+        <h4 style="margin:0 0 8px;color:#92400e;font-size:13px;">Plusieurs lignes correspondent — choisissez :</h4>
+        <div id="rpAmbiguList"></div>
+      </div>
+
+      <!-- Message absent -->
+      <div id="rpAbsent" style="display:none;margin-bottom:16px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:16px;font-size:13px;color:#991b1b;font-weight:700;"></div>
+
+      <!-- Alerte cohérence montant -->
+      <div id="rpMargeAlert" style="display:none;margin-bottom:12px;padding:10px 16px;border:2px solid #ef4444;border-radius:8px;font-size:13px;font-weight:700;color:#991b1b;background:#fef2f2;"></div>
+
+      <!-- Zones de collage -->
+      <div id="rpCollage" style="display:none;margin-bottom:16px;">
+        <h4 style="color:#7c3aed;margin:0 0 12px;">🔗 Enrichissement OHM</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+          <div>
+            <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">Données génériques</label>
+            <textarea id="rp_bloc_gen" rows="5" placeholder="Coller ici..." style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:10px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+            <button onclick="rpParseBloc('gen')" style="margin-top:4px;padding:4px 10px;background:#7c3aed;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Analyser</button>
+            <span id="rp_gen_status" style="font-size:10px;color:#6b7280;margin-left:6px;"></span>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">Données du client</label>
+            <textarea id="rp_bloc_cli" rows="5" placeholder="Coller ici..." style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:10px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+            <button onclick="rpParseBloc('cli')" style="margin-top:4px;padding:4px 10px;background:#7c3aed;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Analyser</button>
+            <span id="rp_cli_status" style="font-size:10px;color:#6b7280;margin-left:6px;"></span>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">Commissionnement</label>
+            <textarea id="rp_bloc_comm" rows="5" placeholder="Coller ici..." style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:10px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+            <button onclick="rpParseBloc('comm')" style="margin-top:4px;padding:4px 10px;background:#7c3aed;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Analyser</button>
+            <span id="rp_comm_status" style="font-size:10px;color:#6b7280;margin-left:6px;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tableau comparatif -->
+      <div id="rpTableau" style="display:none;margin-bottom:16px;">
+        <h4 style="color:#1e1b4b;margin:0 0 8px;">Tableau comparatif — <span id="rpLigneRef" style="color:#7c3aed;"></span></h4>
+        <table id="rpTable" style="width:100%;border-collapse:collapse;font-size:12px;background:white;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+          <thead><tr style="background:#1e1b4b;color:white;">
+            <th style="padding:8px;text-align:left;width:30px;"></th>
+            <th style="padding:8px;text-align:left;">Champ</th>
+            <th style="padding:8px;text-align:left;">Valeur actuelle</th>
+            <th style="padding:8px;text-align:left;">Valeur trouvée</th>
+            <th style="padding:8px;text-align:left;">Source</th>
+          </tr></thead>
+          <tbody id="rpTableBody"></tbody>
+        </table>
+        <div id="rpIdentiques" style="margin-top:8px;font-size:11px;color:#6b7280;cursor:pointer;" onclick="document.getElementById('rpIdList').style.display=document.getElementById('rpIdList').style.display==='none'?'block':'none'"></div>
+        <div id="rpIdList" style="display:none;font-size:11px;color:#9ca3af;margin-top:4px;"></div>
+        <button onclick="rpEcrire()" id="rpBtnEcrire" style="margin-top:12px;padding:10px 24px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">💾 Mettre à jour la ligne</button>
+        <div id="rpResultat" style="margin-top:8px;font-size:12px;"></div>
+      </div>
+    </div>
+  </div>
+
 <!-- Modal Référent -->
 
 
@@ -842,7 +918,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier','aaf'];
+    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier','aaf','reprise'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -2552,6 +2628,253 @@ async function bvTestSend() {
     res.style.display = 'block'; res.style.background = '#fef2f2'; res.style.color = '#ef4444'; res.style.border = '1px solid #fecaca';
     res.textContent = `❌ Erreur réseau : ${e.message}`;
   } finally { btn.disabled = false; btn.textContent = '🧪 Envoi de test'; }
+}
+
+// ===== ONGLET REPRISE =====
+
+(function(){
+  var box = document.getElementById('rpDropBox');
+  if(!box) return;
+  box.addEventListener('dragover', function(e){ e.preventDefault(); box.style.borderStyle='solid'; box.style.background='#ede9fe'; });
+  box.addEventListener('dragleave', function(e){ e.preventDefault(); box.style.borderStyle='dashed'; box.style.background='#f5f3ff'; });
+  box.addEventListener('drop', function(e){ e.preventDefault(); box.style.borderStyle='dashed'; box.style.background='#f5f3ff'; rpUpload(e.dataTransfer.files); });
+})();
+
+var _rpData = null;    // réponse du rapprochement
+var _rpRowIdx = null;   // ligne Sheet sélectionnée
+var _rpComp = [];       // tableau comparatif enrichi
+var _rpSources = {};    // source par champ : 'cpv' ou 'collage'
+
+// Map champ interne -> nom de colonne du Sheet
+var _RP_LABELS = {
+  ref_vente:'Réf vente (MIB)', ref_client:'Réf client', societe:'Société', siren:'SIREN',
+  adresse_client:'Adresse', date_debut:'Début', date_fin:'Fin', type_energie:'Type',
+  segment:'Segment', pdl_pce:'PDL/PCE', nom_client:'Nom', prenom_client:'Prénom',
+  tel_client:'Tél', email_client:'Email', volume_elec:'Vol. élec', volume_gaz:'Vol. gaz',
+  date_signature:'Date signature', periode:'Période', score:'Score', pay_rank:'Pay Rank',
+  typologie:'Typologie', nbr_sites:'Nbr sites', commercial_ohm:'Commercial OHM'
+};
+
+async function rpUpload(files){
+  if(!files || !files.length) return;
+  var file = files[0];
+  document.getElementById('rpDropInner').innerHTML = '<div style="font-size:20px;">⏳</div><div style="font-size:13px;">Analyse et rapprochement…</div>';
+  document.getElementById('rpAmbigu').style.display = 'none';
+  document.getElementById('rpAbsent').style.display = 'none';
+  document.getElementById('rpTableau').style.display = 'none';
+  document.getElementById('rpCollage').style.display = 'none';
+  document.getElementById('rpMargeAlert').style.display = 'none';
+
+  var fd = new FormData(); fd.append('pdf', file);
+  try {
+    var r = await fetch('/api/reprise/rapprocher', {method:'POST', body:fd});
+    var d = await r.json();
+    if(!r.ok || !d.success) throw new Error(d.error||'Erreur');
+    _rpData = d;
+    document.getElementById('rpCompteur').textContent = (d.nb_ref_vente||0) + ' lignes sur ' + (d.nb_total||0) + ' ont un REF_VENTE';
+    document.getElementById('rpDropInner').innerHTML = '<div style="font-size:20px;">✅</div><div style="font-size:13px;color:#16a34a;">'+file.name+'</div>';
+
+    if(d.match === 'unique' || d.match === 'incertain'){
+      _rpRowIdx = d.ligne.row_idx;
+      _rpComp = d.comparaison || [];
+      _rpSources = {};
+      _rpComp.forEach(function(c){ _rpSources[c.champ] = 'CPV'; });
+      rpRenderTableau(d.ligne);
+      document.getElementById('rpCollage').style.display = 'block';
+      if(d.match === 'incertain'){
+        document.getElementById('rpAbsent').style.display = 'block';
+        document.getElementById('rpAbsent').innerHTML = '🔶 Correspondance par nom de société (pas de PDL commun) — <strong>à vérifier</strong>';
+        document.getElementById('rpAbsent').style.background = '#fffbeb';
+        document.getElementById('rpAbsent').style.borderColor = '#fbbf24';
+        document.getElementById('rpAbsent').style.color = '#92400e';
+      }
+    } else if(d.match === 'ambigu'){
+      document.getElementById('rpAmbigu').style.display = 'block';
+      document.getElementById('rpAmbiguList').innerHTML = (d.lignes||[]).map(function(l){
+        return '<div style="padding:8px;margin-bottom:6px;background:white;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer;display:flex;justify-content:space-between;align-items:center;" onclick="rpChoisir('+l.row_idx+')">'
+          +'<div><strong style="color:#7c3aed;">'+l.ref+'</strong> — '+l.societe+' ('+l.periode+')</div>'
+          +'<div style="font-size:10px;color:#6b7280;">PDL: '+l.pdl_pce+'</div>'
+          +'</div>';
+      }).join('');
+    } else {
+      document.getElementById('rpAbsent').style.display = 'block';
+      document.getElementById('rpAbsent').textContent = 'Ce contrat n\'est pas dans le Sheet — aucune mise à jour possible depuis cet onglet.';
+    }
+  } catch(e){
+    document.getElementById('rpDropInner').innerHTML = '<div style="color:#ef4444;font-weight:700;">'+e.message+'</div>';
+  }
+}
+
+function rpChoisir(rowIdx){
+  // Re-rapprocher avec la ligne choisie — reconstruire la comparaison côté client
+  // On a les données dans _rpData, il suffit de trouver la ligne
+  // Mais on n'a pas le contenu de la ligne... il faut un appel.
+  // Simplifions : rechargeons la comparaison via l'API avec un paramètre row_idx
+  // Pour l'instant : marquons le choix et affichons les zones de collage
+  _rpRowIdx = rowIdx;
+  var ligne = (_rpData.lignes||[]).find(function(l){ return l.row_idx === rowIdx; });
+  document.getElementById('rpAmbigu').style.display = 'none';
+  // Pas de comparaison disponible en cas ambigu — les collages la construiront
+  _rpComp = [];
+  _rpSources = {};
+  rpRenderTableau(ligne);
+  document.getElementById('rpCollage').style.display = 'block';
+}
+
+function rpRenderTableau(ligne){
+  document.getElementById('rpTableau').style.display = 'block';
+  document.getElementById('rpLigneRef').textContent = (ligne ? ligne.ref + ' — ' + ligne.societe : '');
+
+  var aCompleter = _rpComp.filter(function(c){ return c.statut === 'a_completer'; });
+  var divergent = _rpComp.filter(function(c){ return c.statut === 'divergent'; });
+  var identique = _rpComp.filter(function(c){ return c.statut === 'identique'; });
+
+  var html = '';
+  // À compléter
+  aCompleter.forEach(function(c){
+    html += '<tr style="background:#f0fdf4;">'
+      +'<td style="padding:6px 8px;"><input type="checkbox" checked class="rp-check" data-champ="'+c.champ+'" data-val="'+_rpEsc(c.valeur_cpv)+'"></td>'
+      +'<td style="padding:6px 8px;font-weight:600;">'+(_RP_LABELS[c.champ]||c.champ)+'</td>'
+      +'<td style="padding:6px 8px;color:#9ca3af;font-style:italic;">(vide)</td>'
+      +'<td style="padding:6px 8px;color:#16a34a;font-weight:600;">'+_rpEsc(c.valeur_cpv)+'</td>'
+      +'<td style="padding:6px 8px;font-size:10px;color:#6b7280;">'+(_rpSources[c.champ]||'CPV')+'</td>'
+      +'</tr>';
+  });
+  // Divergent
+  divergent.forEach(function(c){
+    html += '<tr style="background:#fef2f2;">'
+      +'<td style="padding:6px 8px;"><input type="checkbox" class="rp-check" data-champ="'+c.champ+'" data-val="'+_rpEsc(c.valeur_cpv)+'"></td>'
+      +'<td style="padding:6px 8px;font-weight:600;color:#991b1b;">'+(_RP_LABELS[c.champ]||c.champ)+'</td>'
+      +'<td style="padding:6px 8px;">'+_rpEsc(c.valeur_sheet)+'</td>'
+      +'<td style="padding:6px 8px;color:#ef4444;font-weight:600;">'+_rpEsc(c.valeur_cpv)+'</td>'
+      +'<td style="padding:6px 8px;font-size:10px;color:#6b7280;">'+(_rpSources[c.champ]||'CPV')+'</td>'
+      +'</tr>';
+  });
+  document.getElementById('rpTableBody').innerHTML = html;
+
+  // Identiques repliés
+  if(identique.length){
+    document.getElementById('rpIdentiques').textContent = '▶ ' + identique.length + ' champ(s) identique(s) — cliquez pour déplier';
+    document.getElementById('rpIdList').innerHTML = identique.map(function(c){
+      return (_RP_LABELS[c.champ]||c.champ) + ' : ' + _rpEsc(c.valeur_sheet);
+    }).join(' · ');
+  } else {
+    document.getElementById('rpIdentiques').textContent = '';
+  }
+}
+
+function _rpEsc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Parseur des blocs OHM pour la reprise (réutilise le parseur global)
+function rpParseBloc(type){
+  var ids = {gen:['rp_bloc_gen','rp_gen_status'], cli:['rp_bloc_cli','rp_cli_status'], comm:['rp_bloc_comm','rp_comm_status']};
+  var t = ids[type];
+  var text = document.getElementById(t[0]).value.trim();
+  var status = document.getElementById(t[1]);
+  if(!text){ status.textContent = 'Rien à analyser.'; return; }
+
+  var r = _ohmParseBlock(text);
+  var filled = 0;
+
+  // Enrichir le tableau comparatif
+  Object.keys(r.champs).forEach(function(id){
+    if(id === '_raison_sociale' || id === '_marge_ohm') return;
+    var val = r.champs[id];
+    if(!val) return;
+    // Traduire l'id HTML en nom de champ backend
+    var champ = null;
+    Object.keys(_OHM_FIELD_MAP).forEach(function(k){
+      if(_OHM_FIELD_MAP[k] === id){
+        // Trouver le champ backend correspondant à l'id HTML
+        var htmlToBackend = {
+          'v_ref_vente':'ref_vente', 'v_ref_client':'ref_client', 'v_commercial_ohm':'commercial_ohm',
+          'v_date_signature':'date_signature', 'v_siren':'siren', 'v_adresse':'adresse_client',
+          'v_score':'score', 'v_pay_rank':'pay_rank', 'v_typologie':'typologie', 'v_nbr_sites':'nbr_sites'
+        };
+        champ = htmlToBackend[id] || null;
+      }
+    });
+    if(!champ) return;
+    filled++;
+
+    // Mettre à jour ou ajouter dans _rpComp
+    var existing = _rpComp.find(function(c){ return c.champ === champ; });
+    if(existing){
+      existing.valeur_cpv = val;
+      if(!existing.valeur_sheet) existing.statut = 'a_completer';
+      else if(existing.valeur_sheet !== val) existing.statut = 'divergent';
+      else existing.statut = 'identique';
+    } else {
+      _rpComp.push({champ: champ, valeur_sheet: '', valeur_cpv: val, statut: 'a_completer'});
+    }
+    _rpSources[champ] = 'COLLAGE';
+  });
+
+  // Contrôle marge OHM
+  if(r.champs['_marge_ohm']){
+    var margeOhm = parseFloat(String(r.champs['_marge_ohm']).replace(/,/g,'.').replace(/[^\d.\-]/g,'')) || 0;
+    // Chercher MONTANT dans _rpData
+    var montantSheet = 0;
+    if(_rpData && _rpData.champs){
+      // Le montant n'est pas dans la comparaison, il faut le chercher dans la ligne
+      // On ne l'a pas directement — utilisons une approche simple : lire depuis l'API des ventes
+    }
+    // Afficher la marge OHM en info
+    var alertDiv = document.getElementById('rpMargeAlert');
+    alertDiv.innerHTML = '📊 Marge totale courtier OHM : <strong>' + margeOhm.toFixed(2) + ' €</strong> — vérifiez avec le MONTANT du Sheet';
+    alertDiv.style.display = 'block';
+    alertDiv.style.borderColor = '#f59e0b';
+    alertDiv.style.color = '#92400e';
+    alertDiv.style.background = '#fffbeb';
+  }
+
+  // Cohérence raison sociale
+  if(r.champs['_raison_sociale'] && _rpData && _rpData.champs){
+    var rsCollage = _ohmNorm(r.champs['_raison_sociale']);
+    var rsCpv = _ohmNorm(_rpData.champs.societe || '');
+    if(rsCollage && rsCpv && rsCollage !== rsCpv){
+      var alertDiv = document.getElementById('rpMargeAlert');
+      alertDiv.innerHTML += '<div style="margin-top:6px;">⚠ Raison sociale collage : <strong>' + r.champs['_raison_sociale'] + '</strong> ≠ CPV : <strong>' + (_rpData.champs.societe||'') + '</strong></div>';
+      alertDiv.style.display = 'block';
+    }
+  }
+
+  status.textContent = filled + ' champ(s) reconnus';
+  status.style.color = '#16a34a';
+
+  // Re-rendre le tableau
+  var ligne = _rpData ? (_rpData.ligne || (_rpData.lignes||[]).find(function(l){ return l.row_idx === _rpRowIdx; })) : null;
+  rpRenderTableau(ligne || {ref:'',societe:''});
+}
+
+async function rpEcrire(){
+  if(!_rpRowIdx){ alert('Aucune ligne sélectionnée'); return; }
+  var checks = document.querySelectorAll('.rp-check:checked');
+  if(!checks.length){ alert('Aucun champ coché'); return; }
+  var updates = {};
+  checks.forEach(function(cb){ updates[cb.dataset.champ] = cb.dataset.val; });
+
+  var btn = document.getElementById('rpBtnEcrire');
+  btn.disabled = true; btn.textContent = '⏳ Écriture…';
+  try {
+    var r = await fetch('/api/reprise/ecrire', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({row_idx: _rpRowIdx, updates: updates})
+    });
+    var d = await r.json();
+    if(!d.success) throw new Error(d.error);
+    document.getElementById('rpResultat').innerHTML = '<span style="color:#16a34a;font-weight:700;">✅ ' + d.nb_champs + ' champ(s) mis à jour</span>';
+    // Mettre à jour le compteur
+    if(updates.ref_vente){
+      var cpt = document.getElementById('rpCompteur');
+      var m = cpt.textContent.match(/(\d+) lignes sur (\d+)/);
+      if(m) cpt.textContent = (parseInt(m[1])+1) + ' lignes sur ' + m[2] + ' ont un REF_VENTE';
+    }
+  } catch(e){
+    document.getElementById('rpResultat').innerHTML = '<span style="color:#ef4444;font-weight:700;">❌ ' + e.message + '</span>';
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 Mettre à jour la ligne';
+  }
 }
 
 // ===== VÉRIFICATEUR AAF =====

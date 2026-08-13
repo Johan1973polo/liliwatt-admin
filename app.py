@@ -2225,6 +2225,63 @@ def reprise_rapprocher():
     })
 
 
+# ===== REPRISE — ÉCRITURE =====
+
+# Colonnes modifiables par la reprise (jamais VENDEUR, REFERENT, MONTANT, etc.)
+_REPRISE_COL_MAP = {
+    'ref_vente': 26, 'siren': 27, 'adresse_client': 28, 'score': 29,
+    'pay_rank': 30, 'typologie': 31, 'nbr_sites': 32, 'commercial_ohm': 33,
+    'date_signature': 34, 'ref_client': 1, 'societe': 2, 'segment': 18,
+    'date_debut': 6, 'date_fin': 7, 'type_energie': 8, 'pdl_pce': 9,
+    'nom_client': 19, 'prenom_client': 20, 'tel_client': 21, 'email_client': 22,
+    'volume_elec': 23, 'volume_gaz': 24, 'periode': 5,
+}
+
+@app.route('/api/reprise/ecrire', methods=['POST'])
+@login_required
+def reprise_ecrire():
+    """Écrit les champs cochés dans une ligne existante du Sheet."""
+    d = request.get_json()
+    row_idx = d.get('row_idx')
+    updates = d.get('updates', {})  # {champ: valeur}
+
+    if not row_idx or not updates:
+        return jsonify({'success': False, 'error': 'Paramètres manquants'}), 400
+
+    # Vérifier qu'aucun champ interdit n'est modifié
+    INTERDIT = {'vendeur', 'referent', 'montant_ht', 'commission_vendeur',
+                'commission_referent', 'marge', 'statut_paiement',
+                'date_paiement_1', 'date_paiement_2', 'lien_drive'}
+    for champ in updates:
+        if champ in INTERDIT:
+            return jsonify({'success': False, 'error': f'Champ {champ} interdit en reprise'}), 400
+        if champ not in _REPRISE_COL_MAP:
+            return jsonify({'success': False, 'error': f'Champ {champ} inconnu'}), 400
+
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Google Sheets non configuré'}), 500
+        ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+
+        # Construire les cellules à mettre à jour
+        cells = []
+        for champ, val in updates.items():
+            col_idx = _REPRISE_COL_MAP[champ]
+            # Convertir en lettre(s) de colonne
+            if col_idx < 26:
+                col_letter = chr(65 + col_idx)
+            else:
+                col_letter = 'A' + chr(65 + col_idx - 26)
+            cells.append({'range': f'{col_letter}{row_idx}', 'values': [[str(val)]]})
+
+        ws.batch_update(cells, value_input_option='RAW')
+
+        return jsonify({'success': True, 'nb_champs': len(cells)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ===== VÉRIFICATEUR AAF =====
 
 @app.route('/api/aaf/analyser', methods=['POST'])
