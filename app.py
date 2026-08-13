@@ -2028,6 +2028,203 @@ def extraire_contrat():
     })
 
 
+# ===== REPRISE — RAPPROCHEMENT =====
+
+@app.route('/api/reprise/rapprocher', methods=['POST'])
+@login_required
+def reprise_rapprocher():
+    """Extrait un CPV PDF et le rapproche d'une ligne du Sheet. Lecture seule."""
+    import unicodedata, re
+
+    if 'pdf' not in request.files:
+        return jsonify({'success': False, 'error': 'Aucun fichier reçu'}), 400
+    f = request.files['pdf']
+    if not f.filename.lower().endswith('.pdf'):
+        return jsonify({'success': False, 'error': 'PDF requis'}), 400
+    pdf_bytes = f.read()
+    if len(pdf_bytes) > 10 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'Fichier trop volumineux'}), 400
+
+    # Extraction du CPV
+    try:
+        contenu = _contrat_extraire_contenu(pdf_bytes)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 422
+    except Exception:
+        return jsonify({'success': False, 'error': "Ce fichier n'est pas un PDF valide."}), 500
+
+    try:
+        champs, _raw, usage = _contrat_extraire_champs(contenu)
+    except Exception:
+        return jsonify({'success': False, 'error': "Erreur lors de l'analyse du contrat."}), 500
+
+    try:
+        tableaux = _contrat_analyser_tableaux(pdf_bytes)
+        if tableaux.get('segment'):
+            champs['segment'] = tableaux['segment']
+        if tableaux.get('adresse_site'):
+            champs['adresse_client'] = tableaux['adresse_site']
+    except Exception:
+        pass
+
+    # Normalisation des PDL
+    def _norm_pdl(s):
+        return re.sub(r'[^0-9]', '', str(s or ''))
+
+    def _norm_name(s):
+        s = unicodedata.normalize('NFD', str(s))
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        return re.sub(r'[^a-z0-9 ]', '', s.lower()).strip()
+
+    # PDL extraits du CPV
+    cpv_pdls_raw = str(champs.get('pdl_pce') or '')
+    cpv_pdls = set()
+    for part in cpv_pdls_raw.replace('/', ' ').split():
+        n = _norm_pdl(part)
+        if len(n) >= 10:
+            cpv_pdls.add(n)
+
+    if not cpv_pdls:
+        return jsonify({'success': True, 'champs': champs, 'match': 'absent',
+                        'raison': 'Aucun PDL extrait du contrat'})
+
+    # Lire le Sheet
+    gc = get_sheets_client()
+    if not gc:
+        return jsonify({'success': False, 'error': 'Google Sheets non configuré'}), 500
+    ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+    rows = ws.get_all_values()
+
+    def g(row, i):
+        return row[i].strip() if len(row) > i else ''
+
+    # Compteur REF_VENTE pour info
+    nb_ref_vente = sum(1 for row in rows[1:] if g(row, 26))
+
+    # Rapprochement par PDL
+    matches = []
+    for row_idx, row in enumerate(rows[1:], start=2):
+        sheet_pdls_raw = g(row, 9)  # col J = PDL_PCE
+        sheet_pdls = set()
+        for part in sheet_pdls_raw.replace('/', ' ').split():
+            n = _norm_pdl(part)
+            if len(n) >= 10:
+                sheet_pdls.add(n)
+        if cpv_pdls & sheet_pdls:
+            matches.append({
+                'row_idx': row_idx,
+                'ref': g(row, 0), 'societe': g(row, 2), 'periode': g(row, 5),
+                'pdl_pce': sheet_pdls_raw, 'vendeur': g(row, 3),
+            })
+
+    # Champs à comparer (fournisseur exclu — le CPV donne "OHM ENERGIE", le Sheet l'offre)
+    COMPARE_MAP = {
+        'ref_vente':     26, 'societe':       2,  'siren':         27,
+        'adresse_client':28, 'date_debut':    6,  'date_fin':      7,
+        'type_energie':  8,  'segment':       18, 'pdl_pce':       9,
+        'nom_client':    19, 'prenom_client': 20,
+        'tel_client':    21, 'email_client':  22, 'volume_elec':   23,
+        'volume_gaz':    24, 'date_signature':34, 'periode':       5,
+    }
+
+    def _norm_type(t):
+        t = str(t).lower().strip()
+        if 'gaz' in t: return 'gaz'
+        if 'lec' in t or 'élec' in t or 'elec' in t: return 'elec'
+        return t
+
+    def _pdl_set(raw):
+        s = set()
+        for part in str(raw).replace('/', ' ').split():
+            n = _norm_pdl(part)
+            if len(n) >= 10: s.add(n)
+        return s
+
+    def _build_comparaison(row):
+        comparaison = []
+        for champ, col_idx in COMPARE_MAP.items():
+            val_sheet = g(row, col_idx)
+            val_cpv = champs.get(champ)
+            if val_cpv is None:
+                val_cpv = ''
+            else:
+                val_cpv = str(val_cpv).strip()
+
+            if not val_sheet and not val_cpv:
+                continue
+            if not val_sheet and val_cpv:
+                statut = 'a_completer'
+            elif val_sheet and not val_cpv:
+                statut = 'identique'
+            elif champ == 'type_energie':
+                statut = 'identique' if _norm_type(val_sheet) == _norm_type(val_cpv) else 'divergent'
+            elif champ == 'pdl_pce':
+                statut = 'identique' if _pdl_set(val_sheet) == _pdl_set(val_cpv) else 'divergent'
+            elif champ in ('volume_elec', 'volume_gaz'):
+                vs = parse_float(val_sheet)
+                vc = parse_float(val_cpv)
+                statut = 'identique' if abs(vs - vc) <= 0.5 else 'divergent'
+            elif val_sheet == val_cpv:
+                statut = 'identique'
+            else:
+                statut = 'divergent'
+            comparaison.append({
+                'champ': champ, 'valeur_sheet': val_sheet,
+                'valeur_cpv': val_cpv, 'statut': statut,
+            })
+        return comparaison
+
+    if len(matches) == 1:
+        row = rows[matches[0]['row_idx'] - 1]
+        return jsonify({
+            'success': True, 'match': 'unique', 'champs': champs,
+            'ligne': matches[0],
+            'comparaison': _build_comparaison(row),
+            'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+        })
+    elif len(matches) > 1:
+        return jsonify({
+            'success': True, 'match': 'ambigu', 'champs': champs,
+            'lignes': matches,
+            'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+        })
+
+    # Aucune correspondance PDL -> tenter par nom de société
+    cpv_societe = _norm_name(champs.get('societe') or '')
+    if cpv_societe:
+        for row_idx, row in enumerate(rows[1:], start=2):
+            sheet_societe = _norm_name(g(row, 2))
+            if cpv_societe and sheet_societe and (cpv_societe in sheet_societe or sheet_societe in cpv_societe):
+                matches.append({
+                    'row_idx': row_idx,
+                    'ref': g(row, 0), 'societe': g(row, 2), 'periode': g(row, 5),
+                    'pdl_pce': g(row, 9), 'vendeur': g(row, 3),
+                })
+
+    if len(matches) == 1:
+        row = rows[matches[0]['row_idx'] - 1]
+        return jsonify({
+            'success': True, 'match': 'incertain', 'champs': champs,
+            'raison': 'Correspondance par nom de société (pas de PDL commun)',
+            'ligne': matches[0],
+            'comparaison': _build_comparaison(row),
+            'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+        })
+    elif len(matches) > 1:
+        return jsonify({
+            'success': True, 'match': 'ambigu', 'champs': champs,
+            'raison': 'Plusieurs sociétés correspondent par nom (pas de PDL commun)',
+            'lignes': matches,
+            'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+        })
+
+    return jsonify({
+        'success': True, 'match': 'absent', 'champs': champs,
+        'raison': 'Aucune correspondance par PDL ni par nom de société',
+        'nb_ref_vente': nb_ref_vente, 'nb_total': len(rows) - 1,
+    })
+
+
 # ===== VÉRIFICATEUR AAF =====
 
 @app.route('/api/aaf/analyser', methods=['POST'])
