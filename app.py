@@ -2320,6 +2320,20 @@ def reprise_ecrire():
             return jsonify({'success': False,
                 'error': f'La ligne a changé depuis l\'analyse (attendu {expected_ref}, trouvé {actual_ref}). Relancez le rapprochement.'}), 409
 
+        # Contrôle de doublon sur REF_CLIENT et REF_VENTE
+        doublons = []
+        if updates.get('ref_client') or updates.get('ref_vente'):
+            all_rows = ws.get_all_values()
+            for ri, row in enumerate(all_rows[1:], start=2):
+                if ri == row_idx:
+                    continue
+                row_ref = row[0] if len(row) > 0 else ''
+                row_soc = row[2] if len(row) > 2 else ''
+                if updates.get('ref_client') and len(row) > 1 and row[1].strip() == updates['ref_client'].strip():
+                    doublons.append(f'{updates["ref_client"]} est déjà présent sur {row_ref} ({row_soc})')
+                if updates.get('ref_vente') and len(row) > 26 and row[26].strip() == updates['ref_vente'].strip():
+                    doublons.append(f'{updates["ref_vente"]} est déjà présent sur {row_ref} ({row_soc})')
+
         # Construire les cellules à mettre à jour
         cells = []
         for champ, val in updates.items():
@@ -2333,7 +2347,7 @@ def reprise_ecrire():
 
         ws.batch_update(cells, value_input_option='RAW')
 
-        return jsonify({'success': True, 'nb_champs': len(cells)})
+        return jsonify({'success': True, 'nb_champs': len(cells), 'doublons': doublons})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

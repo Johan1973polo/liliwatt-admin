@@ -2676,6 +2676,7 @@ async function rpUpload(files){
 
     if(d.match === 'unique' || d.match === 'incertain'){
       _rpRowIdx = d.ligne.row_idx;
+      _rpLigne = d.ligne;
       _rpComp = d.comparaison || [];
       _rpSources = {};
       _rpComp.forEach(function(c){ _rpSources[c.champ] = 'CPV'; });
@@ -2705,19 +2706,15 @@ async function rpUpload(files){
   }
 }
 
+var _rpLigne = null; // ligne Sheet sélectionnée (avec ref, societe, etc.)
+
 function rpChoisir(rowIdx){
-  // Re-rapprocher avec la ligne choisie — reconstruire la comparaison côté client
-  // On a les données dans _rpData, il suffit de trouver la ligne
-  // Mais on n'a pas le contenu de la ligne... il faut un appel.
-  // Simplifions : rechargeons la comparaison via l'API avec un paramètre row_idx
-  // Pour l'instant : marquons le choix et affichons les zones de collage
   _rpRowIdx = rowIdx;
-  var ligne = (_rpData.lignes||[]).find(function(l){ return l.row_idx === rowIdx; });
+  _rpLigne = (_rpData.lignes||[]).find(function(l){ return l.row_idx === rowIdx; }) || null;
   document.getElementById('rpAmbigu').style.display = 'none';
-  // Pas de comparaison disponible en cas ambigu — les collages la construiront
   _rpComp = [];
   _rpSources = {};
-  rpRenderTableau(ligne);
+  rpRenderTableau(_rpLigne);
   document.getElementById('rpCollage').style.display = 'block';
 }
 
@@ -2858,11 +2855,15 @@ async function rpEcrire(){
   try {
     var r = await fetch('/api/reprise/ecrire', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({row_idx: _rpRowIdx, ref: (_rpData && _rpData.ligne ? _rpData.ligne.ref : ''), updates: updates})
+      body: JSON.stringify({row_idx: _rpRowIdx, ref: (_rpLigne ? _rpLigne.ref : ''), updates: updates})
     });
     var d = await r.json();
     if(!d.success) throw new Error(d.error);
-    document.getElementById('rpResultat').innerHTML = '<span style="color:#16a34a;font-weight:700;">✅ ' + d.nb_champs + ' champ(s) mis à jour</span>';
+    var resultHtml = '<span style="color:#16a34a;font-weight:700;">✅ ' + d.nb_champs + ' champ(s) mis à jour</span>';
+    if(d.doublons && d.doublons.length){
+      resultHtml += '<div style="margin-top:8px;padding:10px 14px;background:#fef2f2;border:2px solid #ef4444;border-radius:8px;color:#991b1b;font-weight:700;">⚠ DOUBLONS DÉTECTÉS :<br>' + d.doublons.map(function(db){ return '• ' + db; }).join('<br>') + '</div>';
+    }
+    document.getElementById('rpResultat').innerHTML = resultHtml;
     // Mettre à jour le compteur
     if(updates.ref_vente){
       var cpt = document.getElementById('rpCompteur');
