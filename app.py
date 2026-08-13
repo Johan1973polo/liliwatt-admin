@@ -2007,6 +2007,11 @@ def extraire_contrat():
     except Exception as e:
         print(f'[CONTRAT] Erreur analyse tableaux: {e}')
 
+    # Nettoyer ref_vente : "MIB-" sans chiffres = null
+    import re as _re_clean
+    if champs.get('ref_vente') and not _re_clean.match(r'^MIB-\d{4,}', str(champs['ref_vente'])):
+        champs['ref_vente'] = None
+
     avertissements = []
     if not champs.get('pdl_pce'):
         avertissements.append('PDL/PCE non trouvé — vérification manuelle obligatoire')
