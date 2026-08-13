@@ -400,12 +400,20 @@
         <div id="venteResult" style="margin-top:8px;"></div>
       </div>
 
-      <!-- Dashboard -->
-      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-        <div style="background:#ede9fe;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Contrats</span><br><strong id="tot_nb" style="color:#1e1b4b;font-size:18px;">0</strong></div>
-        <div style="background:#ede9fe;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Comm. vendeurs</span><br><strong id="tot_cv" style="color:#7c3aed;font-size:16px;">0€</strong></div>
-        <div style="background:#e0e7ff;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Comm. référents</span><br><strong id="tot_cr" style="color:#2563eb;font-size:16px;">0€</strong></div>
-        <div style="background:#f0fdf4;padding:10px 16px;border-radius:8px;"><span style="color:#6b7280;font-size:11px;">Marge société</span><br><strong id="tot_m" style="color:#22c55e;font-size:16px;">0€</strong></div>
+      <!-- Dashboard ligne 1 -->
+      <div style="display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:100px;background:#ede9fe;padding:10px 14px;border-radius:8px;"><span style="color:#6b7280;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Contrats</span><br><strong id="tot_nb" style="color:#1e1b4b;font-size:20px;">0</strong></div>
+        <div style="flex:1;min-width:100px;background:#faf5ff;padding:10px 14px;border-radius:8px;"><span style="color:#6b7280;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">CA commissions</span><br><strong id="tot_ca" style="color:#1e1b4b;font-size:16px;">0 €</strong></div>
+        <div style="flex:1;min-width:100px;background:#ede9fe;padding:10px 14px;border-radius:8px;"><span style="color:#6b7280;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Reversé</span><br><strong id="tot_rev" style="color:#7c3aed;font-size:16px;">0 €</strong></div>
+        <div style="flex:1;min-width:100px;background:#f0fdf4;padding:10px 14px;border-radius:8px;"><span style="color:#6b7280;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Marge nette</span><br><strong id="tot_m" style="color:#22c55e;font-size:16px;">0 €</strong></div>
+        <div style="flex:1;min-width:100px;background:#f9fafb;padding:10px 14px;border-radius:8px;"><span style="color:#6b7280;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Taux reversé</span><br><strong id="tot_taux" style="color:#6b7280;font-size:16px;">—</strong></div>
+      </div>
+      <!-- Dashboard ligne 2 -->
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <div style="background:#f9fafb;padding:6px 14px;border-radius:8px;font-size:11px;"><span style="color:#6b7280;">Vol. élec</span> <strong id="tot_velec" style="color:#374151;">0</strong> MWh</div>
+        <div style="background:#f9fafb;padding:6px 14px;border-radius:8px;font-size:11px;"><span style="color:#6b7280;">Vol. gaz</span> <strong id="tot_vgaz" style="color:#374151;">0</strong> MWh</div>
+        <div style="background:#f9fafb;padding:6px 14px;border-radius:8px;font-size:11px;"><span style="color:#6b7280;">Panier moyen</span> <strong id="tot_panier" style="color:#374151;">—</strong></div>
+        <div id="vf_count" style="padding:6px 14px;font-size:11px;color:#6b7280;display:none;"></div>
       </div>
 
       <!-- Filtres -->
@@ -432,6 +440,14 @@
         <button onclick="exportVendeur()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📥 CSV</button>
         <button onclick="exportPdfRecap()" style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📋 Récapitulatif</button>
         <button onclick="exportPdfAdmin()" style="padding:6px 12px;background:#1e1b4b;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">📄 Admin</button>
+        <button onclick="toggleColsMenu()" style="padding:6px 12px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;">⚙ Colonnes</button>
+      </div>
+      <div id="colsMenu" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f9fafb;border-radius:8px;font-size:11px;">
+        <label style="margin-right:12px;cursor:pointer;"><input type="checkbox" onchange="loadVentes()" class="col-toggle" value="siren"> SIREN</label>
+        <label style="margin-right:12px;cursor:pointer;"><input type="checkbox" onchange="loadVentes()" class="col-toggle" value="score"> Score</label>
+        <label style="margin-right:12px;cursor:pointer;"><input type="checkbox" onchange="loadVentes()" class="col-toggle" value="pdl"> PDL/PCE</label>
+        <label style="margin-right:12px;cursor:pointer;"><input type="checkbox" onchange="loadVentes()" class="col-toggle" value="typologie"> Typologie</label>
+        <label style="margin-right:12px;cursor:pointer;"><input type="checkbox" onchange="loadVentes()" class="col-toggle" value="volume"> Volumes</label>
       </div>
 
       <!-- Tableau -->
@@ -1347,6 +1363,14 @@ async function ajouterVente() {
 
 let _allVentes = [];
 let _toutesVentes = [];
+let _sortCol = null, _sortAsc = true;
+let _totalAll = 0; // total non filtré pour le compteur
+
+function _pf(v){ return parseFloat(String(v||'0').replace(/,/g,'.').replace(/[^\d.\-]/g,''))||0; }
+
+function toggleColsMenu(){ var m=document.getElementById('colsMenu'); m.style.display=m.style.display==='none'?'block':'none'; }
+function _colVisible(name){ var els=document.querySelectorAll('.col-toggle'); for(var i=0;i<els.length;i++) if(els[i].value===name) return els[i].checked; return false; }
+
 async function loadVentes() {
   const div = document.getElementById('ventes-list');
   div.innerHTML = '<div class="loading">Chargement...</div>';
@@ -1359,8 +1383,8 @@ async function loadVentes() {
   const tf = document.getElementById('vf_type')?.value;
   const sgf = document.getElementById('vf_segment')?.value;
   try {
-    // Charger toutes les ventes sans filtre pour les PDFs
-    fetch('/api/suivi-ventes/liste').then(r=>r.json()).then(d=>{_toutesVentes=d.ventes||[];}).catch(()=>{});
+    // Charger toutes les ventes sans filtre pour les PDFs et anomalies
+    fetch('/api/suivi-ventes/liste').then(r=>r.json()).then(d=>{_toutesVentes=d.ventes||[]; _totalAll=_toutesVentes.length;}).catch(()=>{});
     const r = await fetch('/api/suivi-ventes/liste?' + params);
     const d = await r.json();
     if (!d.success) { div.innerHTML = '<div class="loading">Erreur: '+d.error+'</div>'; return; }
@@ -1374,27 +1398,67 @@ async function loadVentes() {
       });
     }
     if (sgf) filtered = filtered.filter(v => (v.segment||'').startsWith(sgf));
+    // Tri
+    if (_sortCol) {
+      filtered.sort(function(a,b){
+        var va = a[_sortCol], vb = b[_sortCol];
+        if (typeof va === 'number' && typeof vb === 'number') return _sortAsc ? va-vb : vb-va;
+        va = String(va||'').toLowerCase(); vb = String(vb||'').toLowerCase();
+        return _sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+      });
+    }
     _allVentes = filtered;
-    // Recalculate totaux for filtered
-    const ft = {nb: filtered.length, comm_vendeur: 0, comm_referent: 0, marge: 0};
-    filtered.forEach(v => { ft.comm_vendeur += v.comm_vendeur; ft.comm_referent += v.comm_referent; ft.marge += v.marge; });
+    // Calculer les totaux à la volée
+    const ft = {nb: filtered.length, comm_vendeur: 0, comm_referent: 0, montant: 0, vol_elec: 0, vol_gaz: 0};
+    filtered.forEach(v => {
+      ft.comm_vendeur += v.comm_vendeur; ft.comm_referent += v.comm_referent;
+      ft.montant += _pf(v.montant_ht);
+      ft.vol_elec += _pf(v.volume_elec); ft.vol_gaz += _pf(v.volume_gaz);
+    });
+    ft.marge = Math.round((ft.montant - ft.comm_vendeur - ft.comm_referent)*100)/100;
     if (!filtered.length) { div.innerHTML = '<div class="loading">Aucune vente</div>'; updateTotaux(ft); return; }
-    const th = 'padding:6px 8px;text-align:left;';
-    div.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:#1e1b4b;color:#fff;"><tr>' +
-      '<th style="'+th+'">Réf</th><th style="'+th+'">Société</th><th style="'+th+'">Vendeur</th><th style="'+th+'">Type</th><th style="'+th+'">Fourn.</th><th style="'+th+'">Montant</th><th style="'+th+'">Cv</th><th style="'+th+'">Cr</th><th style="'+th+'">Marge</th><th style="'+th+'">Statut</th>' +
-      '</tr></thead><tbody>' +
-      filtered.map((v,i) => '<tr onclick="showFiche('+i+')" style="border-bottom:1px solid #ede9fe;cursor:pointer;" onmouseover="this.style.background=\'#faf5ff\'" onmouseout="this.style.background=\'#fff\'">' +
-        '<td style="padding:6px 8px;font-weight:600;color:#7c3aed;">' + v.ref + '</td>' +
-        '<td style="padding:6px 8px;font-weight:600;">' + (v.societe||v.ref_client||'—') + '</td>' +
-        '<td style="padding:6px 8px;">' + (v.vendeur||'').split('@')[0] + '</td>' +
-        '<td style="padding:6px 8px;">' + (v.type==='Gaz'?'🔥':'⚡') + '</td>' +
-        '<td style="padding:6px 8px;">' + (v.fournisseur||'') + '</td>' +
-        '<td style="padding:6px 8px;font-weight:600;">' + v.montant_ht + '€</td>' +
-        '<td style="padding:6px 8px;color:#7c3aed;">' + v.comm_vendeur + '€</td>' +
-        '<td style="padding:6px 8px;color:#2563eb;">' + v.comm_referent + '€</td>' +
-        '<td style="padding:6px 8px;color:#22c55e;font-weight:700;">' + v.marge.toFixed(2) + '€</td>' +
-        '<td style="padding:6px 8px;">' + (v.statut_paiement||'') + '</td></tr>'
-      ).join('') + '</tbody></table>';
+    // Colonnes optionnelles
+    var showSiren = _colVisible('siren'), showScore = _colVisible('score'), showPdl = _colVisible('pdl'), showTypo = _colVisible('typologie'), showVol = _colVisible('volume');
+    var th = 'padding:6px 8px;text-align:left;cursor:pointer;user-select:none;';
+    var arrow = function(col){ return _sortCol===col ? (_sortAsc?' ▲':' ▼') : ''; };
+    var hdr = '<th style="'+th+'" onclick="vtSort(\'ref\')">Réf'+arrow('ref')+'</th>'
+      +'<th style="'+th+'" onclick="vtSort(\'ref_vente\')">MIB'+arrow('ref_vente')+'</th>'
+      +'<th style="'+th+'" onclick="vtSort(\'societe\')">Société'+arrow('societe')+'</th>'
+      +'<th style="'+th+'" onclick="vtSort(\'vendeur\')">Vendeur'+arrow('vendeur')+'</th>'
+      +'<th style="'+th+'">Type</th>'
+      +'<th style="'+th+'" onclick="vtSort(\'fournisseur\')">Fourn.'+arrow('fournisseur')+'</th>';
+    if(showSiren) hdr += '<th style="'+th+'">SIREN</th>';
+    if(showScore) hdr += '<th style="'+th+'">Score</th>';
+    if(showPdl) hdr += '<th style="'+th+'">PDL/PCE</th>';
+    if(showTypo) hdr += '<th style="'+th+'">Typo.</th>';
+    hdr += '<th style="'+th+'" onclick="vtSort(\'_montant\')">Montant'+arrow('_montant')+'</th>'
+      +'<th style="'+th+'" onclick="vtSort(\'comm_vendeur\')">Cv'+arrow('comm_vendeur')+'</th>'
+      +'<th style="'+th+'" onclick="vtSort(\'comm_referent\')">Cr'+arrow('comm_referent')+'</th>'
+      +'<th style="'+th+'" onclick="vtSort(\'marge\')">Marge'+arrow('marge')+'</th>';
+    if(showVol) hdr += '<th style="'+th+'">Élec</th><th style="'+th+'">Gaz</th>';
+    hdr += '<th style="'+th+'">Statut</th>';
+    div.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:#1e1b4b;color:#fff;"><tr>'+hdr+'</tr></thead><tbody>' +
+      filtered.map((v,i) => {
+        var td = 'padding:6px 8px;';
+        var row = '<tr onclick="showFiche('+i+')" style="border-bottom:1px solid #ede9fe;cursor:pointer;" onmouseover="this.style.background=\'#faf5ff\'" onmouseout="this.style.background=\'#fff\'">'
+          +'<td style="'+td+'font-weight:600;color:#7c3aed;">' + v.ref + '</td>'
+          +'<td style="'+td+'font-size:10px;color:#6b7280;">' + (v.ref_vente||'') + '</td>'
+          +'<td style="'+td+'font-weight:600;">' + (v.societe||v.ref_client||'—') + '</td>'
+          +'<td style="'+td+'">' + (v.vendeur||'').split('@')[0] + '</td>'
+          +'<td style="'+td+'">' + (v.type==='Gaz'?'🔥':'⚡') + '</td>'
+          +'<td style="'+td+'">' + (v.fournisseur||'') + '</td>';
+        if(showSiren) row += '<td style="'+td+'font-size:10px;">' + (v.siren||'') + '</td>';
+        if(showScore) row += '<td style="'+td+'">' + (v.score||'') + '</td>';
+        if(showPdl) row += '<td style="'+td+'font-size:10px;">' + (v.pdl_pce||'') + '</td>';
+        if(showTypo) row += '<td style="'+td+'">' + (v.typologie||v.segment||'') + '</td>';
+        row += '<td style="'+td+'font-weight:600;">' + v.montant_ht + '€</td>'
+          +'<td style="'+td+'color:#7c3aed;">' + v.comm_vendeur.toFixed(2) + '€</td>'
+          +'<td style="'+td+'color:#2563eb;">' + v.comm_referent.toFixed(2) + '€</td>'
+          +'<td style="'+td+'color:#22c55e;font-weight:700;">' + v.marge.toFixed(2) + '€</td>';
+        if(showVol) row += '<td style="'+td+'">' + (v.volume_elec||'') + '</td><td style="'+td+'">' + (v.volume_gaz||'') + '</td>';
+        row += '<td style="'+td+'">' + (v.statut_paiement||'') + '</td></tr>';
+        return row;
+      }).join('') + '</tbody></table>';
     updateTotaux(ft);
     // Anomalies commissions — regroupées par société
     // Sociétés exclues (vérifiées manuellement, anomalies normales)
@@ -1430,6 +1494,10 @@ async function loadVentes() {
       }
       anomalies.push('<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>' + soc + '</strong> : ' + mt + ' € encaissés, 0 € versé — ' + detail + '</div>');
     });
+    // Anomalies marge stockée (depuis l'API)
+    (d.anomalies_marge||[]).forEach(function(a){
+      anomalies.push('<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>' + a.ref + '</strong> — ' + a.societe + ' : marge stockée ' + a.stockee.toFixed(2) + ' € ≠ calculée ' + a.calculee.toFixed(2) + ' € (écart ' + (a.stockee - a.calculee).toFixed(2) + ' €)</div>');
+    });
     var aw = document.getElementById('ventesAnomalies');
     if (anomalies.length) {
       aw.style.display = 'block';
@@ -1438,11 +1506,32 @@ async function loadVentes() {
   } catch(e) { div.innerHTML = '<div class="loading">Erreur réseau</div>'; }
 }
 
+function vtSort(col){
+  if(col === '_montant'){
+    _allVentes.forEach(function(v){ v._montant = _pf(v.montant_ht); });
+  }
+  if(_sortCol === col){ _sortAsc = !_sortAsc; }
+  else { _sortCol = col; _sortAsc = true; }
+  loadVentes();
+}
+
 function updateTotaux(t) {
   document.getElementById('tot_nb').textContent = t.nb || 0;
-  document.getElementById('tot_cv').textContent = (t.comm_vendeur||0).toFixed(2) + '€';
-  document.getElementById('tot_cr').textContent = (t.comm_referent||0).toFixed(2) + '€';
-  document.getElementById('tot_m').textContent = (t.marge||0).toFixed(2) + '€';
+  var ca = t.montant || 0;
+  var rev = (t.comm_vendeur||0) + (t.comm_referent||0);
+  var marge = t.marge || 0;
+  var taux = ca > 0 ? (rev / ca * 100).toFixed(1) + '%' : '—';
+  document.getElementById('tot_ca').textContent = ca.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
+  document.getElementById('tot_rev').textContent = rev.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
+  document.getElementById('tot_m').textContent = marge.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
+  document.getElementById('tot_taux').textContent = taux;
+  document.getElementById('tot_velec').textContent = (t.vol_elec||0).toLocaleString('fr-FR', {maximumFractionDigits:2});
+  document.getElementById('tot_vgaz').textContent = (t.vol_gaz||0).toLocaleString('fr-FR', {maximumFractionDigits:2});
+  document.getElementById('tot_panier').textContent = t.nb > 0 ? (ca / t.nb).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '—';
+  // Compteur filtré
+  var cnt = document.getElementById('vf_count');
+  if (t.nb < _totalAll && _totalAll > 0) { cnt.style.display = 'inline'; cnt.textContent = t.nb + ' contrats sur ' + _totalAll; }
+  else { cnt.style.display = 'none'; }
 }
 
 function showFiche(idx) {

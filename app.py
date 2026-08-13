@@ -2185,7 +2185,7 @@ def liste_ventes():
         if len(rows) > 1:
             print(f"📊 Ligne 2 (1ère donnée): {rows[1][:10]}")
         if len(rows) < 2:
-            return jsonify({'success': True, 'ventes': [], 'totaux': {'comm_vendeur': 0, 'comm_referent': 0, 'marge': 0, 'nb': 0}})
+            return jsonify({'success': True, 'ventes': [], 'totaux': {'comm_vendeur': 0, 'comm_referent': 0, 'marge': 0, 'montant': 0, 'nb': 0}, 'anomalies_marge': []})
 
         vendeur_filter = request.args.get('vendeur', '')
         fournisseur_filter = request.args.get('fournisseur', '')
@@ -2196,7 +2196,8 @@ def liste_ventes():
         def g(row, i): return row[i] if len(row) > i else ''
 
         ventes = []
-        total_cv, total_cr, total_m = 0, 0, 0
+        total_cv, total_cr, total_m, total_montant = 0, 0, 0, 0
+        anomalies_marge = []
         for row in rows[1:]:
             if len(row) < 14: continue
             if vendeur_filter and g(row,3) != vendeur_filter: continue
@@ -2205,10 +2206,24 @@ def liste_ventes():
             if annee_filter and not periode.startswith(annee_filter): continue
             if mois_filter and len(periode) >= 7 and periode[5:7] != mois_filter: continue
             if search:
-                haystack = ' '.join([g(row,2),g(row,19),g(row,20),g(row,21),g(row,22)]).lower()
-                if search not in haystack: continue
-            cv = parse_float(g(row,12)); cr = parse_float(g(row,13)); m = parse_float(g(row,14))
-            total_cv += cv; total_cr += cr; total_m += m
+                haystack = ' '.join([g(row,2),g(row,0),g(row,1),g(row,26),g(row,9),g(row,27),g(row,19),g(row,22)]).lower()
+                # Normaliser accents pour la recherche
+                import unicodedata as _ud
+                haystack = _ud.normalize('NFD', haystack)
+                haystack = ''.join(c for c in haystack if _ud.category(c) != 'Mn')
+                search_norm = _ud.normalize('NFD', search)
+                search_norm = ''.join(c for c in search_norm if _ud.category(c) != 'Mn')
+                # Tous les mots doivent correspondre (ET)
+                if not all(w in haystack for w in search_norm.split()):
+                    continue
+            montant = parse_float(g(row,11))
+            cv = parse_float(g(row,12)); cr = parse_float(g(row,13))
+            marge_stockee = parse_float(g(row,14))
+            m = round(montant - cv - cr, 2)  # marge recalculée à la volée
+            total_cv += cv; total_cr += cr; total_m += m; total_montant += montant
+            # Détecter écart marge stockée
+            if abs(marge_stockee - m) > 0.01 and montant > 0:
+                anomalies_marge.append({'ref': g(row,0), 'societe': g(row,2), 'stockee': marge_stockee, 'calculee': m})
             ventes.append({
                 'ref': g(row,0), 'ref_client': g(row,1), 'societe': g(row,2),
                 'vendeur': g(row,3), 'referent': g(row,4),
@@ -2224,7 +2239,7 @@ def liste_ventes():
                 'score': g(row,29), 'pay_rank': g(row,30), 'typologie': g(row,31),
                 'nbr_sites': g(row,32), 'commercial_ohm': g(row,33), 'date_signature': g(row,34)
             })
-        return jsonify({'success': True, 'ventes': ventes, 'totaux': {'comm_vendeur': total_cv, 'comm_referent': total_cr, 'marge': total_m, 'nb': len(ventes)}})
+        return jsonify({'success': True, 'ventes': ventes, 'totaux': {'comm_vendeur': total_cv, 'comm_referent': total_cr, 'marge': total_m, 'montant': total_montant, 'nb': len(ventes)}, 'anomalies_marge': anomalies_marge})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
