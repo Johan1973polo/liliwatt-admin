@@ -3217,6 +3217,24 @@ function ohmParseBloc(type){
     }
   }
 
+  // Contrôle MIB ↔ DATE_SIGNATURE (tolérance 90 jours)
+  var refVenteEl = document.getElementById('v_ref_vente');
+  var dateSigEl = document.getElementById('v_date_signature');
+  if(refVenteEl && dateSigEl && refVenteEl.value && dateSigEl.value){
+    var mibMatch = refVenteEl.value.match(/^MIB-(\d{2})(\d{2})(\d{2})/);
+    if(mibMatch){
+      var mibDate = new Date('20' + mibMatch[1] + '-' + mibMatch[2] + '-' + mibMatch[3]);
+      var sigDate = new Date(dateSigEl.value);
+      var ecartJours = Math.abs((mibDate - sigDate) / 86400000);
+      if(ecartJours > 90){
+        var mibStr = '20' + mibMatch[1] + '-' + mibMatch[2] + '-' + mibMatch[3];
+        var alertDiv = document.getElementById('ohmCoherenceAlert');
+        alertDiv.innerHTML += '<div style="margin-top:6px;color:#991b1b;font-weight:700;">⚠ Le MIB indique une offre du ' + mibStr + ', le contrat est signé le ' + dateSigEl.value + ' — vérifiez qu\'il s\'agit bien du même contrat.</div>';
+        alertDiv.style.display = 'block';
+      }
+    }
+  }
+
   // Afficher le résultat
   var mappedCount = Object.keys(r.champs).filter(function(k){ return k !== '_raison_sociale' && k !== '_marge_ohm' && r.champs[k]; }).length;
   status.textContent = mappedCount + ' champs reconnus';
@@ -3590,11 +3608,13 @@ document.addEventListener('drop',     function(e){ e.preventDefault(); });
       else nullFields.push('segment');
     } else { nullFields.push('segment'); }
 
-    // FOURNISSEUR : select — correspondance EXACTE uniquement (trim + majuscules)
+    // FOURNISSEUR : CPV donne "OHM ENERGIE" -> pré-remplir "OHM ENERGIE CLASSIQUE"
     if(champs.fournisseur){
       const sel = document.getElementById('v_fournisseur');
       const autre = document.getElementById('v_fournisseur_autre');
-      const needle = champs.fournisseur.trim().toUpperCase();
+      let needle = champs.fournisseur.trim().toUpperCase();
+      // Tout contrat CPV est du CLASSIQUE
+      if(needle === 'OHM ENERGIE') needle = 'OHM ENERGIE CLASSIQUE';
       const match = sel && Array.from(sel.options).find(o =>
         o.value && o.value.trim().toUpperCase() === needle
       );

@@ -2011,7 +2011,23 @@ def extraire_contrat():
     if not champs.get('pdl_pce'):
         avertissements.append('PDL/PCE non trouvé — vérification manuelle obligatoire')
     if not champs.get('ref_vente'):
-        avertissements.append('REF_VENTE (MIB) non trouvé')
+        # Vérifier si la page 1 contient une ligne "Offre du..." sans MIB
+        import re as _re_mib
+        _has_offre_sans_mib = False
+        try:
+            import pdfplumber as _mib_plumber, io as _mib_io
+            with _mib_plumber.open(_mib_io.BytesIO(pdf_bytes)) as _mib_pdf:
+                p1 = (_mib_pdf.pages[0].extract_text() or '')
+                for line in p1.split('\n'):
+                    if _re_mib.search(r'Offre du', line, _re_mib.IGNORECASE) and 'MIB' not in line:
+                        _has_offre_sans_mib = True
+                        break
+        except Exception:
+            pass
+        if _has_offre_sans_mib:
+            avertissements.append('Ce CPV ne contient pas de MIB (format antérieur à juillet 2026) — utilisez le collage des données génériques.')
+        else:
+            avertissements.append('REF_VENTE (MIB) non trouvé')
 
     print(f'[CONTRAT] OK — {usage.total_tokens} tokens '
           f'(prompt: {usage.prompt_tokens}, completion: {usage.completion_tokens})')
