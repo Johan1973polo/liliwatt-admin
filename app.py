@@ -2243,10 +2243,13 @@ def reprise_ecrire():
     """Écrit les champs cochés dans une ligne existante du Sheet."""
     d = request.get_json()
     row_idx = d.get('row_idx')
+    expected_ref = d.get('ref', '')
     updates = d.get('updates', {})  # {champ: valeur}
 
     if not row_idx or not updates:
         return jsonify({'success': False, 'error': 'Paramètres manquants'}), 400
+    if not expected_ref:
+        return jsonify({'success': False, 'error': 'Référence de la ligne manquante'}), 400
 
     # Vérifier qu'aucun champ interdit n'est modifié
     INTERDIT = {'vendeur', 'referent', 'montant_ht', 'commission_vendeur',
@@ -2263,6 +2266,12 @@ def reprise_ecrire():
         if not gc:
             return jsonify({'success': False, 'error': 'Google Sheets non configuré'}), 500
         ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).sheet1
+
+        # Garde-fou : vérifier que la REF en colonne A correspond
+        actual_ref = ws.cell(row_idx, 1).value or ''
+        if actual_ref.strip() != expected_ref.strip():
+            return jsonify({'success': False,
+                'error': f'La ligne a changé depuis l\'analyse (attendu {expected_ref}, trouvé {actual_ref}). Relancez le rapprochement.'}), 409
 
         # Construire les cellules à mettre à jour
         cells = []

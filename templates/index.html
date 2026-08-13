@@ -2859,7 +2859,7 @@ async function rpEcrire(){
   try {
     var r = await fetch('/api/reprise/ecrire', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({row_idx: _rpRowIdx, updates: updates})
+      body: JSON.stringify({row_idx: _rpRowIdx, ref: (_rpData && _rpData.ligne ? _rpData.ligne.ref : ''), updates: updates})
     });
     var d = await r.json();
     if(!d.success) throw new Error(d.error);
