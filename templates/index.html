@@ -1702,6 +1702,19 @@ async function loadVentes() {
       if(mt > 0 && (cv + cr) > mt){
         anomalies.push('<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>' + v.ref + '</strong> — ' + (v.societe||'') + ' : commissions versées ' + (cv+cr).toFixed(2) + ' € > MONTANT ' + mt.toFixed(2) + ' €</div>');
       }
+      // Activation prévisionnelle > 3 mois (risque de décommission)
+      if(da && !v.date_activation){
+        // Pas de date_activation = pas de switch, vérifier date_debut
+      }
+      var debut = v.date_debut;
+      if(debut && (!da || da === debut)){
+        var debutDate = new Date(debut);
+        var now = new Date();
+        var diffMois = (now.getFullYear()-debutDate.getFullYear())*12 + (now.getMonth()-debutDate.getMonth());
+        if(diffMois > 3){
+          anomalies.push('<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>' + v.ref + '</strong> — ' + (v.societe||'') + ' : activation prévisionnelle depuis ' + debut + ' (>' + diffMois + ' mois) — risque de décommission + 20%</div>');
+        }
+      }
     });
     var aw = document.getElementById('ventesAnomalies');
     if (anomalies.length) {
@@ -3202,11 +3215,13 @@ var _SOHO_FIELD_MAP = {
   'puissance/ classe':'v_puissance_kva', 'puissance classe':'v_puissance_kva',
   'point de livraison':'v_pdl', 'adresse de consommation':'v_adresse',
   'energie':'_type_energie', 'date de signature':'v_date_signature',
-  'date de switch':'v_date_activation', 'statut global':'_statut_global'
+  'date de switch':'_date_switch', 'date de debut':'_date_debut',
+  'statut global':'_statut_global',
+  'tel':'v_tel_client', 'mail':'v_email_client', 'contact':'_contact'
 };
-var _SOHO_IGNORED = ['tel','contact','mail','rum','vendu par','partenaire',
+var _SOHO_IGNORED = ['rum','vendu par','partenaire',
   'option verte','etape en cours','mensualite','premier paiement',
-  'date de creation','date de debut','date de finalisation','contrat eld',
+  'date de creation','date de finalisation','contrat eld',
   'type de contrat','ref unique mandat'];
 
 var _SOHO_GRILLE_BASE = {1:{3:30,6:50,9:100,12:125,15:160,18:180,24:210,30:270,36:300},2:{3:45,6:90,9:140,12:190,15:260,18:310,24:380,30:470,36:550},3:{3:70,6:160,9:210,12:280,15:350,18:450,24:510,30:650,36:780}};
@@ -3277,10 +3292,39 @@ function sohoParseBloc(){
     return;
   }
 
+  // DATE_ACTIVATION : switch confirmé > début prévu
+  var activationSource = null;
+  if(champs['_date_switch']){
+    champs['v_date_activation'] = champs['_date_switch'];
+    activationSource = 'confirmée';
+  } else if(champs['_date_debut']){
+    champs['v_date_activation'] = champs['_date_debut'];
+    activationSource = 'prévue';
+  }
+
+  // Contact -> NOM + PRENOM
+  var contactAmbigu = false;
+  if(champs['_contact']){
+    var raw = champs['_contact'];
+    var cleaned = raw.replace(/^(Monsieur|Madame|M\.|Mme\.?)\s+/i, '').trim();
+    var words = cleaned.split(/\s+/);
+    var upperW = words.filter(function(w){ return w === w.toUpperCase() && /^[A-Z]+$/.test(w); });
+    var lowerW = words.filter(function(w){ return w !== w.toUpperCase() || !/^[A-Z]+$/.test(w); });
+    if(upperW.length && lowerW.length){
+      champs['v_nom_client'] = upperW.join(' ');
+      champs['v_prenom_client'] = lowerW.join(' ');
+    } else {
+      champs['v_nom_client'] = words[0] || '';
+      champs['v_prenom_client'] = words.slice(1).join(' ');
+      contactAmbigu = true;
+    }
+  }
+
   // Pré-remplir les champs
   var filled = 0;
   var fieldIds = ['v_ref_vente','v_ref_client','v_code_naf','v_score','v_offre',
-    'v_puissance_kva','v_pdl','v_adresse','v_date_signature','v_date_activation','v_siren'];
+    'v_puissance_kva','v_pdl','v_adresse','v_date_signature','v_date_activation',
+    'v_siren','v_tel_client','v_email_client','v_nom_client','v_prenom_client'];
   fieldIds.forEach(function(id){
     var val = champs[id];
     if(!val) return;
@@ -3294,6 +3338,12 @@ function sohoParseBloc(){
     if(_sohoFilledIds.indexOf(id) < 0) _sohoFilledIds.push(id);
     filled++;
   });
+
+  if(contactAmbigu){
+    var alertDiv = document.getElementById('ohmCoherenceAlert');
+    alertDiv.innerHTML += '<div style="margin-top:6px;color:#b45309;">⚠ Nom/prénom déduits du contact — vérifiez le découpage.</div>';
+    alertDiv.style.display = 'block';
+  }
 
   // Type énergie
   if(champs['_type_energie']){
@@ -3350,7 +3400,7 @@ function sohoParseBloc(){
 
   // Dates de paiement SOHO : P1 = mois suivant signature, P2 = mois suivant activation
   if(champs['v_date_signature']){
-    var ds = champs['v_date_signature']; // AAAA-MM-JJ
+    var ds = champs['v_date_signature'];
     var y1 = parseInt(ds.substring(0,4)), m1 = parseInt(ds.substring(5,7));
     m1++; if(m1>12){m1=1;y1++;}
     document.getElementById('v_date_p1').value = y1+'-'+String(m1).padStart(2,'0');
@@ -3362,6 +3412,12 @@ function sohoParseBloc(){
     document.getElementById('v_date_p2').value = y2+'-'+String(m2).padStart(2,'0');
     document.getElementById('v_dates_p').style.display = 'grid';
     document.getElementById('v_statut_p').value = '50-50';
+  }
+  // Afficher la source d'activation
+  if(activationSource){
+    var commDiv2 = document.getElementById('soho_commission');
+    commDiv2.innerHTML += '<div style="margin-top:4px;font-size:11px;color:#6b7280;">Activation : ' + champs['v_date_activation'] + ' (' + activationSource + ')</div>';
+    commDiv2.style.display = 'block';
   }
 
   status.textContent = filled + ' champ(s) reconnus' + (commission ? ', commission ' + commission + ' EUR' : '');
