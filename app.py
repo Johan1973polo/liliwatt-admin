@@ -2278,7 +2278,9 @@ def reprise_rapprocher():
 _REPRISE_COL_MAP = {
     'ref_vente': 26, 'siren': 27, 'adresse_client': 28, 'score': 29,
     'pay_rank': 30, 'typologie': 31, 'nbr_sites': 32, 'commercial_ohm': 33,
-    'date_signature': 34, 'ref_client': 1, 'societe': 2, 'segment': 18,
+    'date_signature': 34, 'puissance_kva': 35, 'date_activation': 36,
+    'offre': 37, 'code_naf': 38,
+    'ref_client': 1, 'societe': 2, 'segment': 18,
     'date_debut': 6, 'date_fin': 7, 'type_energie': 8, 'pdl_pce': 9,
     'nom_client': 19, 'prenom_client': 20, 'tel_client': 21, 'email_client': 22,
     'volume_elec': 23, 'volume_gaz': 24, 'periode': 5,
@@ -2320,19 +2322,24 @@ def reprise_ecrire():
             return jsonify({'success': False,
                 'error': f'La ligne a changé depuis l\'analyse (attendu {expected_ref}, trouvé {actual_ref}). Relancez le rapprochement.'}), 409
 
-        # Contrôle de doublon sur REF_CLIENT et REF_VENTE
+        # Contrôles : doublon REF_VENTE (unique) + cohérence REF_CLIENT (même société)
         doublons = []
         if updates.get('ref_client') or updates.get('ref_vente'):
             all_rows = ws.get_all_values()
+            # Société de la ligne en cours
+            current_soc = (all_rows[row_idx - 1][2] if len(all_rows[row_idx - 1]) > 2 else '').strip()
             for ri, row in enumerate(all_rows[1:], start=2):
                 if ri == row_idx:
                     continue
                 row_ref = row[0] if len(row) > 0 else ''
-                row_soc = row[2] if len(row) > 2 else ''
-                if updates.get('ref_client') and len(row) > 1 and row[1].strip() == updates['ref_client'].strip():
-                    doublons.append(f'{updates["ref_client"]} est déjà présent sur {row_ref} ({row_soc})')
+                row_soc = (row[2] if len(row) > 2 else '').strip()
+                # REF_VENTE doit être unique
                 if updates.get('ref_vente') and len(row) > 26 and row[26].strip() == updates['ref_vente'].strip():
                     doublons.append(f'{updates["ref_vente"]} est déjà présent sur {row_ref} ({row_soc})')
+                # REF_CLIENT : même MB sur une société différente = alerte
+                if updates.get('ref_client') and len(row) > 1 and row[1].strip() == updates['ref_client'].strip():
+                    if row_soc and current_soc and row_soc != current_soc:
+                        doublons.append(f'{updates["ref_client"]} est déjà utilisé par {row_soc} ({row_ref}) — vérifiez le contrat collé')
 
         # Construire les cellules à mettre à jour
         cells = []
@@ -2353,6 +2360,130 @@ def reprise_ecrire():
 
 
 # ===== VÉRIFICATEUR AAF =====
+
+def _analyser_aaf_soho(wb, request, get_sheets_client, sheet_id, parse_float):
+    """Analyse un AAF SOHO : contrôle global + détail par contrat."""
+    import re
+
+    # Déduire le mois depuis le nom du fichier ou des feuilles
+    aaf_mois = None
+    for ws in wb.worksheets:
+        m = re.search(r'(\d{2})-(\d{4})', ws.title)
+        if m:
+            aaf_mois = f'{m.group(2)}-{m.group(1)}'
+            break
+    # Fallback : chercher dans le nom du fichier passé
+    if not aaf_mois:
+        fname = request.files.get('file')
+        if fname and fname.filename:
+            m = re.search(r'(\d{2})-(\d{4})', fname.filename)
+            if m:
+                aaf_mois = f'{m.group(2)}-{m.group(1)}'
+
+    # Période de production = mois AAF - 1
+    periode_prod = None
+    if aaf_mois:
+        ay, am = int(aaf_mois[:4]), int(aaf_mois[5:7])
+        pm = am - 1; py = ay
+        if pm < 1: pm = 12; py -= 1
+        periode_prod = f'{py:04d}-{pm:02d}'
+
+    # Feuille détail (première feuille avec contractnbr)
+    contrats_aaf = []
+    for ws in wb.worksheets:
+        row1 = [str(c.value or '').strip().lower() for c in ws[1]]
+        if 'contractnbr' not in row1:
+            continue
+        col_map = {}
+        for idx, h in enumerate(row1):
+            col_map[h] = idx
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=True):
+            vals = list(row)
+            if not any(v is not None for v in vals):
+                continue
+            def _g(name):
+                i = col_map.get(name)
+                return str(vals[i]).strip() if i is not None and i < len(vals) and vals[i] is not None else ''
+            contrats_aaf.append({
+                'ref_client': _g('customernbr'),
+                'ref_vente': _g('contractnbr'),
+                'societe': _g('companyname'),
+                'productcode': _g('productcode'),
+                'date_signature': _g('contractsubscriptiondate')[:10] if _g('contractsubscriptiondate') else '',
+                'date_activation': _g('contractstartdate')[:10] if _g('contractstartdate') else '',
+                'statut': _g('contractstatuscode'),
+            })
+        break  # une seule feuille suffit
+
+    # Feuille "facture à établir"
+    facture = None
+    paiement_type = ''
+    for ws in wb.worksheets:
+        title_lower = ws.title.strip().lower()
+        if 'facture' not in title_lower or 'contrats' in title_lower:
+            continue
+        for row in ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True):
+            vals = list(row)
+            first = str(vals[0] or '').strip().lower() if vals else ''
+            if first and first != 'total' and 'type' not in first and 'facture' not in first:
+                paiement_type = str(vals[0] or '').strip()
+                try:
+                    nb_contrats = int(vals[1]) if vals[1] else 0
+                    ht = round(float(vals[2]), 2) if vals[2] else 0
+                    tva = round(float(vals[3]), 2) if vals[3] else 0
+                    ttc = round(float(vals[4]), 2) if vals[4] else 0
+                except (ValueError, TypeError):
+                    continue
+                facture = {'type_paiement': paiement_type, 'nb_contrats': nb_contrats,
+                           'ht': ht, 'tva': tva, 'ttc': ttc}
+                break
+        break
+
+    # Charger le Sheet pour comparer
+    gc = get_sheets_client()
+    mes_soho = []
+    if gc and periode_prod:
+        ws_sheet = gc.open_by_key(sheet_id).sheet1
+        rows = ws_sheet.get_all_values()
+        def g(row, i):
+            return row[i].strip() if len(row) > i else ''
+        for row in rows[1:]:
+            if g(row, 10).upper() == 'OHM ENERGIE SOHO':
+                mes_soho.append({
+                    'ref': g(row, 0), 'societe': g(row, 2), 'periode': g(row, 5),
+                    'montant': parse_float(g(row, 11)), 'statut_paiement': g(row, 15),
+                    'date_p2': g(row, 17), 'comm_vendeur': parse_float(g(row, 12)),
+                    'comm_referent': parse_float(g(row, 13)),
+                })
+
+    # Calcul écart
+    total_attendu = sum(v['montant'] for v in mes_soho)
+    total_verse = facture['ht'] if facture else 0
+    ecart = round(total_verse - total_attendu, 2) if facture else None
+
+    # Détection "1ere et 2eme partie" = contrat soldé
+    solde_alert = None
+    if paiement_type and '1ere' in paiement_type.lower() and '2eme' in paiement_type.lower():
+        # Chercher les lignes SOHO encore en 50-50
+        lignes_5050 = [v for v in mes_soho if v['statut_paiement'] == '50-50']
+        if lignes_5050:
+            solde_alert = [f'{v["ref"]} ({v["societe"]}) est encore en 50-50 avec DATE_P2={v["date_p2"]} alors que l\'AAF verse les deux parties en une fois' for v in lignes_5050]
+
+    return jsonify({
+        'success': True,
+        'format': 'soho',
+        'aaf_mois': aaf_mois,
+        'periode_prod': periode_prod,
+        'contrats_aaf': contrats_aaf,
+        'facture': facture,
+        'mes_soho': mes_soho,
+        'total_attendu': total_attendu,
+        'total_verse': total_verse,
+        'ecart': ecart,
+        'solde_alert': solde_alert,
+        'nb_contrats_aaf': len(contrats_aaf),
+    })
+
 
 @app.route('/api/aaf/analyser', methods=['POST'])
 @login_required
@@ -2388,6 +2519,14 @@ def analyser_aaf():
     ws = wb.worksheets[0]
     sheet_name = ws.title.strip()
 
+    # ── Détecter le format : classique ou SOHO ──
+    row1 = [str(c.value or '').strip().lower() for c in ws[1]]
+    is_soho = 'customernbr' in row1 or 'contractnbr' in row1
+
+    if is_soho:
+        return _analyser_aaf_soho(wb, request, get_sheets_client, SUIVI_VENTES_SHEET_ID, parse_float)
+
+    # ── Format classique ──
     # Déduire le mois depuis le nom de la feuille
     m_match = re.search(r'(\d{2})-(\d{4})', sheet_name)
     aaf_mois = f'{m_match.group(2)}-{m_match.group(1)}' if m_match else None
@@ -2827,7 +2966,8 @@ SUIVI_HEADERS = ['REF','REF_CLIENT','SOCIETE','VENDEUR','REFERENT','PERIODE','DE
     'NOM_CLIENT','PRENOM_CLIENT','TEL_CLIENT','EMAIL_CLIENT',
     'VOLUME_ELEC_MWH','VOLUME_GAZ_MWH','LIEN_DRIVE',
     'REF_VENTE','SIREN','ADRESSE','SCORE','PAY_RANK',
-    'TYPOLOGIE','NBR_SITES','COMMERCIAL_OHM','DATE_SIGNATURE']
+    'TYPOLOGIE','NBR_SITES','COMMERCIAL_OHM','DATE_SIGNATURE',
+    'PUISSANCE_KVA','DATE_ACTIVATION','OFFRE','CODE_NAF']
 
 @app.route('/api/suivi-ventes/init-sheet')
 @login_required
@@ -2896,6 +3036,7 @@ def ajouter_vente():
             d.get('ref_vente', ''), d.get('siren', ''), d.get('adresse', ''),
             d.get('score', ''), d.get('pay_rank', ''), d.get('typologie', ''),
             d.get('nbr_sites', ''), d.get('commercial_ohm', ''), d.get('date_signature', ''),
+            d.get('puissance_kva', ''), d.get('date_activation', ''), d.get('offre', ''), d.get('code_naf', ''),
         ]
 
         import time
@@ -2984,7 +3125,8 @@ def liste_ventes():
                 'volume_elec': g(row,23), 'volume_gaz': g(row,24), 'lien_drive': g(row,25),
                 'ref_vente': g(row,26), 'siren': g(row,27), 'adresse': g(row,28),
                 'score': g(row,29), 'pay_rank': g(row,30), 'typologie': g(row,31),
-                'nbr_sites': g(row,32), 'commercial_ohm': g(row,33), 'date_signature': g(row,34)
+                'nbr_sites': g(row,32), 'commercial_ohm': g(row,33), 'date_signature': g(row,34),
+                'puissance_kva': g(row,35), 'date_activation': g(row,36), 'offre': g(row,37), 'code_naf': g(row,38)
             })
         return jsonify({'success': True, 'ventes': ventes, 'totaux': {'comm_vendeur': total_cv, 'comm_referent': total_cr, 'marge': total_m, 'montant': total_montant, 'nb': len(ventes)}, 'anomalies_marge': anomalies_marge})
     except Exception as e:

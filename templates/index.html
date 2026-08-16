@@ -293,8 +293,18 @@
       <div id="venteForm" style="display:none;background:#faf5ff;border-radius:12px;padding:20px;margin-bottom:20px;border:1.5px solid #e9d5ff;">
         <button onclick="venteRetour()" style="padding:6px 14px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;margin-bottom:12px;">← Retour</button>
 
-        <!-- Extracteur contrat PDF -->
-        <div class="dz-wrap" id="dzWrap">
+        <!-- Sélecteur de tunnel -->
+        <div style="margin-bottom:16px;padding:12px 16px;background:#ede9fe;border-radius:10px;">
+          <label style="font-size:13px;font-weight:800;color:#1e1b4b;margin-right:20px;">Tunnel :</label>
+          <label style="font-size:13px;cursor:pointer;margin-right:16px;"><input type="radio" name="v_tunnel" value="classique" onchange="onTunnelChange(this.value)"> Classique (Middle)</label>
+          <label style="font-size:13px;cursor:pointer;"><input type="radio" name="v_tunnel" value="soho" onchange="onTunnelChange(this.value)"> SOHO</label>
+        </div>
+
+        <!-- Contenu conditionnel tunnel -->
+        <div id="tunnelContent" style="display:none;">
+
+        <!-- Extracteur contrat PDF (classique uniquement) -->
+        <div class="dz-wrap" id="dzWrap" data-tunnel="classique">
           <input type="file" id="dzInput" accept=".pdf,application/pdf" style="display:none">
           <div class="dz-box" id="dzBox">
             <div class="dz-inner" id="dzInner">
@@ -356,12 +366,17 @@
           <div class="form-group"><label>Nbr sites</label><input type="text" id="v_nbr_sites"></div>
           <div class="form-group"><label>Commercial OHM</label><input type="text" id="v_commercial_ohm"></div>
           <div class="form-group"><label>Date signature</label><input type="date" id="v_date_signature"></div>
+          <div class="form-group" id="fg_puissance" style="display:none;"><label>Puissance (kVA)</label><input type="text" id="v_puissance_kva"></div>
+          <div class="form-group" id="fg_activation" style="display:none;"><label>Date activation</label><input type="date" id="v_date_activation"></div>
+          <div class="form-group" id="fg_offre" style="display:none;"><label>Offre</label><input type="text" id="v_offre"></div>
+          <div class="form-group" id="fg_code_naf" style="display:none;"><label>Code NAF</label><input type="text" id="v_code_naf"></div>
         </div>
 
         <!-- Alerte cohérence raison sociale -->
         <div id="ohmCoherenceAlert" style="display:none;margin:12px 0;padding:12px 16px;background:#fef2f2;border:2px solid #ef4444;border-radius:10px;font-size:13px;font-weight:700;color:#991b1b;"></div>
 
-        <!-- Enrichissement OHM -->
+        <!-- Enrichissement OHM classique -->
+        <div id="classiqueBloc">
         <h4 style="color:#7c3aed;margin:16px 0 12px;">🔗 Enrichissement OHM (copier-coller)</h4>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
           <div>
@@ -392,6 +407,22 @@
           </div>
           <div id="ohm_comm_details" style="display:none;margin-top:6px;font-size:10px;color:#6b7280;"></div>
         </div>
+
+        </div><!-- fin classiqueBloc -->
+
+        <!-- Zone SOHO (masquée par défaut) -->
+        <div id="sohoBloc" style="display:none;margin-bottom:16px;">
+          <h4 style="color:#7c3aed;margin:0 0 12px;">🔗 Back-office SOHO</h4>
+          <textarea id="soho_bloc" rows="10" placeholder="Coller ici le bloc de souscription depuis pro-souscription.ohm-energie.com..." style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:11px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+            <button onclick="sohoParseBloc()" style="padding:5px 12px;background:#7c3aed;color:white;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Analyser</button>
+            <span id="soho_status" style="font-size:11px;color:#6b7280;"></span>
+          </div>
+          <div id="soho_details" style="display:none;margin-top:6px;font-size:10px;color:#6b7280;"></div>
+          <div id="soho_commission" style="display:none;margin-top:8px;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:700;"></div>
+        </div>
+
+        </div><!-- fin tunnelContent -->
 
         <h4 style="color:#7c3aed;margin:16px 0 12px;">💶 Commissions</h4>
         <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;">
@@ -1498,6 +1529,10 @@ async function ajouterVente() {
     nbr_sites: document.getElementById('v_nbr_sites')?.value || '',
     commercial_ohm: document.getElementById('v_commercial_ohm')?.value || '',
     date_signature: document.getElementById('v_date_signature')?.value || '',
+    puissance_kva: document.getElementById('v_puissance_kva')?.value || '',
+    date_activation: document.getElementById('v_date_activation')?.value || '',
+    offre: document.getElementById('v_offre')?.value || '',
+    code_naf: document.getElementById('v_code_naf')?.value || '',
     statut_paiement: document.getElementById('v_statut_p').value,
     date_paiement_1: document.getElementById('v_date_p1')?.value || '',
     date_paiement_2: document.getElementById('v_date_p2')?.value || ''
@@ -2904,8 +2939,13 @@ async function aafUpload(files){
     var d = await r.json();
     if(!r.ok || !d.success) throw new Error(d.error||'Erreur');
     _aafData = d;
-    document.getElementById('aafDropInner').innerHTML = '<div style="font-size:20px;">✅</div><div style="font-size:13px;color:#16a34a;">'+file.name+' — '+d.nb_lignes_aaf+' lignes analysées</div>';
-    aafRender(d);
+    if(d.format === 'soho'){
+      document.getElementById('aafDropInner').innerHTML = '<div style="font-size:20px;">✅</div><div style="font-size:13px;color:#16a34a;">'+file.name+' — AAF SOHO, '+d.nb_contrats_aaf+' contrats</div>';
+      aafRenderSoho(d);
+    } else {
+      document.getElementById('aafDropInner').innerHTML = '<div style="font-size:20px;">✅</div><div style="font-size:13px;color:#16a34a;">'+file.name+' — '+(d.nb_lignes_aaf||0)+' lignes analysées</div>';
+      aafRender(d);
+    }
   } catch(e){
     document.getElementById('aafDropInner').innerHTML = '<div style="color:#ef4444;font-weight:700;">'+e.message+'</div><div style="font-size:11px;color:#9ca3af;margin-top:4px;">Cliquez pour réessayer</div>';
   }
@@ -3009,6 +3049,70 @@ function aafRender(d){
   } else { oDiv.style.display='none'; }
 }
 
+function aafRenderSoho(d){
+  document.getElementById('aafResults').style.display = 'block';
+  // Masquer les blocs classiques
+  ['aafManquants','aafAVerifier','aafEcarts','aafOk','aafPrimes'].forEach(function(id){
+    document.getElementById(id).style.display = 'none';
+  });
+
+  // Fiabilité
+  var fb = document.getElementById('aafFiabilite');
+  fb.style.display = 'block'; fb.style.background = '#ede9fe'; fb.style.color = '#1e1b4b';
+  fb.textContent = 'Format AAF SOHO détecté — contrôle global (pas de rapprochement ligne par ligne).';
+
+  // Synthèse
+  var sy = document.getElementById('aafSynthese');
+  sy.style.display = 'block';
+  var html = '<strong>AAF SOHO</strong> : ' + d.nb_contrats_aaf + ' contrats';
+  if(d.facture){
+    html += ', <strong>' + _aafFmt(d.facture.ht) + ' HT</strong> / ' + _aafFmt(d.facture.ttc) + ' TTC';
+    html += '<br>Type de paiement : <strong>' + d.facture.type_paiement + '</strong>';
+  }
+  html += '<br>Mon Sheet : ' + d.mes_soho.length + ' contrat(s) SOHO, total attendu <strong>' + _aafFmt(d.total_attendu) + '</strong>';
+  if(d.ecart !== null){
+    var ecartColor = Math.abs(d.ecart) > 1 ? '#991b1b' : '#166534';
+    html += '<br>Écart : <strong style="color:'+ecartColor+';">' + _aafFmt(d.ecart) + '</strong>';
+  }
+  sy.innerHTML = html;
+
+  // Alerte soldé
+  var dDiv = document.getElementById('aafDecomms');
+  if(d.solde_alert && d.solde_alert.length){
+    dDiv.style.display = 'block';
+    document.getElementById('aafDecommsCount').textContent = '(' + d.solde_alert.length + ')';
+    dDiv.querySelector('h4').innerHTML = '⚠ Contrats soldés mais encore en 50-50 <span>' + document.getElementById('aafDecommsCount').textContent + '</span>';
+    document.getElementById('aafDecommsList').innerHTML = d.solde_alert.map(function(s){
+      return '<div style="padding:4px 0;border-bottom:1px solid #fecaca;">' + s + '</div>';
+    }).join('');
+  } else { dDiv.style.display = 'none'; }
+
+  // Détail des contrats AAF
+  var oDiv = document.getElementById('aafOk');
+  if(d.contrats_aaf.length){
+    oDiv.style.display = 'block';
+    document.getElementById('aafOkCount').textContent = '(' + d.contrats_aaf.length + ')';
+    oDiv.querySelector('h4').textContent = '📋 Détail des contrats AAF (' + d.contrats_aaf.length + ')';
+    document.getElementById('aafOkList').style.display = 'block';
+    document.getElementById('aafOkList').innerHTML = d.contrats_aaf.map(function(c){
+      return '<div style="padding:3px 0;border-bottom:1px solid #e5e7eb;"><strong>' + c.ref_vente + '</strong> — ' + c.societe + ' · ' + c.productcode + ' · signé ' + c.date_signature + ' · activé ' + (c.date_activation||'—') + ' · statut ' + c.statut + '</div>';
+    }).join('');
+  }
+
+  // Mes lignes SOHO
+  if(d.mes_soho.length){
+    var mDiv = document.getElementById('aafManquants');
+    mDiv.style.display = 'block';
+    mDiv.style.background = '#f0fdf4'; mDiv.style.borderColor = '#86efac';
+    document.getElementById('aafManquantsCount').textContent = '(' + d.mes_soho.length + ')';
+    mDiv.querySelector('h4').innerHTML = '📋 Mes contrats SOHO sur la période <span>' + document.getElementById('aafManquantsCount').textContent + '</span>';
+    mDiv.querySelector('h4').style.color = '#166534';
+    document.getElementById('aafManquantsList').innerHTML = d.mes_soho.map(function(v){
+      return '<div style="padding:4px 0;border-bottom:1px solid #bbf7d0;">' + v.ref + ' — ' + v.societe + ' · montant ' + _aafFmt(v.montant) + ' · statut ' + v.statut_paiement + (v.date_p2 ? ' · P2 ' + v.date_p2 : '') + '</div>';
+    }).join('');
+  }
+}
+
 function aafGenererMail(){
   if(!_aafData) return;
   var d = _aafData;
@@ -3070,6 +3174,22 @@ function aafGenererMail(){
 
   document.getElementById('aafMailText').value = lines.join('\n');
   document.getElementById('aafMailWrap').style.display = 'block';
+}
+
+// ===== SÉLECTEUR DE TUNNEL =====
+function onTunnelChange(tunnel){
+  document.getElementById('tunnelContent').style.display = 'block';
+  var isClassique = tunnel === 'classique';
+  // Blocs conditionnels
+  document.getElementById('dzWrap').style.display = isClassique ? 'block' : 'none';
+  document.getElementById('classiqueBloc').style.display = isClassique ? 'block' : 'none';
+  document.getElementById('sohoBloc').style.display = isClassique ? 'none' : 'block';
+  // Champs SOHO
+  ['fg_puissance','fg_activation','fg_offre','fg_code_naf'].forEach(function(id){
+    document.getElementById(id).style.display = isClassique ? 'none' : 'block';
+  });
+  // Pré-remplir FOURNISSEUR
+  document.getElementById('v_fournisseur').value = isClassique ? 'OHM ENERGIE CLASSIQUE' : 'OHM ENERGIE SOHO';
 }
 
 // ===== RETOUR FORMULAIRE VENTE =====
