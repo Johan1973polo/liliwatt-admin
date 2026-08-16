@@ -3231,12 +3231,18 @@ var _sohoCumulCommission = 0;
 var _sohoFilledIds = [];
 
 function _sohoConvertDate(val){
-  if(!val) return val;
-  var m = val.trim().match(/^(\d{4})\/(\d{2})\/(\d{2})/);
-  if(m) return m[1]+'-'+m[2]+'-'+m[3];
-  m = val.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(!val) return null;
+  val = val.trim();
+  // Aucun(e), N/A, vide -> null
+  if(!val || /^aucun\(?e?\)?$/i.test(val) || /^n\/a$/i.test(val)) return null;
+  // AAAA/MM/JJ HH:MM:SS ou AAAA/MM/JJ ou AAAA/M/J
+  var m = val.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if(m) return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+  // JJ/MM/AAAA
+  m = val.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if(m) return m[3]+'-'+m[2]+'-'+m[1];
-  return val;
+  // Format inconnu -> null
+  return null;
 }
 
 function sohoParseBloc(){
@@ -3270,7 +3276,7 @@ function sohoParseBloc(){
     if(val && /^aucun\(?e?\)?$/i.test(val)) val = null;
     if(lb.mapped){
       var id = normMap[lb.norm];
-      if((id === 'v_date_signature' || id === 'v_date_activation') && val) val = _sohoConvertDate(val);
+      if((id === 'v_date_signature' || id === '_date_switch' || id === '_date_debut') && val) val = _sohoConvertDate(val);
       if(id === '_siret' && val){
         var digits = val.replace(/\D/g,'');
         champs['v_siren'] = digits.substring(0,9);
