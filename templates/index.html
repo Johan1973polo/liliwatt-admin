@@ -1686,6 +1686,23 @@ async function loadVentes() {
     (d.anomalies_marge||[]).forEach(function(a){
       anomalies.push('<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>' + a.ref + '</strong> — ' + a.societe + ' : marge stockée ' + a.stockee.toFixed(2) + ' € ≠ calculée ' + a.calculee.toFixed(2) + ' € (écart ' + (a.stockee - a.calculee).toFixed(2) + ' €)</div>');
     });
+    // Anomalies SOHO : DATE_P2 incohérente avec DATE_ACTIVATION + 1
+    (_toutesVentes || []).forEach(function(v){
+      if((v.fournisseur||'').toUpperCase() !== 'OHM ENERGIE SOHO') return;
+      var da = v.date_activation; var p2 = v.date_p2;
+      if(!da || !p2 || da.length < 7) return;
+      var y = parseInt(da.substring(0,4)), m = parseInt(da.substring(5,7));
+      m++; if(m>12){m=1;y++;}
+      var attendu = y+'-'+String(m).padStart(2,'0');
+      if(p2 !== attendu){
+        anomalies.push('<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>' + v.ref + '</strong> — ' + (v.societe||'') + ' : ligne SOHO, DATE_P2=' + p2 + ' mais DATE_ACTIVATION=' + da + ' → attendu ' + attendu + '</div>');
+      }
+      // Commission SOHO > MONTANT
+      var mt = _pf(v.montant_ht); var cv = v.comm_vendeur; var cr = v.comm_referent;
+      if(mt > 0 && (cv + cr) > mt){
+        anomalies.push('<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>' + v.ref + '</strong> — ' + (v.societe||'') + ' : commissions versées ' + (cv+cr).toFixed(2) + ' € > MONTANT ' + mt.toFixed(2) + ' €</div>');
+      }
+    });
     var aw = document.getElementById('ventesAnomalies');
     if (anomalies.length) {
       aw.style.display = 'block';
@@ -3176,6 +3193,186 @@ function aafGenererMail(){
   document.getElementById('aafMailWrap').style.display = 'block';
 }
 
+// ===== PARSEUR SOHO =====
+
+var _SOHO_FIELD_MAP = {
+  'ref contrat':'v_ref_vente', 'ref client':'v_ref_client',
+  'raison sociale':'_raison_sociale', 'siret':'_siret',
+  'code naf':'v_code_naf', 'score':'v_score', 'offre':'v_offre',
+  'puissance/ classe':'v_puissance_kva', 'puissance classe':'v_puissance_kva',
+  'point de livraison':'v_pdl', 'adresse de consommation':'v_adresse',
+  'energie':'_type_energie', 'date de signature':'v_date_signature',
+  'date de switch':'v_date_activation', 'statut global':'_statut_global'
+};
+var _SOHO_IGNORED = ['tel','contact','mail','rum','vendu par','partenaire',
+  'option verte','etape en cours','mensualite','premier paiement',
+  'date de creation','date de debut','date de finalisation','contrat eld',
+  'type de contrat','ref unique mandat'];
+
+var _SOHO_GRILLE_BASE = {1:{3:30,6:50,9:100,12:125,15:160,18:180,24:210,30:270,36:300},2:{3:45,6:90,9:140,12:190,15:260,18:310,24:380,30:470,36:550},3:{3:70,6:160,9:210,12:280,15:350,18:450,24:510,30:650,36:780}};
+var _SOHO_GRILLE_HPHC = {1:{6:50,9:130,12:180,15:220,18:250,24:260,30:360,36:450},2:{6:90,9:180,12:280,15:370,18:430,24:480,30:650,36:800},3:{6:160,9:270,12:380,15:480,18:590,24:700,30:900,36:1100}};
+
+var _sohoCumulCommission = 0;
+var _sohoFilledIds = [];
+
+function _sohoConvertDate(val){
+  if(!val) return val;
+  var m = val.trim().match(/^(\d{4})\/(\d{2})\/(\d{2})/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m = val.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(m) return m[3]+'-'+m[2]+'-'+m[1];
+  return val;
+}
+
+function sohoParseBloc(){
+  var text = document.getElementById('soho_bloc').value.trim();
+  var status = document.getElementById('soho_status');
+  var details = document.getElementById('soho_details');
+  var commDiv = document.getElementById('soho_commission');
+  if(!text){ status.textContent = 'Rien à analyser.'; return; }
+
+  // Parse par libellés (même logique que _ohmParseBlock)
+  var lines = text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l;});
+  var normMap = {}; Object.keys(_SOHO_FIELD_MAP).forEach(function(k){ normMap[_ohmNorm(k)] = _SOHO_FIELD_MAP[k]; });
+  var normIgnored = _SOHO_IGNORED.map(_ohmNorm);
+  var allKnown = new Set(Object.keys(normMap).concat(normIgnored));
+
+  var labelIdx = [];
+  lines.forEach(function(line, i){
+    var n = _ohmNorm(line);
+    if(allKnown.has(n) || n in normMap){
+      labelIdx.push({i:i, norm:n, mapped: n in normMap});
+    } else if(normIgnored.some(function(ig){ return n.startsWith(ig); })){
+      labelIdx.push({i:i, norm:n, mapped: false});
+    }
+  });
+
+  var champs = {}, ignores = [];
+  labelIdx.forEach(function(lb, pos){
+    var nextI = pos+1 < labelIdx.length ? labelIdx[pos+1].i : lines.length;
+    var valLines = lines.slice(lb.i+1, nextI);
+    var val = valLines.length ? valLines.join(' ').trim() : null;
+    if(val && /^aucun\(?e?\)?$/i.test(val)) val = null;
+    if(lb.mapped){
+      var id = normMap[lb.norm];
+      if((id === 'v_date_signature' || id === 'v_date_activation') && val) val = _sohoConvertDate(val);
+      if(id === '_siret' && val){
+        var digits = val.replace(/\D/g,'');
+        champs['v_siren'] = digits.substring(0,9);
+        champs['_siret'] = val;
+      } else {
+        champs[id] = val;
+      }
+    } else {
+      ignores.push(lines[lb.i]);
+    }
+  });
+
+  // Détection brouillon
+  if((champs['_statut_global'] && champs['_statut_global'].toLowerCase().indexOf('brouillon') >= 0) || champs['v_offre'] === null || champs['v_offre'] === undefined){
+    status.textContent = '⚠ Souscription en brouillon (non effective) — aucune donnée reprise.';
+    status.style.color = '#991b1b';
+    details.style.display = 'none';
+    commDiv.style.display = 'none';
+    return;
+  }
+
+  // Pré-remplir les champs
+  var filled = 0;
+  var fieldIds = ['v_ref_vente','v_ref_client','v_code_naf','v_score','v_offre',
+    'v_puissance_kva','v_pdl','v_adresse','v_date_signature','v_date_activation','v_siren'];
+  fieldIds.forEach(function(id){
+    var val = champs[id];
+    if(!val) return;
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.value = val;
+    if(!el.value && val) return;
+    el.classList.add('dz-prefilled');
+    var off = function(){ el.classList.remove('dz-prefilled'); el.removeEventListener('input',off); el.removeEventListener('change',off); };
+    el.addEventListener('input',off); el.addEventListener('change',off);
+    if(_sohoFilledIds.indexOf(id) < 0) _sohoFilledIds.push(id);
+    filled++;
+  });
+
+  // Type énergie
+  if(champs['_type_energie']){
+    var te = champs['_type_energie'].toLowerCase();
+    if(te.indexOf('gaz') >= 0){
+      var r = document.querySelector('input[name="v_type"][value="Gaz"]'); if(r) r.checked = true;
+    } else {
+      var r = document.querySelector('input[name="v_type"][value="Électricité"]'); if(r) r.checked = true;
+    }
+  }
+
+  // Cohérence raison sociale
+  if(champs['_raison_sociale']){
+    var soc = (document.getElementById('v_societe').value||'').trim();
+    if(soc && _ohmNorm(soc) !== _ohmNorm(champs['_raison_sociale'])){
+      var alertDiv = document.getElementById('ohmCoherenceAlert');
+      alertDiv.innerHTML = '⚠ Le bloc concerne <strong>«\u00a0' + champs['_raison_sociale'] + '\u00a0»</strong> mais le formulaire indique <strong>«\u00a0' + soc + '\u00a0»</strong>';
+      alertDiv.style.display = 'block';
+    }
+  }
+
+  // Commission théorique
+  var offre = champs['v_offre'] || '';
+  var kva = parseInt((champs['v_puissance_kva']||'').replace(/\D/g,'')) || 0;
+  var dureeM = offre.match(/(\d)\s*ans?/i);
+  var duree = dureeM ? parseInt(dureeM[1]) : 0;
+  var isHphc = /hphc|4\s*cadrans/i.test(offre);
+  var commission = null;
+  if(duree && kva){
+    var grille = isHphc ? _SOHO_GRILLE_HPHC : _SOHO_GRILLE_BASE;
+    if(grille[duree] && grille[duree][kva]) commission = grille[duree][kva];
+  }
+
+  if(commission !== null){
+    _sohoCumulCommission += commission;
+    var montantSheet = parseFloat(document.getElementById('v_montant')?.value || '0') || 0;
+    var commHtml = 'Commission théorique : <strong>' + commission + ' EUR</strong>';
+    commHtml += ' (cumul sites : <strong>' + _sohoCumulCommission + ' EUR</strong>)';
+    if(montantSheet > 0){
+      var ecart = Math.round((_sohoCumulCommission - montantSheet)*100)/100;
+      if(Math.abs(ecart) > 1){
+        commHtml += '<br><span style="color:#991b1b;">⚠ MONTANT saisi : ' + montantSheet.toFixed(2) + ' EUR — écart ' + (ecart>0?'+':'') + ecart.toFixed(2) + ' EUR</span>';
+        commDiv.style.background = '#fef2f2'; commDiv.style.color = '#991b1b';
+      } else {
+        commHtml += '<br><span style="color:#166534;">✓ MONTANT concordant</span>';
+        commDiv.style.background = '#f0fdf4'; commDiv.style.color = '#166534';
+      }
+    } else {
+      commDiv.style.background = '#ede9fe'; commDiv.style.color = '#1e1b4b';
+    }
+    commDiv.innerHTML = commHtml;
+    commDiv.style.display = 'block';
+  }
+
+  // Dates de paiement SOHO : P1 = mois suivant signature, P2 = mois suivant activation
+  if(champs['v_date_signature']){
+    var ds = champs['v_date_signature']; // AAAA-MM-JJ
+    var y1 = parseInt(ds.substring(0,4)), m1 = parseInt(ds.substring(5,7));
+    m1++; if(m1>12){m1=1;y1++;}
+    document.getElementById('v_date_p1').value = y1+'-'+String(m1).padStart(2,'0');
+  }
+  if(champs['v_date_activation']){
+    var da = champs['v_date_activation'];
+    var y2 = parseInt(da.substring(0,4)), m2 = parseInt(da.substring(5,7));
+    m2++; if(m2>12){m2=1;y2++;}
+    document.getElementById('v_date_p2').value = y2+'-'+String(m2).padStart(2,'0');
+    document.getElementById('v_dates_p').style.display = 'grid';
+    document.getElementById('v_statut_p').value = '50-50';
+  }
+
+  status.textContent = filled + ' champ(s) reconnus' + (commission ? ', commission ' + commission + ' EUR' : '');
+  status.style.color = '#16a34a';
+
+  var html = '';
+  if(ignores.length) html += '<div>Ignorés : ' + ignores.join(', ') + '</div>';
+  details.innerHTML = html;
+  details.style.display = html ? 'block' : 'none';
+}
+
 // ===== SÉLECTEUR DE TUNNEL =====
 function onTunnelChange(tunnel){
   document.getElementById('tunnelContent').style.display = 'block';
@@ -3204,6 +3401,15 @@ function venteRetour(){
   ['ohm_bloc_gen','ohm_bloc_cli','ohm_bloc_comm'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
   ['ohm_gen_status','ohm_cli_status','ohm_comm_status'].forEach(function(id){ var el=document.getElementById(id); if(el) el.textContent=''; });
   ['ohm_gen_details','ohm_cli_details','ohm_comm_details','ohmCoherenceAlert'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.style.display='none'; el.innerHTML=''; } });
+  // Nettoyer SOHO
+  _sohoFilledIds.forEach(function(id){ var el=document.getElementById(id); if(el){el.value='';el.classList.remove('dz-prefilled');} });
+  _sohoFilledIds=[]; _sohoCumulCommission=0;
+  var sb=document.getElementById('soho_bloc'); if(sb) sb.value='';
+  var ss=document.getElementById('soho_status'); if(ss) ss.textContent='';
+  ['soho_details','soho_commission'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
+  // Réinitialiser tunnel
+  document.querySelectorAll('input[name="v_tunnel"]').forEach(function(r){r.checked=false;});
+  var tc=document.getElementById('tunnelContent'); if(tc) tc.style.display='none';
   document.getElementById('venteForm').style.display = 'none';
 }
 
