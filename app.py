@@ -2060,6 +2060,135 @@ def extraire_contrat():
     })
 
 
+# ===== RECHERCHE MEC =====
+
+@app.route('/api/mec/chercher')
+@login_required
+def mec_chercher():
+    """Cherche des MEC dans l'onglet SUIVI COMMISSIONS ANNONCÉE par PDL ou nom."""
+    import unicodedata, re
+
+    pdl_query = request.args.get('pdl', '').strip()
+    societe_query = request.args.get('societe', '').strip()
+    vendeur_query = request.args.get('vendeur', '').strip()
+
+    if not pdl_query and not societe_query:
+        return jsonify({'success': False, 'error': 'Paramètre pdl ou societe requis'}), 400
+
+    def _norm_pdl(s):
+        return re.sub(r'[^0-9]', '', str(s or ''))
+
+    _FORMES_JURIDIQUES = {'sci', 'sarl', 'sas', 'sasu', 'eurl', 'scea', 'earl', 'snc', 'scm', 'selarl'}
+
+    def _norm_name(s):
+        s = unicodedata.normalize('NFD', str(s))
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        return re.sub(r'[^a-z0-9 ]', '', s.lower()).strip()
+
+    def _strip_juridique(s):
+        """Retire les formes juridiques d'un nom normalisé."""
+        words = s.split()
+        filtered = [w for w in words if w not in _FORMES_JURIDIQUES]
+        return ' '.join(filtered).strip()
+
+    def _names_match(a, b):
+        """Compare deux noms après retrait des formes juridiques."""
+        a = _strip_juridique(a)
+        b = _strip_juridique(b)
+        if not a or not b:
+            return False
+        shorter = a if len(a) <= len(b) else b
+        longer = b if len(a) <= len(b) else a
+        if len(shorter) >= 6:
+            return shorter in longer
+        # < 6 chars : correspondance de mots entiers
+        shorter_words = set(shorter.split())
+        longer_words = set(longer.split())
+        return bool(shorter_words & longer_words) and shorter_words <= longer_words
+
+    gc = get_sheets_client()
+    if not gc:
+        return jsonify({'success': False, 'error': 'Google Sheets non configuré'}), 500
+
+    ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).worksheet('SUIVI COMMISSIONS ANNONCÉE')
+    rows = ws.get_all_values()
+
+    def g(row, i):
+        return row[i].strip() if len(row) > i else ''
+
+    # PDL de la requête
+    query_pdls = set()
+    if pdl_query:
+        for part in pdl_query.replace('/', ' ').split():
+            n = _norm_pdl(part)
+            if len(n) >= 10:
+                query_pdls.add(n)
+
+    query_societe_norm = _norm_name(societe_query) if societe_query else ''
+    query_vendeur_words = _norm_name(vendeur_query.split('@')[0].replace('.', ' ')).split() if vendeur_query else []
+
+    resultats = []
+    for row_idx, row in enumerate(rows[1:], start=2):
+        vendeur = g(row, 0)
+        client = g(row, 1)
+        comm_v = g(row, 2)
+        comm_r = g(row, 3)
+        horodatage = g(row, 4)
+        fournisseur = g(row, 5)
+        type_val = g(row, 6)
+        pdl_mec = g(row, 7)
+        siren_mec = g(row, 8)
+        statut = g(row, 10) if len(row) > 10 else ''
+
+        fiabilite = None
+
+        # 1. Correspondance PDL (HAUTE)
+        if query_pdls and pdl_mec:
+            mec_pdls = set()
+            for part in pdl_mec.replace('/', ' ').split():
+                n = _norm_pdl(part)
+                if len(n) >= 10:
+                    mec_pdls.add(n)
+            if query_pdls & mec_pdls:
+                fiabilite = 'HAUTE'
+
+        # 2. Correspondance nom (BASSE) — formes juridiques retirées, seuil 6 chars
+        if not fiabilite and query_societe_norm and client:
+            client_norm = _norm_name(client)
+            if _names_match(query_societe_norm, client_norm):
+                # Filtre vendeur si précisé
+                if query_vendeur_words:
+                    vendeur_norm = _norm_name(vendeur)
+                    if not all(w in vendeur_norm for w in query_vendeur_words):
+                        continue
+                fiabilite = 'BASSE'
+
+        if fiabilite:
+            resultats.append({
+                'row_idx': row_idx,
+                'vendeur': vendeur,
+                'client': client,
+                'comm_vendeur': comm_v,
+                'comm_referent': comm_r,
+                'horodatage': horodatage,
+                'fournisseur': fournisseur,
+                'type': type_val,
+                'pdl': pdl_mec,
+                'siren': siren_mec,
+                'statut': statut,
+                'fiabilite': fiabilite,
+            })
+
+    # Tri : vendeur correspondant en tête, autres marqués
+    if query_vendeur_words:
+        for r in resultats:
+            v_norm = _norm_name(r['vendeur'])
+            r['vendeur_match'] = all(w in v_norm for w in query_vendeur_words)
+        resultats.sort(key=lambda r: (0 if r.get('vendeur_match') else 1))
+
+    return jsonify({'success': True, 'resultats': resultats, 'nb': len(resultats)})
+
+
 # ===== REPRISE — RAPPROCHEMENT =====
 
 @app.route('/api/reprise/rapprocher', methods=['POST'])
