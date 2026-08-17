@@ -2650,6 +2650,8 @@ def analyser_aaf():
     import openpyxl, io as _io, unicodedata, re
     from collections import defaultdict
 
+    tunnel = request.form.get('tunnel', 'middle').lower()  # 'middle' ou 'soho'
+
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'Aucun fichier reçu'}), 400
     f = request.files['file']
@@ -2854,9 +2856,19 @@ def analyser_aaf():
         return row[i].strip() if len(row) > i else ''
 
     mes_ventes = []
+    exclues_autre_tunnel = []
     if periode_prod:
         for row in rows[1:]:
             if g(row, 5) != periode_prod:
+                continue
+            fournisseur_row = g(row, 10).upper()
+            is_soho_row = fournisseur_row == 'OHM ENERGIE SOHO'
+            # Filtre tunnel
+            if tunnel == 'middle' and is_soho_row:
+                exclues_autre_tunnel.append({'ref': g(row, 0), 'societe': g(row, 2), 'montant': parse_float(g(row, 11)), 'fournisseur': g(row, 10)})
+                continue
+            if tunnel == 'soho' and not is_soho_row:
+                exclues_autre_tunnel.append({'ref': g(row, 0), 'societe': g(row, 2), 'montant': parse_float(g(row, 11)), 'fournisseur': g(row, 10)})
                 continue
             montant = parse_float(g(row, 11))
             statut = g(row, 15)
@@ -2985,6 +2997,7 @@ def analyser_aaf():
         'aaf_mois': aaf_mois,
         'aaf_mois_source': aaf_mois_source,
         'periode_prod': periode_prod,
+        'tunnel': tunnel,
         'nb_lignes_aaf': len(aaf_lignes),
         'nb_haute': nb_haute,
         'nb_total_rapproches': len(rapproches),
@@ -2995,6 +3008,7 @@ def analyser_aaf():
             'du': total_du,
             'verse': total_verse_commissions,
             'manque': round(total_du - total_verse_commissions, 2),
+            'exclues_autre_tunnel': exclues_autre_tunnel,
         },
         'facture': facture,
         'has_part2': has_part2_col,
