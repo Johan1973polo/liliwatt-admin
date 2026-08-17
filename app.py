@@ -2656,9 +2656,21 @@ def analyser_aaf():
         return _analyser_aaf_soho(wb, request, get_sheets_client, SUIVI_VENTES_SHEET_ID, parse_float)
 
     # ── Format classique ──
-    # Déduire le mois depuis le nom de la feuille
-    m_match = re.search(r'(\d{2})-(\d{4})', sheet_name)
-    aaf_mois = f'{m_match.group(2)}-{m_match.group(1)}' if m_match else None
+    # Déduire le mois : 1) nom du FICHIER (prioritaire), 2) feuille (fallback)
+    aaf_mois = None
+    aaf_mois_source = None
+    fname = f.filename or ''
+    m_match = re.search(r'(\d{2})-(\d{4})', fname)
+    if m_match:
+        aaf_mois = f'{m_match.group(2)}-{m_match.group(1)}'
+        aaf_mois_source = 'fichier'
+    if not aaf_mois:
+        m_match = re.search(r'(\d{2})-(\d{4})', sheet_name)
+        if m_match:
+            aaf_mois = f'{m_match.group(2)}-{m_match.group(1)}'
+            aaf_mois_source = 'feuille'
+    if not aaf_mois:
+        return jsonify({'success': False, 'error': 'Impossible de déduire le mois depuis le fichier ou la feuille. Renommez le fichier au format AAF-MM-AAAA.'}), 422
 
     # ── Détecter les colonnes par en-tête (ligne 3) ──
     row3 = [str(c.value or '').strip() for c in ws[3]]
@@ -2719,7 +2731,7 @@ def analyser_aaf():
         if facture:
             break
 
-    # ── Extraire les données ──
+    # ── Extraire les données (arrêt à "Total général") ──
     aaf_lignes = []
     total_gen = {'part1': 0, 'part2': 0, 'decomm': 0, 'total': 0}
     for row in ws.iter_rows(min_row=4, max_row=ws.max_row, values_only=True):
@@ -2732,7 +2744,7 @@ def analyser_aaf():
             total_gen['part2'] = _pf(vals[col_p2] if col_p2 is not None and col_p2 < len(vals) else None)
             total_gen['decomm'] = _pf(vals[col_dec] if col_dec is not None and col_dec < len(vals) else None)
             total_gen['total'] = _pf(vals[col_tot] if col_tot is not None and col_tot < len(vals) else None)
-            continue
+            break  # STOP — ne pas lire au-delà
         p1 = _pf(vals[col_p1] if col_p1 is not None and col_p1 < len(vals) else None)
         p2 = _pf(vals[col_p2] if col_p2 is not None and col_p2 < len(vals) else None)
         dec = _pf(vals[col_dec] if col_dec is not None and col_dec < len(vals) else None)
@@ -2742,13 +2754,38 @@ def analyser_aaf():
             'societe': str(vals[col_soc] if col_soc is not None and col_soc < len(vals) else '' or '').strip(),
             'commentaire': str(vals[col_com] if col_com is not None and col_com < len(vals) else '' or '').strip(),
             'part1': p1, 'part2': p2, 'decomm': dec, 'total': tot,
-            'verse': round(p1 + p2, 2),  # montant réellement versé
+            'verse': round(p1 + p2, 2),
         })
+
+    # Total versé = part1 + part2
+    total_gen['verse'] = round(total_gen['part1'] + total_gen['part2'], 2)
 
     # ── Classifier ──
     challenges = [l for l in aaf_lignes if 'challenge' in l['commentaire'].lower()]
     decomms = [l for l in aaf_lignes if has_decomm_col and l['decomm'] != 0]
-    commissions = [l for l in aaf_lignes if l not in challenges and l not in decomms]
+    # Séparer P2 pures (part1=0, part2>0, pas challenge, pas renouvellement) = secondes parties de périodes antérieures
+    # Un "renouvellement" est une P2 liée à une P1 du même MIB — elle doit rester dans les commissions
+    refs_avec_p1 = set(l['ref'] for l in aaf_lignes if l['part1'] > 0)
+    p2_anterieures = [l for l in aaf_lignes if l not in challenges and l not in decomms
+                      and l['part1'] == 0 and l['part2'] > 0 and l['ref'] not in refs_avec_p1]
+    commissions = [l for l in aaf_lignes if l not in challenges and l not in decomms and l not in p2_anterieures]
+
+    # ── Regrouper commissions par MIB (somme part1+part2 pour les renouvellements) ──
+    commissions_par_ref = defaultdict(lambda: {'ref': '', 'societe': '', 'commentaire': '', 'part1': 0, 'part2': 0, 'verse': 0, 'lignes': 0})
+    for l in commissions:
+        r = l['ref']
+        commissions_par_ref[r]['ref'] = r
+        commissions_par_ref[r]['societe'] = l['societe']
+        if l['commentaire'] and not commissions_par_ref[r]['commentaire']:
+            commissions_par_ref[r]['commentaire'] = l['commentaire']
+        commissions_par_ref[r]['part1'] = round(commissions_par_ref[r]['part1'] + l['part1'], 2)
+        commissions_par_ref[r]['part2'] = round(commissions_par_ref[r]['part2'] + l['part2'], 2)
+        commissions_par_ref[r]['verse'] = round(commissions_par_ref[r]['verse'] + l['verse'], 2)
+        commissions_par_ref[r]['lignes'] += 1
+    # Marquer les MIB soldés (P1 et P2 dans la même AAF)
+    for r in commissions_par_ref.values():
+        r['solde'] = r['part1'] > 0 and r['part2'] > 0
+    commissions_grouped = list(commissions_par_ref.values())
 
     # Période de production = AAF - 1 mois
     if aaf_mois:
@@ -2760,13 +2797,14 @@ def analyser_aaf():
     else:
         periode_prod = None
 
-    # Regrouper commissions par ref et par société normalisée
+    # Regrouper commissions_grouped par ref et par société normalisée
     aaf_par_ref = {}
     aaf_par_societe = defaultdict(lambda: {'refs': [], 'societe': '', 'total_verse': 0.0, 'lignes': []})
-    for l in commissions:
+    for l in commissions_grouped:
         aaf_par_ref[l['ref']] = l
         sn = _norm(l['societe'])
-        aaf_par_societe[sn]['refs'].append(l['ref'])
+        if l['ref'] not in aaf_par_societe[sn]['refs']:
+            aaf_par_societe[sn]['refs'].append(l['ref'])
         aaf_par_societe[sn]['societe'] = l['societe']
         aaf_par_societe[sn]['total_verse'] = round(aaf_par_societe[sn]['total_verse'] + l['verse'], 2)
         aaf_par_societe[sn]['lignes'].append(l)
@@ -2831,12 +2869,16 @@ def analyser_aaf():
             match = grp
 
         if match:
-            ecart = round(aaf_montant - v['attendu'], 2)
+            # Si le MIB est soldé (P1+P2 dans la même AAF), comparer au montant total
+            is_solde = match.get('solde', False) if isinstance(match, dict) else False
+            attendu_compare = v['montant'] if is_solde else v['attendu']
+            ecart = round(aaf_montant - attendu_compare, 2)
+            entry_type = 'SOLDE' if is_solde else ('ECART' if abs(ecart) > 0.02 else 'OK')
             rapproches.append({
-                'type': 'ECART' if abs(ecart) > 0.02 else 'OK',
+                'type': entry_type,
                 'ref': v['ref'], 'ref_vente': v['ref_vente'], 'societe': v['societe'],
-                'attendu': v['attendu'], 'aaf': aaf_montant, 'ecart': ecart,
-                'fiabilite': fiabilite, 'statut': v['statut'],
+                'attendu': attendu_compare, 'aaf': aaf_montant, 'ecart': ecart,
+                'fiabilite': fiabilite, 'statut': v['statut'], 'solde': is_solde,
             })
         else:
             manquants.append({
@@ -2902,15 +2944,29 @@ def analyser_aaf():
 
     ecarts = [r for r in rapproches if r['type'] == 'ECART']
     oks = [r for r in rapproches if r['type'] == 'OK']
+    soldes = [r for r in rapproches if r['type'] == 'SOLDE']
+
+    # Bandeau synthèse : production du mois
+    total_commission = round(sum(v['montant'] for v in mes_ventes), 2)
+    total_du = round(sum(v['attendu'] for v in mes_ventes), 2)
+    total_verse_commissions = round(sum(l['verse'] for l in commissions_grouped), 2)
 
     return jsonify({
         'success': True,
         'aaf_mois': aaf_mois,
+        'aaf_mois_source': aaf_mois_source,
         'periode_prod': periode_prod,
         'nb_lignes_aaf': len(aaf_lignes),
         'nb_haute': nb_haute,
         'nb_total_rapproches': len(rapproches),
         'total_gen': total_gen,
+        'synthese': {
+            'nb_contrats': len(mes_ventes),
+            'commission_totale': total_commission,
+            'du': total_du,
+            'verse': total_verse_commissions,
+            'manque': round(total_du - total_verse_commissions, 2),
+        },
         'facture': facture,
         'has_part2': has_part2_col,
         'has_decomm': has_decomm_col,
@@ -2920,8 +2976,10 @@ def analyser_aaf():
         'ecarts': ecarts,
         'oks': oks,
         'decomms': decomms,
+        'soldes': soldes,
         'challenges': challenges,
         'challenge_total': round(sum(l['verse'] for l in challenges), 2),
+        'p2_anterieures': p2_anterieures,
         'inconnus': inconnus_restants,
         'mes_ventes_count': len(mes_ventes),
     })
