@@ -2176,7 +2176,7 @@ def inviter_candidat_script():
             end_iso = f'{iso_date}T{h_end:02d}:{m:02d}:00+02:00'
 
             crm_resp = requests.post(
-                f'{crm_api_url}/api/calendar/external',
+                f'{crm_api_url}/api/external/calendar-event',
                 headers={'Authorization': f'Bearer {crm_api_token}', 'Content-Type': 'application/json'},
                 json={
                     'referentEmail': 'kevin.moreau@liliwatt.fr',
