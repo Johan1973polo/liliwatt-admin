@@ -1716,6 +1716,27 @@ async function loadVentes() {
         }
       }
     });
+    // Montant possiblement cumulé : deux lignes même société, l'une vaut la somme des deux
+    var socMontants = {};
+    (_toutesVentes || []).forEach(function(v){
+      var s = (v.societe||'').trim(); if(!s) return;
+      if(!socMontants[s]) socMontants[s] = [];
+      socMontants[s].push({ref: v.ref, montant: _pf(v.montant_ht)});
+    });
+    Object.keys(socMontants).forEach(function(soc){
+      var lignes = socMontants[soc];
+      if(lignes.length < 2) return;
+      var total = lignes.reduce(function(a,b){ return a + b.montant; }, 0);
+      lignes.forEach(function(l){
+        if(l.montant > 0 && Math.abs(l.montant - total) < 0.02 && lignes.length >= 2){
+          // Cette ligne porte le total des N lignes de la société
+          var autres = lignes.filter(function(x){ return x.ref !== l.ref && x.montant > 0; });
+          if(autres.length > 0){
+            anomalies.push('<div style="padding:4px 0;border-bottom:1px solid #fecaca;"><strong>' + l.ref + '</strong> — ' + soc + ' : MONTANT ' + l.montant.toFixed(2) + ' € = somme de toutes les lignes — montant possiblement cumulé</div>');
+          }
+        }
+      });
+    });
     var aw = document.getElementById('ventesAnomalies');
     if (anomalies.length) {
       aw.style.display = 'block';
