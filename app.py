@@ -2108,7 +2108,7 @@ def inviter_candidat_script():
         resp = requests.post(
             f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
             headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
-            json={'fromAddress': 'recrutement@liliwatt.fr', 'sender': 'Carole Andria — LILIWATT <recrutement@liliwatt.fr>',
+            json={'fromAddress': 'contact@liliwatt.fr', 'sender': 'Carole Andria — LILIWATT <contact@liliwatt.fr>',
                   'replyTo': 'carole.andria@liliwatt.fr', 'toAddress': email,
                   'subject': f'Invitation session LILIWATT — {date_session} à {heure_session}',
                   'content': mail_html, 'mailFormat': 'html'},
