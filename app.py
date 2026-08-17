@@ -2114,6 +2114,7 @@ def inviter_candidat_script():
                   'content': mail_html, 'mailFormat': 'html'},
             timeout=15
         )
+        print(f'[RECRUTEMENT-CA] Zoho response: status={resp.status_code} body={resp.text[:500]} account_id={account_id} fromAddress=contact@liliwatt.fr')
         if resp.status_code < 300:
             mail_ok = True
             print(f'[RECRUTEMENT-CA] Email envoyé à {email}')
