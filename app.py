@@ -2060,6 +2060,123 @@ def extraire_contrat():
     })
 
 
+# ===== INVITATION RECRUTEMENT (script CA) =====
+
+@app.route('/api/recrutement/inviter-candidat', methods=['POST'])
+@login_required
+def inviter_candidat_script():
+    """Envoie l'invitation au candidat puis crée l'événement dans le CRM."""
+    d = request.get_json()
+    email = d.get('email', '').strip()
+    prenom = d.get('prenom', '').strip()
+    nom = d.get('nom', '').strip()
+    date_session = d.get('date_session', '').strip()
+    heure_session = d.get('heure_session', '').strip()
+    description_crm = d.get('description_crm', '')
+
+    if not email or not date_session or not heure_session:
+        return jsonify({'success': False, 'error': 'Email, date et heure requis'}), 400
+
+    # 1. Envoyer l'email d'invitation (PRIORITAIRE)
+    mail_html = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+<div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
+<h1 style="color:#fff;font-size:28px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
+<p style="color:rgba(255,255,255,.8);font-size:12px;margin:6px 0 0;">Invitation session de présentation</p>
+</div>
+<div style="background:#f5f3ff;padding:32px;border-radius:0 0 12px 12px;">
+<p style="font-size:16px;color:#1e1b4b;">Bonjour <strong>{prenom or 'Monsieur/Madame'}</strong>,</p>
+<p style="color:#374151;line-height:1.7;">Suite à notre échange, nous avons le plaisir de vous inviter à rejoindre notre session de présentation LILIWATT.</p>
+<div style="background:#fff;border-radius:10px;padding:24px;margin:24px 0;border-left:4px solid #7c3aed;">
+<table style="width:100%;font-size:14px;border-collapse:collapse;">
+<tr><td style="padding:8px 0;color:#6b7280;font-weight:700;width:100px;">Date</td><td style="color:#1e1b4b;font-weight:700;">{date_session}</td></tr>
+<tr><td style="padding:8px 0;color:#6b7280;font-weight:700;">Heure</td><td style="color:#1e1b4b;font-weight:700;">{heure_session}</td></tr>
+</table>
+</div>
+<a href="https://meet.google.com/tzv-pgjc-und?authuser=0" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#d946ef);color:#fff;padding:14px 32px;border-radius:50px;text-decoration:none;font-weight:700;font-size:14px;">Rejoindre la session Google Meet</a>
+<p style="color:#374151;margin-top:20px;line-height:1.7;">À très bientôt !</p>
+<p style="color:#6b7280;font-size:13px;">Carole Andria<br>carole.andria@liliwatt.fr</p>
+<hr style="border:1px solid #e9d5ff;margin:24px 0;">
+<p style="font-size:11px;color:#9ca3af;">LILIWATT — LILISTRAT STRATÉGIE SAS — 59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
+</div></div>"""
+
+    mail_ok = False
+    try:
+        token = get_zoho_token()
+        if not token:
+            return jsonify({'success': False, 'error': 'Impossible de se connecter à Zoho Mail'}), 500
+        account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+        resp = requests.post(
+            f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+            headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+            json={'fromAddress': 'carole.andria@liliwatt.fr', 'toAddress': email,
+                  'subject': f'Invitation session LILIWATT — {date_session} à {heure_session}',
+                  'content': mail_html, 'mailFormat': 'html'},
+            timeout=15
+        )
+        if resp.status_code < 300:
+            mail_ok = True
+            print(f'[RECRUTEMENT-CA] Email envoyé à {email}')
+        else:
+            print(f'[RECRUTEMENT-CA] Zoho erreur {resp.status_code}: {resp.text[:200]}')
+            return jsonify({'success': False, 'error': f'Échec envoi email (Zoho {resp.status_code})'}), 500
+    except Exception as e:
+        print(f'[RECRUTEMENT-CA] Erreur email: {e}')
+        return jsonify({'success': False, 'error': f'Erreur envoi email : {e}'}), 500
+
+    # 2. Créer l'événement dans le CRM (secondaire — échec non bloquant)
+    crm_ok = False
+    crm_error = None
+    crm_api_url = os.environ.get('CRM_API_URL', '')
+    crm_api_token = os.environ.get('CRM_API_TOKEN', '')
+    if crm_api_url and crm_api_token:
+        try:
+            # Construire les dates ISO
+            # date_session = "20/08/2026", heure_session = "14:00"
+            import re as _re_inv
+            dm = _re_inv.match(r'(\d{2})/(\d{2})/(\d{4})', date_session)
+            if dm:
+                iso_date = f'{dm.group(3)}-{dm.group(2)}-{dm.group(1)}'
+            else:
+                iso_date = date_session  # fallback
+            start_iso = f'{iso_date}T{heure_session}:00+02:00'
+            # Durée par défaut : 1 heure
+            h, m = int(heure_session.split(':')[0]), int(heure_session.split(':')[1])
+            h_end = h + 1
+            end_iso = f'{iso_date}T{h_end:02d}:{m:02d}:00+02:00'
+
+            crm_resp = requests.post(
+                f'{crm_api_url}/api/calendar/external',
+                headers={'Authorization': f'Bearer {crm_api_token}', 'Content-Type': 'application/json'},
+                json={
+                    'referentEmail': 'kevin.moreau@liliwatt.fr',
+                    'title': f'Visio recrutement — {prenom} {nom}'.strip(),
+                    'description': description_crm or f'Candidat : {prenom} {nom}\nEmail : {email}',
+                    'startTime': start_iso,
+                    'endTime': end_iso,
+                },
+                timeout=15
+            )
+            crm_data = crm_resp.json()
+            if crm_data.get('success'):
+                crm_ok = True
+                print(f'[RECRUTEMENT-CA] CRM event créé: {crm_data.get("eventId")}')
+            else:
+                crm_error = crm_data.get('error', 'Erreur inconnue')
+                print(f'[RECRUTEMENT-CA] CRM erreur: {crm_error}')
+        except Exception as e:
+            crm_error = str(e)
+            print(f'[RECRUTEMENT-CA] CRM exception: {e}')
+    else:
+        crm_error = 'CRM_API_URL ou CRM_API_TOKEN non configuré'
+
+    return jsonify({
+        'success': True,
+        'mail_ok': mail_ok,
+        'crm_ok': crm_ok,
+        'crm_error': crm_error,
+    })
+
+
 # ===== RECHERCHE MEC =====
 
 @app.route('/api/mec/chercher')

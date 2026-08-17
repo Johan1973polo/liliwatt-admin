@@ -3593,7 +3593,22 @@ var _scrPhases = [
     +'Très bien. Je vous envoie donc l\'invitation immédiatement.<br><br>'
     +'Comme je vous l\'indiquais, il s\'agit d\'une présentation à l\'issue de laquelle vous pourrez poser toutes vos questions et disposer de l\'ensemble des informations nécessaires avant d\'envisager une éventuelle collaboration.<br><br>'
     +'C\'est donc bien noté pour le '+_hl+'[JOUR]'+_hlEnd+' à '+_hl+'[HEURE]'+_hlEnd+'.<br><br>'
-    +'Je vous remercie pour cet échange et je vous souhaite une excellente fin de journée. À bientôt.'},
+    +'Je vous remercie pour cet échange et je vous souhaite une excellente fin de journée. À bientôt.'
+    +'<div style="margin-top:24px;padding:20px;background:#ede9fe;border-radius:12px;border:2px solid #7c3aed;">'
+    +'<h4 style="margin:0 0 12px;color:#7c3aed;font-size:14px;">📧 Programmer la visio</h4>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:14px;">'
+    +'<div><label style="font-size:11px;font-weight:700;color:#374151;">Prénom</label><input type="text" id="scrPrenom" style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;box-sizing:border-box;"></div>'
+    +'<div><label style="font-size:11px;font-weight:700;color:#374151;">Nom</label><input type="text" id="scrNom" style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;box-sizing:border-box;"></div>'
+    +'<div><label style="font-size:11px;font-weight:700;color:#374151;">Email (confirmé à l\'oral)</label><input type="email" id="scrEmail" style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;box-sizing:border-box;"></div>'
+    +'<div><label style="font-size:11px;font-weight:700;color:#374151;">Téléphone</label><input type="tel" id="scrTel" style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;box-sizing:border-box;"></div>'
+    +'<div><label style="font-size:11px;font-weight:700;color:#374151;">Date</label><input type="date" id="scrDate" style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;box-sizing:border-box;"></div>'
+    +'<div><label style="font-size:11px;font-weight:700;color:#374151;">Heure</label><input type="time" id="scrHeure" value="14:00" style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;box-sizing:border-box;"></div>'
+    +'</div>'
+    +'<div style="margin-top:6px;"><label style="font-size:11px;font-weight:700;color:#374151;">Dernière expérience</label><input type="text" id="scrExp" placeholder="Ex: Commercial B2B 5 ans" style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;box-sizing:border-box;"></div>'
+    +'<button onclick="scrPrepareInvite()" id="scrBtnInvite" style="margin-top:12px;padding:10px 24px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;width:100%;">📧 Programmer la visio</button>'
+    +'<div id="scrInviteRecap" style="display:none;margin-top:12px;padding:14px;background:#fff;border-radius:10px;border:2px solid #7c3aed;font-size:14px;"></div>'
+    +'<div id="scrInviteResult" style="margin-top:8px;font-size:13px;"></div>'
+    +'</div>'},
 ];
 
 var _scrObjections = [
@@ -3636,6 +3651,66 @@ function scrShowObj(idx){
   document.getElementById('scrObjReponse').style.display = 'none';
   document.getElementById('scrBtnNext').textContent = '↩ Retour au script';
   _scrInObjection = true;
+}
+
+function scrPrepareInvite(){
+  var email = document.getElementById('scrEmail')?.value?.trim();
+  var prenom = document.getElementById('scrPrenom')?.value?.trim();
+  var nom = document.getElementById('scrNom')?.value?.trim();
+  var dateEl = document.getElementById('scrDate');
+  var heureEl = document.getElementById('scrHeure');
+  if(!email){ alert('Saisissez l\'email du candidat'); return; }
+  if(!dateEl || !dateEl.value){ alert('Choisissez une date'); return; }
+  if(!heureEl || !heureEl.value){ alert('Choisissez une heure'); return; }
+  // Formater la date en JJ/MM/AAAA
+  var parts = dateEl.value.split('-'); // AAAA-MM-JJ
+  var dateFR = parts[2]+'/'+parts[1]+'/'+parts[0];
+  var recap = document.getElementById('scrInviteRecap');
+  recap.style.display = 'block';
+  recap.innerHTML = '<strong>Récapitulatif :</strong><br>'
+    +'Envoyer l\'invitation à <strong>'+email+'</strong><br>'
+    +'pour le <strong>'+dateFR+'</strong> à <strong>'+heureEl.value+'</strong><br>'
+    +(prenom||nom ? 'Candidat : '+prenom+' '+nom+'<br>' : '')
+    +'<div style="margin-top:10px;display:flex;gap:8px;">'
+    +'<button onclick="scrConfirmInvite()" id="scrBtnConfirm" style="padding:10px 20px;background:#16a34a;color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;">✓ Confirmer l\'envoi</button>'
+    +'<button onclick="document.getElementById(\'scrInviteRecap\').style.display=\'none\'" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Annuler</button>'
+    +'</div>';
+}
+
+async function scrConfirmInvite(){
+  var btn = document.getElementById('scrBtnConfirm');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Envoi...'; }
+  var email = document.getElementById('scrEmail').value.trim();
+  var prenom = document.getElementById('scrPrenom')?.value?.trim() || '';
+  var nom = document.getElementById('scrNom')?.value?.trim() || '';
+  var dateEl = document.getElementById('scrDate');
+  var heureEl = document.getElementById('scrHeure');
+  var tel = document.getElementById('scrTel')?.value?.trim() || '';
+  var exp = document.getElementById('scrExp')?.value?.trim() || '';
+  var parts = dateEl.value.split('-');
+  var dateFR = parts[2]+'/'+parts[1]+'/'+parts[0];
+  var desc = 'Candidat : '+prenom+' '+nom+'\nTéléphone : '+tel+'\nEmail : '+email+'\nDernière expérience : '+exp+'\nAppel réalisé par : Carole Andria le '+new Date().toLocaleDateString('fr-FR');
+  try {
+    var r = await fetch('/api/recrutement/inviter-candidat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email:email, prenom:prenom, nom:nom, date_session:dateFR, heure_session:heureEl.value, description_crm:desc})
+    });
+    var d = await r.json();
+    var res = document.getElementById('scrInviteResult');
+    if(d.success){
+      var msg = '✅ Invitation envoyée à '+email;
+      if(d.crm_ok) msg += ' · RDV créé dans l\'agenda';
+      else if(d.crm_error) msg += ' · ⚠ Agenda CRM : '+d.crm_error;
+      res.innerHTML = '<span style="color:#16a34a;font-weight:700;">'+msg+'</span>';
+      document.getElementById('scrInviteRecap').style.display = 'none';
+    } else {
+      res.innerHTML = '<span style="color:#ef4444;font-weight:700;">❌ '+d.error+'</span>';
+    }
+  } catch(e){
+    document.getElementById('scrInviteResult').innerHTML = '<span style="color:#ef4444;">❌ Erreur réseau : '+e.message+'</span>';
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '✓ Confirmer l\'envoi'; }
+  }
 }
 
 // Init au chargement
