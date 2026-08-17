@@ -113,6 +113,35 @@ def get_zoho_token():
     return r.json().get('access_token')
 
 
+_zoho_account_id_cache = None
+
+def _zoho_get_account_id(token=None):
+    """Résout l'account_id Zoho. Variable d'env en priorité, API en fallback."""
+    global _zoho_account_id_cache
+    # 1. Variable d'environnement
+    env_id = os.environ.get('ZOHO_ACCOUNT_ID', '').strip()
+    if env_id and env_id.isdigit() and len(env_id) > 5:
+        return env_id
+    # 2. Cache
+    if _zoho_account_id_cache:
+        return _zoho_account_id_cache
+    # 3. API Zoho
+    if not token:
+        token = get_zoho_token()
+    if token:
+        try:
+            r = requests.get('https://mail.zoho.eu/api/accounts',
+                             headers={'Authorization': f'Zoho-oauthtoken {token}'}, timeout=10)
+            data = r.json().get('data', [])
+            if data:
+                _zoho_account_id_cache = str(data[0].get('accountId', ''))
+                print(f'[ZOHO] Account ID résolu via API: {_zoho_account_id_cache}')
+                return _zoho_account_id_cache
+        except Exception as e:
+            print(f'[ZOHO] Erreur résolution account_id: {e}')
+    # 4. Fallback hardcodé
+    return '8439060000000002002'
+
 
 def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', referent_email='', token_rgpd='', role='vendeur'):
     """Enregistre le commercial dans Google Sheets"""
@@ -2104,7 +2133,8 @@ def inviter_candidat_script():
         token = get_zoho_token()
         if not token:
             return jsonify({'success': False, 'error': 'Impossible de se connecter à Zoho Mail'}), 500
-        account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+        account_id = _zoho_get_account_id(token)
+        print(f'[RECRUTEMENT-CA] Envoi via account_id={account_id} to={email}')
         resp = requests.post(
             f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
             headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
