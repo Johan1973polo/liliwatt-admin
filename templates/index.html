@@ -424,6 +424,13 @@
 
         </div><!-- fin tunnelContent -->
 
+        <!-- Bloc MEC rattachées -->
+        <div id="mecBloc" style="display:none;margin-bottom:16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:14px;">
+          <h4 style="margin:0 0 8px;color:#166534;font-size:13px;">📋 Commissions annoncées</h4>
+          <div id="mecList" style="font-size:12px;"></div>
+          <div id="mecTotal" style="margin-top:8px;font-size:12px;font-weight:700;color:#166534;"></div>
+        </div>
+
         <h4 style="color:#7c3aed;margin:16px 0 12px;">💶 Commissions</h4>
         <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;">
           <div class="form-group"><label>Montant HT (€)</label><input type="number" step="0.01" id="v_montant" oninput="calcMarge()"></div>
@@ -1542,7 +1549,27 @@ async function ajouterVente() {
   const d = await r.json();
   const res = document.getElementById('venteResult');
   if (d.success) {
-    res.innerHTML = '<p style="color:#22c55e;font-weight:600;">✅ Vente ' + d.ref + ' enregistrée</p>';
+    var msg = '✅ Vente ' + d.ref + ' enregistrée';
+    // Rattacher les MEC cochées
+    if (_mecCheckedRows && _mecCheckedRows.length > 0 && (body.ref_vente || d.ref)) {
+      try {
+        var refVente = body.ref_vente || d.ref;
+        var mecR = await fetch('/api/mec/rattacher', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({rows: _mecCheckedRows, ref_vente: refVente})
+        });
+        var mecD = await mecR.json();
+        if (mecD.success) {
+          msg += ' · ' + mecD.nb + ' MEC rattachée' + (mecD.nb > 1 ? 's' : '');
+        } else {
+          msg += ' · ⚠ MEC non rattachées : ' + mecD.error;
+        }
+      } catch (e) {
+        msg += ' · ⚠ MEC non rattachées (erreur réseau)';
+      }
+    }
+    res.innerHTML = '<p style="color:#22c55e;font-weight:600;">' + msg + '</p>';
     setTimeout(loadVentes, 1000);
   } else {
     res.innerHTML = '<p style="color:#ef4444;">❌ ' + d.error + '</p>';
@@ -3448,12 +3475,117 @@ function sohoParseBloc(){
   }
 
   status.textContent = filled + ' champ(s) reconnus' + (commission ? ', commission ' + commission + ' EUR' : '');
+  // Rechercher les MEC rattachables
+  if(typeof mecChercher === 'function') mecChercher();
   status.style.color = '#16a34a';
 
   var html = '';
   if(ignores.length) html += '<div>Ignorés : ' + ignores.join(', ') + '</div>';
   details.innerHTML = html;
   details.style.display = html ? 'block' : 'none';
+}
+
+// ===== RATTACHEMENT MEC =====
+
+var _mecResultats = [];
+var _mecCheckedRows = []; // row_idx des lignes cochées
+
+async function mecChercher() {
+  var pdl = (document.getElementById('v_pdl')?.value || '').trim();
+  var societe = (document.getElementById('v_societe')?.value || '').trim();
+  var vendeur = (document.getElementById('v_vendeur')?.value || '').trim();
+  if (!pdl && !societe) return;
+
+  var params = new URLSearchParams();
+  if (pdl) params.set('pdl', pdl);
+  if (societe) params.set('societe', societe);
+  if (vendeur) params.set('vendeur', vendeur);
+
+  try {
+    var r = await fetch('/api/mec/chercher?' + params);
+    var d = await r.json();
+    if (!d.success || !d.resultats || d.resultats.length === 0) {
+      document.getElementById('mecBloc').style.display = 'none';
+      return;
+    }
+    _mecResultats = d.resultats;
+    mecRender();
+  } catch (e) {
+    console.error('[MEC] Erreur recherche:', e);
+  }
+}
+
+function mecRender() {
+  var bloc = document.getElementById('mecBloc');
+  var list = document.getElementById('mecList');
+  if (!_mecResultats.length) { bloc.style.display = 'none'; return; }
+  bloc.style.display = 'block';
+
+  list.innerHTML = _mecResultats.map(function(r, i) {
+    var isSigne = r.statut === 'Signé';
+    var checked = !isSigne && r.fiabilite === 'HAUTE' ? 'checked' : '';
+    var disabled = isSigne ? 'disabled' : '';
+    var style = isSigne ? 'opacity:0.5;' : (r.fiabilite === 'HAUTE' ? 'background:#f0fdf4;' : 'background:#fffbeb;');
+    var badge = r.fiabilite === 'HAUTE' ? '<span style="color:#166534;font-weight:700;font-size:10px;">HAUTE</span>' : '<span style="color:#92400e;font-weight:700;font-size:10px;">BASSE</span>';
+    var signeLabel = isSigne ? ' <span style="color:#6b7280;font-style:italic;">(déjà rattachée)</span>' : '';
+    var vendeurMatch = r.vendeur_match === false ? ' <span style="color:#b45309;font-size:10px;">autre vendeur</span>' : '';
+    return '<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #e5e7eb;cursor:pointer;' + style + '">'
+      + '<input type="checkbox" class="mec-check" data-idx="' + i + '" ' + checked + ' ' + disabled + ' onchange="mecUpdateCommissions()">'
+      + badge + ' <strong>' + r.vendeur + '</strong> | ' + r.client + ' | '
+      + '<span style="color:#7c3aed;">' + (r.comm_vendeur || '0') + '</span> / <span style="color:#2563eb;">' + (r.comm_referent || '0') + '</span>'
+      + ' | <span style="color:#6b7280;font-size:10px;">' + r.horodatage + '</span>'
+      + signeLabel + vendeurMatch
+      + '</label>';
+  }).join('');
+
+  mecUpdateCommissions();
+}
+
+function mecUpdateCommissions() {
+  var checks = document.querySelectorAll('.mec-check:checked');
+  var totalV = 0, totalR = 0, count = 0;
+  var premierVendeur = null;
+  _mecCheckedRows = [];
+
+  checks.forEach(function(cb) {
+    var idx = parseInt(cb.dataset.idx);
+    var r = _mecResultats[idx];
+    if (!r) return;
+    totalV += parseFloat(r.comm_vendeur) || 0;
+    totalR += parseFloat(r.comm_referent) || 0;
+    count++;
+    _mecCheckedRows.push(r.row_idx);
+    if (!premierVendeur) premierVendeur = r.vendeur;
+  });
+
+  // Pré-remplir VENDEUR depuis la première MEC cochée
+  if (premierVendeur) {
+    // Chercher l'email du vendeur dans le select v_vendeur
+    var vendeurSel = document.getElementById('v_vendeur');
+    var opts = vendeurSel ? vendeurSel.options : [];
+    for (var i = 0; i < opts.length; i++) {
+      var nomComplet = opts[i].textContent.toLowerCase().replace(/\s+/g, ' ').trim();
+      var mecNom = premierVendeur.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (nomComplet === mecNom || nomComplet.indexOf(mecNom) >= 0 || mecNom.indexOf(nomComplet) >= 0) {
+        vendeurSel.value = opts[i].value;
+        vendeurSel.classList.add('dz-prefilled');
+        break;
+      }
+    }
+  }
+
+  // Pré-remplir COMM_VENDEUR et COMM_REFERENT
+  if (count > 0) {
+    var cv = document.getElementById('v_comm_v');
+    var cr = document.getElementById('v_comm_r');
+    if (cv) { cv.value = totalV.toFixed(2); cv.classList.add('dz-prefilled'); }
+    if (cr) { cr.value = totalR.toFixed(2); cr.classList.add('dz-prefilled'); }
+    if (typeof calcMarge === 'function') calcMarge();
+  }
+
+  document.getElementById('mecTotal').textContent = count > 0
+    ? count + ' MEC sélectionnée' + (count > 1 ? 's' : '') + ' — ' + totalV.toFixed(2) + ' € vendeur, ' + totalR.toFixed(2) + ' € référent'
+    : '';
 }
 
 // ===== SÉLECTEUR DE TUNNEL =====
@@ -3490,6 +3622,9 @@ function venteRetour(){
   var sb=document.getElementById('soho_bloc'); if(sb) sb.value='';
   var ss=document.getElementById('soho_status'); if(ss) ss.textContent='';
   ['soho_details','soho_commission'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
+  // Nettoyer MEC
+  _mecResultats=[]; _mecCheckedRows=[];
+  document.getElementById('mecBloc').style.display='none';
   // Réinitialiser tunnel
   document.querySelectorAll('input[name="v_tunnel"]').forEach(function(r){r.checked=false;});
   var tc=document.getElementById('tunnelContent'); if(tc) tc.style.display='none';
@@ -4056,6 +4191,8 @@ document.addEventListener('drop',     function(e){ e.preventDefault(); });
       wDiv.innerHTML = '⚠️ <strong>Avertissements :</strong><br>' + allW.map(function(w){ return '• ' + _esc(w); }).join('<br>');
     } else { wDiv.style.display = 'none'; }
     dzSetState('done', {filename:filename, count:filled, warnings:allW});
+    // Rechercher les MEC rattachables
+    if(typeof mecChercher === 'function') mecChercher();
     if(typeof calcMarge==='function') calcMarge();
   }
 

@@ -2189,6 +2189,35 @@ def mec_chercher():
     return jsonify({'success': True, 'resultats': resultats, 'nb': len(resultats)})
 
 
+# ===== RATTACHEMENT MEC =====
+
+@app.route('/api/mec/rattacher', methods=['POST'])
+@login_required
+def mec_rattacher():
+    """Écrit REF_VENTE et Signé sur les lignes MEC cochées."""
+    d = request.get_json()
+    rows = d.get('rows', [])
+    ref_vente = d.get('ref_vente', '')
+    if not rows or not ref_vente:
+        return jsonify({'success': False, 'error': 'Paramètres manquants'}), 400
+
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Google Sheets non configuré'}), 500
+        ws = gc.open_by_key(SUIVI_VENTES_SHEET_ID).worksheet('SUIVI COMMISSIONS ANNONCÉE')
+
+        cells = []
+        for row_idx in rows:
+            cells.append({'range': f'J{row_idx}', 'values': [[ref_vente]]})
+            cells.append({'range': f'K{row_idx}', 'values': [['Signé']]})
+
+        ws.batch_update(cells, value_input_option='RAW')
+        return jsonify({'success': True, 'nb': len(rows)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ===== REPRISE — RAPPROCHEMENT =====
 
 @app.route('/api/reprise/rapprocher', methods=['POST'])
