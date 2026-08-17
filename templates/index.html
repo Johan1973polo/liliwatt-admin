@@ -97,6 +97,7 @@
     <div class="tab" onclick="showTab('echeancier')">📊 Échéancier</div>
     <div class="tab" onclick="showTab('aaf')">🔍 Vérif. AAF</div>
     <div class="tab" onclick="showTab('reprise')">🔄 Reprise</div>
+    <div class="tab" onclick="showTab('scriptrecrutement')">📞 Recrutement CA</div>
 </div>
 
 <div class="container">
@@ -949,6 +950,29 @@
     </div>
   </div>
 
+  <!-- Script de recrutement CA -->
+  <div class="panel" id="tab-scriptrecrutement">
+    <div style="display:flex;gap:20px;max-width:1200px;margin:0 auto;padding:24px 0;">
+      <!-- Colonne gauche : script -->
+      <div style="flex:7;min-width:0;">
+        <h2 style="color:#1e1b4b;font-size:20px;font-weight:800;margin:0 0 16px;">📞 Script d'appel — Recrutement</h2>
+        <div id="scrPhaseIndicator" style="font-size:12px;color:#6b7280;margin-bottom:12px;"></div>
+        <div id="scrContent" style="font-size:18px;line-height:1.8;color:#1e1b4b;min-height:300px;"></div>
+        <div style="display:flex;gap:12px;margin-top:20px;">
+          <button onclick="scrNav(-1)" id="scrBtnPrev" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">← Précédent</button>
+          <button onclick="scrNav(1)" id="scrBtnNext" style="padding:10px 20px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">Suivant →</button>
+        </div>
+      </div>
+      <!-- Colonne droite : objections -->
+      <div style="flex:3;min-width:200px;">
+        <h3 style="color:#1e1b4b;font-size:14px;font-weight:800;margin:0 0 12px;">💬 Objections</h3>
+        <div id="scrObjections" style="display:flex;flex-direction:column;gap:6px;"></div>
+        <div id="scrObjReponse" style="display:none;margin-top:12px;padding:14px;background:#fffbeb;border:1.5px solid #fbbf24;border-radius:10px;font-size:15px;line-height:1.7;color:#1e1b4b;">
+        </div>
+      </div>
+    </div>
+  </div>
+
 <!-- Modal Référent -->
 
 
@@ -969,7 +993,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier','aaf','reprise'];
+    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier','aaf','reprise','scriptrecrutement'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -3520,6 +3544,102 @@ function sohoParseBloc(){
   details.innerHTML = html;
   details.style.display = html ? 'block' : 'none';
 }
+
+// ===== SCRIPT DE RECRUTEMENT =====
+
+var _scrPhase = 0;
+var _scrInObjection = false;
+var _hl = '<span style="background:#fef9c3;padding:2px 6px;border-radius:4px;font-weight:700;">';
+var _hlEnd = '</span>';
+
+var _scrPhases = [
+  {title:'Phase 1 — Accroche', text:
+    'Bonjour, je suis bien avec Monsieur / Madame '+_hl+'[NOM]'+_hlEnd+' ?<br><br>'
+    +'Je me présente, Carole Andria de la société LILIWATT.<br><br>'
+    +'Je vous appelle concernant la candidature que vous avez effectuée pour un poste de commercial indépendant.<br><br>'
+    +'Est-ce que vous avez quelques minutes à m\'accorder ?'},
+  {title:'Phase 2 — Parcours', text:
+    'Très bien. Est-ce que vous êtes actuellement en poste ?<br><br>'
+    +'D\'accord. Et votre dernière expérience professionnelle, c\'était bien en tant que '+_hl+'[POSTE DU CANDIDAT]'+_hlEnd+', c\'est bien cela ?<br><br>'
+    +'Très bien. Est-ce que vous exerciez sous le statut d\'indépendant à cette époque ?<br><br>'
+    +'D\'accord. Et qu\'est-ce qui vous a amené à arrêter cette activité ?'},
+  {title:'Phase 3 — La mission', text:
+    'Très bien, je comprends. Dans ce cas, je vais vous présenter la mission à pourvoir et vous allez me dire si celle-ci peut correspondre à vos critères de recherche.<br><br>'
+    +'Nous sommes une société de courtage en énergie.<br><br>'
+    +'Notre activité est principalement destinée aux professionnels et a pour objectif de les accompagner dans le suivi et la gestion de leurs contrats de gaz et d\'électricité.<br><br>'
+    +'Concrètement, cela consiste à renseigner les entreprises sur l\'état du marché, à vérifier si leur offre actuelle est adaptée à leur profil de consommation et à leur soumettre des comparatifs.<br><br>'
+    +'Ces comparatifs présentent les tarifs auxquels elles peuvent prétendre auprès des différents fournisseurs, dans le but d\'optimiser leurs coûts énergétiques.<br><br>'
+    +'Lorsqu\'un client renégocie son contrat par notre intermédiaire, cela déclenche une commission.<br><br>'
+    +'Votre rôle consiste donc à prospecter une clientèle professionnelle, à échanger avec les dirigeants sur leurs contrats d\'énergie et à identifier les entreprises pour lesquelles une étude peut être réalisée.<br><br>'
+    +'L\'activité peut être exercée entièrement en télétravail, principalement par téléphone et par email.<br><br>'
+    +'Vous pouvez également choisir de faire de la prospection sur le terrain ou de travailler de manière hybride, selon votre organisation et vos méthodes commerciales.<br><br>'
+    +'Est-ce que ce fonctionnement pourrait correspondre à ce que vous recherchez actuellement ?'},
+  {title:'Phase 4 — Expérience B2B', text:
+    'Très bien. Est-ce que vous avez déjà eu l\'occasion de travailler avec une clientèle professionnelle ou de faire de la prospection en B2B ?<br><br>'
+    +'D\'accord. Même si vous ne connaissez pas encore le secteur de l\'énergie, ce n\'est pas un frein.<br><br>'
+    +'Nous recherchons avant tout des personnes qui disposent d\'une fibre commerciale, qui sont autonomes et qui sont capables de développer une relation avec une clientèle professionnelle.'},
+  {title:'Phase 5 — La visio', text:
+    'Afin de faciliter l\'intégration de nos nouveaux collaborateurs, nous organisons des réunions de présentation en visioconférence.<br><br>'
+    +'Ces réunions durent environ 45 minutes à une heure.<br><br>'
+    +'Elles permettent de découvrir plus précisément le positionnement de LILIWATT, le fonctionnement de la mission ainsi que les différents outils mis à votre disposition.<br><br>'
+    +'Nous présentons également plusieurs cas concrets afin que vous puissiez avoir une vision beaucoup plus claire et transparente de l\'activité au quotidien.<br><br>'
+    +'Un espace d\'échange est prévu à la fin de la présentation afin que vous puissiez poser toutes vos questions.'},
+  {title:'Phase 6 — Closing', text:
+    'Écoutez, votre profil me paraît intéressant.<br><br>'
+    +'Je souhaiterais donc vous proposer de participer à l\'une de nos prochaines réunions de présentation.<br><br>'
+    +'J\'ai un créneau disponible le '+_hl+'[JOUR]'+_hlEnd+' à '+_hl+'[HEURE]'+_hlEnd+'.<br>Est-ce que cela pourrait vous convenir ?<br><br>'
+    +'Parfait. Je vais vous envoyer un email contenant le lien de connexion à la visioconférence.<br><br>'
+    +'Je vais simplement vérifier votre adresse email avec vous afin d\'être certaine qu\'elle soit correcte. J\'ai : '+_hl+'[ADRESSE EMAIL]'+_hlEnd+'. C\'est bien cela ?<br><br>'
+    +'Très bien. Je vous envoie donc l\'invitation immédiatement.<br><br>'
+    +'Comme je vous l\'indiquais, il s\'agit d\'une présentation à l\'issue de laquelle vous pourrez poser toutes vos questions et disposer de l\'ensemble des informations nécessaires avant d\'envisager une éventuelle collaboration.<br><br>'
+    +'C\'est donc bien noté pour le '+_hl+'[JOUR]'+_hlEnd+' à '+_hl+'[HEURE]'+_hlEnd+'.<br><br>'
+    +'Je vous remercie pour cet échange et je vous souhaite une excellente fin de journée. À bientôt.'},
+];
+
+var _scrObjections = [
+  {label:'Comment je suis rémunéré ?', text:'La rémunération se fait à la commission, entre 30 et 50 % selon le dossier. Le montant dépend du type de contrat, du volume et de la durée. Justement, pendant la réunion nous présentons plusieurs cas concrets, avec des dossiers réels et les commissions correspondantes.'},
+  {label:'Il faut créer une société ?', text:'Oui, l\'activité s\'exerce en tant qu\'indépendant, il faut donc avoir un numéro SIREN. Si vous n\'en avez pas encore, ce n\'est pas un obstacle : la création est simple et nous vous accompagnons dans la démarche.'},
+  {label:'C\'est du démarchage ?', text:'Non. Nous accompagnons des entreprises sur des contrats d\'énergie qu\'elles ont déjà. Nous ne vendons rien de nouveau : nous vérifions si leur tarif actuel est adapté à leur consommation et nous leur soumettons un comparatif. C\'est un travail de conseil.'},
+  {label:'Combien de temps ça prend ?', text:'Vous êtes indépendant, vous organisez votre activité comme vous le souhaitez. Certains y consacrent leurs journées, d\'autres en font un complément d\'activité.'},
+  {label:'Je vais réfléchir', text:'Bien sûr, et c\'est exactement l\'objet de cette réunion : vous n\'engagez rien en y participant, vous repartez simplement avec toutes les informations pour décider. J\'ai un créneau le '+_hl+'[JOUR]'+_hlEnd+' à '+_hl+'[HEURE]'+_hlEnd+', est-ce que cela vous conviendrait ?'},
+  {label:'Je ne me souviens pas d\'avoir postulé', text:'C\'est possible, les candidatures nous parviennent parfois via des plateformes d\'emploi. Votre profil correspond à ce que nous recherchons, je vous propose de vous présenter la mission en deux minutes et vous me direz si cela vous intéresse.'},
+  {label:'Envoyez-moi un email d\'abord', text:'Je vais le faire, mais l\'email seul ne remplace pas la présentation : c\'est en visio que nous montrons les cas concrets et que vous pouvez poser vos questions. Je vous propose de bloquer un créneau, vous pourrez toujours annuler si vous changez d\'avis.'},
+  {label:'Autre question / je ne sais pas quoi répondre', text:'C\'est une très bonne question, et je préfère ne pas vous répondre approximativement.<br><br>Monsieur Moreau, qui est en charge des opérations, anime lui-même la réunion de présentation — c\'est exactement le genre de point qu\'il détaillera bien mieux que moi, avec des exemples concrets.<br><br>Notez votre question, vous pourrez la lui poser directement pendant l\'échange prévu à la fin de la présentation.<br><br>J\'ai un créneau le '+_hl+'[JOUR]'+_hlEnd+' à '+_hl+'[HEURE]'+_hlEnd+', est-ce que cela vous conviendrait ?', highlight:true},
+  {label:'Il insiste sur sa question', text:'Je comprends, mais je ne veux pas vous donner une réponse imprécise sur un point important. Monsieur Moreau vous répondra précisément en visio, et vous aurez tous les éléments pour décider ensuite.<br><br>On bloque le créneau du '+_hl+'[JOUR]'+_hlEnd+' à '+_hl+'[HEURE]'+_hlEnd+' ?'},
+];
+
+function scrRender(){
+  var p = _scrPhases[_scrPhase];
+  document.getElementById('scrPhaseIndicator').textContent = p.title + ' — Phase ' + (_scrPhase+1) + ' / ' + _scrPhases.length;
+  document.getElementById('scrContent').innerHTML = p.text;
+  document.getElementById('scrBtnPrev').style.display = _scrPhase > 0 ? 'inline-block' : 'none';
+  document.getElementById('scrBtnNext').textContent = _scrPhase < _scrPhases.length-1 ? 'Suivant →' : '✓ Fin';
+  document.getElementById('scrObjReponse').style.display = 'none';
+  _scrInObjection = false;
+
+  // Objections
+  document.getElementById('scrObjections').innerHTML = _scrObjections.map(function(o,i){
+    var bg = o.highlight ? 'background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;' : 'background:#f3f4f6;border:1px solid #e5e7eb;color:#374151;';
+    return '<button onclick="scrShowObj('+i+')" style="padding:8px 12px;'+bg+'border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;">'+o.label+'</button>';
+  }).join('');
+}
+
+function scrNav(dir){
+  if(_scrInObjection){ scrRender(); return; }
+  _scrPhase = Math.max(0, Math.min(_scrPhases.length-1, _scrPhase + dir));
+  scrRender();
+}
+
+function scrShowObj(idx){
+  var o = _scrObjections[idx];
+  document.getElementById('scrContent').innerHTML = '<div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Objection : '+o.label+'</div>' + o.text;
+  document.getElementById('scrObjReponse').style.display = 'none';
+  document.getElementById('scrBtnNext').textContent = '↩ Retour au script';
+  _scrInObjection = true;
+}
+
+// Init au chargement
+if(document.getElementById('scrContent')) scrRender();
 
 // ===== RATTACHEMENT MEC =====
 
