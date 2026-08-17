@@ -952,22 +952,44 @@
 
   <!-- Script de recrutement CA -->
   <div class="panel" id="tab-scriptrecrutement">
-    <div style="display:flex;gap:20px;max-width:1200px;margin:0 auto;padding:24px 0;">
-      <!-- Colonne gauche : script -->
-      <div style="flex:7;min-width:0;">
-        <h2 style="color:#1e1b4b;font-size:20px;font-weight:800;margin:0 0 16px;">📞 Script d'appel — Recrutement</h2>
-        <div id="scrPhaseIndicator" style="font-size:12px;color:#6b7280;margin-bottom:12px;"></div>
-        <div id="scrContent" style="font-size:18px;line-height:1.8;color:#1e1b4b;min-height:300px;"></div>
-        <div style="display:flex;gap:12px;margin-top:20px;">
-          <button onclick="scrNav(-1)" id="scrBtnPrev" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">← Précédent</button>
-          <button onclick="scrNav(1)" id="scrBtnNext" style="padding:10px 20px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">Suivant →</button>
+    <div style="max-width:1200px;margin:0 auto;padding:24px 0;">
+      <!-- Zone CV + bouton accès direct -->
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
+        <div id="scrCvDrop" style="flex:1;border:2px dashed #d8b4fe;border-radius:10px;padding:12px 16px;text-align:center;cursor:pointer;background:#faf5ff;font-size:12px;color:#6b7280;" onclick="document.getElementById('scrCvInput').click()">
+          📄 Glissez un CV ici ou cliquez
+          <input type="file" id="scrCvInput" accept=".pdf,.docx,.doc" style="display:none" onchange="scrUploadCv(this.files)">
         </div>
+        <button onclick="_scrPhase=5;scrRender()" style="padding:10px 16px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📧 Aller à l'envoi</button>
       </div>
-      <!-- Colonne droite : objections -->
-      <div style="flex:3;min-width:200px;">
-        <h3 style="color:#1e1b4b;font-size:14px;font-weight:800;margin:0 0 12px;">💬 Objections</h3>
-        <div id="scrObjections" style="display:flex;flex-direction:column;gap:6px;"></div>
-        <div id="scrObjReponse" style="display:none;margin-top:12px;padding:14px;background:#fffbeb;border:1.5px solid #fbbf24;border-radius:10px;font-size:15px;line-height:1.7;color:#1e1b4b;">
+      <!-- Bandeau candidat -->
+      <div id="scrBandeau" style="display:none;margin-bottom:16px;padding:10px 16px;background:#ede9fe;border-radius:10px;font-size:13px;font-weight:600;color:#1e1b4b;"></div>
+      <!-- Alerte Indeed -->
+      <div id="scrIndeedAlert" style="display:none;margin-bottom:12px;padding:10px 16px;background:#fef2f2;border:2px solid #ef4444;border-radius:10px;font-size:13px;color:#991b1b;font-weight:700;">
+        ⚠ Adresse relais Indeed — demandez son adresse personnelle au candidat
+        <input type="email" id="scrEmailOverride" placeholder="Adresse personnelle du candidat" style="display:block;margin-top:8px;width:100%;padding:8px;border:1.5px solid #ef4444;border-radius:8px;font-size:13px;box-sizing:border-box;" oninput="scrCheckEmailOverride()">
+      </div>
+
+      <div style="display:flex;gap:20px;">
+        <!-- Colonne gauche : script -->
+        <div style="flex:7;min-width:0;position:relative;">
+          <h2 style="color:#1e1b4b;font-size:20px;font-weight:800;margin:0 0 16px;">📞 Script d'appel — Recrutement</h2>
+          <div id="scrPhaseIndicator" style="font-size:12px;color:#6b7280;margin-bottom:12px;"></div>
+          <div id="scrContent" style="font-size:18px;line-height:1.8;color:#1e1b4b;min-height:300px;"></div>
+          <div style="display:flex;gap:12px;margin-top:20px;">
+            <button onclick="scrNav(-1)" id="scrBtnPrev" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">← Précédent</button>
+            <button onclick="scrNav(1)" id="scrBtnNext" style="padding:10px 20px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">Suivant →</button>
+          </div>
+          <!-- Overlay objection -->
+          <div id="scrObjOverlay" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.85);z-index:10;border-radius:12px;padding:24px;overflow-y:auto;">
+            <button onclick="scrCloseObj()" style="position:absolute;top:10px;right:14px;background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;">✕</button>
+            <div id="scrObjTitle" style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;"></div>
+            <div id="scrObjText" style="font-size:17px;line-height:1.8;color:#1e1b4b;"></div>
+          </div>
+        </div>
+        <!-- Colonne droite : objections -->
+        <div style="flex:3;min-width:200px;">
+          <h3 style="color:#1e1b4b;font-size:14px;font-weight:800;margin:0 0 12px;">💬 Objections <span style="font-size:10px;color:#9ca3af;font-weight:400;">(1-9 / Échap)</span></h3>
+          <div id="scrObjections" style="display:flex;flex-direction:column;gap:6px;"></div>
         </div>
       </div>
     </div>
@@ -3548,9 +3570,24 @@ function sohoParseBloc(){
 // ===== SCRIPT DE RECRUTEMENT =====
 
 var _scrPhase = 0;
-var _scrInObjection = false;
+var _scrCv = null; // {nom, prenom, email, telephone, poste}
 var _hl = '<span style="background:#fef9c3;padding:2px 6px;border-radius:4px;font-weight:700;">';
 var _hlEnd = '</span>';
+
+function _scrSub(text){
+  // Remplace les placeholders par les données CV si disponibles
+  if(!_scrCv) return text;
+  if(_scrCv.nom) text = text.replace(/\[NOM\]/g, _scrCv.nom);
+  if(_scrCv.email) text = text.replace(/\[ADRESSE EMAIL\]/g, _scrCv.email);
+  if(_scrCv.poste) text = text.replace(/\[POSTE DU CANDIDAT\]/g, _scrCv.poste);
+  return text;
+}
+
+function _scrIsB2B(){
+  if(!_scrCv || !_scrCv.poste) return false;
+  var p = _scrCv.poste.toLowerCase();
+  return /b2b|prospection|clientele professionnelle|grands comptes|business developer|key account|commercial.*entreprise/i.test(p);
+}
 
 var _scrPhases = [
   {title:'Phase 1 — Accroche', text:
@@ -3625,33 +3662,155 @@ var _scrObjections = [
 
 function scrRender(){
   var p = _scrPhases[_scrPhase];
+  var text = p.text;
+  // Phase 2 : adapter selon le CV
+  if(_scrPhase === 1 && _scrCv){
+    if(_scrCv.poste){
+      text = 'Très bien. Est-ce que vous êtes actuellement en poste ?<br><br>'
+        +'D\'accord. Et votre dernière expérience professionnelle, c\'était bien en tant que '+_hl+_scrCv.poste+_hlEnd+', c\'est bien cela ?<br><br>'
+        +'Très bien. Est-ce que vous exerciez sous le statut d\'indépendant à cette époque ?<br><br>'
+        +'D\'accord. Et qu\'est-ce qui vous a amené à arrêter cette activité ?';
+    } else {
+      text = 'Très bien. Est-ce que vous êtes actuellement en poste ?<br><br>'
+        +'D\'accord. Et quelle était votre dernière expérience professionnelle ?<br><br>'
+        +'Très bien. Est-ce que vous exerciez sous le statut d\'indépendant à cette époque ?<br><br>'
+        +'D\'accord. Et qu\'est-ce qui vous a amené à arrêter cette activité ?';
+    }
+  }
+  // Phase 4 : adapter selon B2B
+  if(_scrPhase === 3 && _scrCv && _scrIsB2B()){
+    text = 'Très bien. D\'après votre parcours, vous avez déjà travaillé avec une clientèle professionnelle — c\'est exactement le profil que nous recherchons.<br><br>'
+      +'Le secteur de l\'énergie a ses spécificités, mais votre expérience en '+_hl+_scrCv.poste+_hlEnd+' est un atout majeur pour cette mission.<br><br>'
+      +'Nous recherchons avant tout des personnes qui disposent d\'une fibre commerciale, qui sont autonomes et qui sont capables de développer une relation avec une clientèle professionnelle.';
+  }
+  text = _scrSub(text);
   document.getElementById('scrPhaseIndicator').textContent = p.title + ' — Phase ' + (_scrPhase+1) + ' / ' + _scrPhases.length;
-  document.getElementById('scrContent').innerHTML = p.text;
+  document.getElementById('scrContent').innerHTML = text;
   document.getElementById('scrBtnPrev').style.display = _scrPhase > 0 ? 'inline-block' : 'none';
   document.getElementById('scrBtnNext').textContent = _scrPhase < _scrPhases.length-1 ? 'Suivant →' : '✓ Fin';
-  document.getElementById('scrObjReponse').style.display = 'none';
-  _scrInObjection = false;
-
+  scrCloseObj();
+  // Pré-remplir les champs de la phase 6 avec les données CV
+  if(_scrPhase === 5 && _scrCv){
+    setTimeout(function(){
+      var el;
+      if(_scrCv.prenom && (el=document.getElementById('scrPrenom'))) el.value=_scrCv.prenom;
+      if(_scrCv.nom && (el=document.getElementById('scrNom'))) el.value=_scrCv.nom;
+      if(_scrCv.telephone && (el=document.getElementById('scrTel'))) el.value=_scrCv.telephone;
+      if(_scrCv.poste && (el=document.getElementById('scrExp'))) el.value=_scrCv.poste;
+      // Email : vérifier Indeed
+      if(_scrCv.email){
+        var emailEl = document.getElementById('scrEmail');
+        if(emailEl) emailEl.value = _scrCv.email;
+        scrCheckIndeed(_scrCv.email);
+      }
+    }, 50);
+  }
   // Objections
   document.getElementById('scrObjections').innerHTML = _scrObjections.map(function(o,i){
     var bg = o.highlight ? 'background:#fef2f2;border:1.5px solid #fca5a5;color:#991b1b;' : 'background:#f3f4f6;border:1px solid #e5e7eb;color:#374151;';
-    return '<button onclick="scrShowObj('+i+')" style="padding:8px 12px;'+bg+'border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;">'+o.label+'</button>';
+    return '<button onclick="scrShowObj('+i+')" style="padding:8px 12px;'+bg+'border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;"><span style="color:#9ca3af;font-size:10px;margin-right:4px;">'+(i+1)+'</span> '+o.label+'</button>';
   }).join('');
 }
 
 function scrNav(dir){
-  if(_scrInObjection){ scrRender(); return; }
   _scrPhase = Math.max(0, Math.min(_scrPhases.length-1, _scrPhase + dir));
   scrRender();
 }
 
+// Objections en overlay
 function scrShowObj(idx){
   var o = _scrObjections[idx];
-  document.getElementById('scrContent').innerHTML = '<div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Objection : '+o.label+'</div>' + o.text;
-  document.getElementById('scrObjReponse').style.display = 'none';
-  document.getElementById('scrBtnNext').textContent = '↩ Retour au script';
-  _scrInObjection = true;
+  document.getElementById('scrObjTitle').textContent = 'Objection : ' + o.label;
+  document.getElementById('scrObjText').innerHTML = _scrSub(o.text);
+  document.getElementById('scrObjOverlay').style.display = 'block';
 }
+function scrCloseObj(){
+  document.getElementById('scrObjOverlay').style.display = 'none';
+}
+// Raccourcis clavier
+document.addEventListener('keydown', function(e){
+  if(document.getElementById('tab-scriptrecrutement')?.classList.contains('active')){
+    if(e.key === 'Escape'){ scrCloseObj(); e.preventDefault(); }
+    var n = parseInt(e.key);
+    if(n >= 1 && n <= _scrObjections.length && !e.ctrlKey && !e.metaKey && !e.altKey){
+      var active = document.activeElement;
+      if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
+      scrShowObj(n-1); e.preventDefault();
+    }
+  }
+});
+// Fermer overlay par clic extérieur
+document.addEventListener('click', function(e){
+  var ov = document.getElementById('scrObjOverlay');
+  if(ov && ov.style.display === 'block' && !ov.contains(e.target) && !e.target.closest('[onclick*="scrShowObj"]')){
+    scrCloseObj();
+  }
+});
+
+// Détection Indeed
+function scrCheckIndeed(email){
+  var alert = document.getElementById('scrIndeedAlert');
+  if(/indeed/i.test(email)){
+    alert.style.display = 'block';
+    var btn = document.getElementById('scrBtnInvite');
+    if(btn) btn.disabled = true;
+  } else {
+    alert.style.display = 'none';
+  }
+}
+function scrCheckEmailOverride(){
+  var val = document.getElementById('scrEmailOverride').value.trim();
+  var btn = document.getElementById('scrBtnInvite');
+  if(btn) btn.disabled = !val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+  // Mettre à jour le champ email principal
+  if(val && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)){
+    var el = document.getElementById('scrEmail');
+    if(el) el.value = val;
+  }
+}
+
+// Upload CV
+async function scrUploadCv(files){
+  if(!files || !files.length) return;
+  var file = files[0];
+  document.getElementById('scrCvDrop').innerHTML = '⏳ Extraction en cours...';
+  var fd = new FormData(); fd.append('file', file);
+  try {
+    var r = await fetch('/api/recrutement/upload-cv', {method:'POST', body:fd});
+    var d = await r.json();
+    if(d.success && d.data){
+      _scrCv = {
+        nom: (d.data.nom || '').toUpperCase(),
+        prenom: d.data.prenom || '',
+        email: d.data.email || '',
+        telephone: d.data.telephone || '',
+        poste: d.data.poste || d.data.derniere_experience || '',
+      };
+      // Bandeau
+      var parts = [];
+      if(_scrCv.nom || _scrCv.prenom) parts.push('👤 '+_scrCv.prenom+' '+_scrCv.nom);
+      if(_scrCv.telephone) parts.push('📞 '+_scrCv.telephone);
+      if(_scrCv.email) parts.push('📧 '+_scrCv.email);
+      if(_scrCv.poste) parts.push('💼 '+_scrCv.poste);
+      document.getElementById('scrBandeau').innerHTML = parts.join(' &nbsp;·&nbsp; ');
+      document.getElementById('scrBandeau').style.display = 'block';
+      document.getElementById('scrCvDrop').innerHTML = '✅ '+file.name+' — '+_scrCv.prenom+' '+_scrCv.nom;
+      scrRender();
+    } else {
+      document.getElementById('scrCvDrop').innerHTML = '❌ '+(d.error||'Erreur extraction');
+    }
+  } catch(e){
+    document.getElementById('scrCvDrop').innerHTML = '❌ Erreur réseau';
+  }
+}
+// Drag CV
+(function(){
+  var dz = document.getElementById('scrCvDrop');
+  if(!dz) return;
+  dz.addEventListener('dragover', function(e){ e.preventDefault(); dz.style.borderColor='#7c3aed'; });
+  dz.addEventListener('dragleave', function(){ dz.style.borderColor='#d8b4fe'; });
+  dz.addEventListener('drop', function(e){ e.preventDefault(); dz.style.borderColor='#d8b4fe'; scrUploadCv(e.dataTransfer.files); });
+})();
 
 function scrPrepareInvite(){
   var email = document.getElementById('scrEmail')?.value?.trim();
