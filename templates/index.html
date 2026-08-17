@@ -3774,7 +3774,7 @@ async function scrUploadCv(files){
   if(!files || !files.length) return;
   var file = files[0];
   document.getElementById('scrCvDrop').innerHTML = '⏳ Extraction en cours...';
-  var fd = new FormData(); fd.append('file', file);
+  var fd = new FormData(); fd.append('cv', file);
   try {
     var r = await fetch('/api/recrutement/upload-cv', {method:'POST', body:fd});
     var d = await r.json();

@@ -1169,7 +1169,7 @@ def extract_cv_with_gpt(text):
     resp = client.chat.completions.create(
         model='gpt-4o-mini',
         messages=[
-            {'role': 'system', 'content': 'Extrais ces informations du CV en JSON : nom, prenom, email, telephone, adresse. Réponds UNIQUEMENT en JSON valide.'},
+            {'role': 'system', 'content': 'Extrais ces informations du CV en JSON : nom, prenom, email, telephone, adresse, poste (dernier poste ou titre professionnel). Réponds UNIQUEMENT en JSON valide.'},
             {'role': 'user', 'content': text[:4000]}
         ],
         temperature=0
