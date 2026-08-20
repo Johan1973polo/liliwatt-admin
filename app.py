@@ -2154,49 +2154,65 @@ def inviter_candidat_script():
         print(f'[RECRUTEMENT-CA] Erreur email: {e}')
         return jsonify({'success': False, 'error': f'Erreur envoi email : {e}'}), 500
 
-    # 2. Créer l'événement dans le CRM (secondaire — échec non bloquant)
+    # 2. Créer l'événement dans l'agenda CRM (insertion directe Neon — échec non bloquant)
     crm_ok = False
     crm_error = None
-    crm_api_url = os.environ.get('CRM_API_URL', '')
-    crm_api_token = os.environ.get('CRM_API_TOKEN', '')
-    if crm_api_url and crm_api_token:
+    crm_db_url = os.environ.get('CRM_DATABASE_URL', '')
+    if crm_db_url:
         try:
-            # Construire les dates ISO
-            # date_session = "20/08/2026", heure_session = "14:00"
-            import re as _re_inv
+            import psycopg2, re as _re_inv
+            from datetime import datetime as _dt, timedelta as _td
+            import time as _time_mod
+
+            # Construire les timestamps UTC
             dm = _re_inv.match(r'(\d{2})/(\d{2})/(\d{4})', date_session)
             if dm:
                 iso_date = f'{dm.group(3)}-{dm.group(2)}-{dm.group(1)}'
             else:
-                iso_date = date_session  # fallback
-            start_iso = f'{iso_date}T{heure_session}:00+02:00'
-            # Durée par défaut : 1 heure
-            h, m = int(heure_session.split(':')[0]), int(heure_session.split(':')[1])
-            h_end = h + 1
-            end_iso = f'{iso_date}T{h_end:02d}:{m:02d}:00+02:00'
+                iso_date = date_session
+            # Parser en heure locale (Europe/Paris = UTC+2 en été)
+            local_dt = _dt.fromisoformat(f'{iso_date}T{heure_session}:00')
+            start_utc = local_dt - _td(hours=2)  # approximation été
+            end_utc = start_utc + _td(hours=1)
 
-            crm_resp = requests.post(
-                f'{crm_api_url}/api/external/calendar-event',
-                headers={'Authorization': f'Bearer {crm_api_token}', 'Content-Type': 'application/json'},
-                json={
-                    'referentEmail': 'kevin.moreau@liliwatt.fr',
-                    'title': f'Visio recrutement — {prenom} {nom}'.strip(),
-                    'description': description_crm or f'Candidat : {prenom} {nom}\nEmail : {email}',
-                    'startTime': start_iso,
-                    'endTime': end_iso,
-                },
-                timeout=15
-            )
-            crm_data = crm_resp.json()
-            if crm_data.get('success'):
-                crm_ok = True
-                print(f'[RECRUTEMENT-CA] CRM event créé: {crm_data.get("eventId")}')
+            # Générer un cuid (25 chars commençant par 'c')
+            import random, string
+            _ts = int(_time_mod.time() * 1000)
+            _ts36 = ''
+            _n = _ts
+            while _n > 0:
+                _ts36 = string.ascii_lowercase[_n % 36] if _n % 36 < 26 else str(_n % 36 - 26) + _ts36
+                _n //= 36
+                _ts36 = (string.ascii_lowercase[_n % 26] if _n % 36 < 26 else str(_n % 36 - 26)) + _ts36 if _n > 0 else _ts36
+            cuid = 'c' + hex(int(_time_mod.time() * 1000))[2:] + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+            desc = description_crm or f'Candidat : {prenom} {nom}\nEmail : {email}'
+            title_ev = f'Visio recrutement — {prenom} {nom}'.strip()
+            now_utc = _dt.utcnow()
+
+            conn = psycopg2.connect(crm_db_url)
+            cur = conn.cursor()
+            # Résoudre userId
+            cur.execute('SELECT id FROM "User" WHERE email = %s', ('kevin.moreau@liliwatt.fr',))
+            user_row = cur.fetchone()
+            if not user_row:
+                crm_error = 'Utilisateur kevin.moreau@liliwatt.fr introuvable dans le CRM'
             else:
-                crm_error = crm_data.get('error', 'Erreur inconnue')
-                print(f'[RECRUTEMENT-CA] CRM erreur: {crm_error}')
+                user_id = user_row[0]
+                cur.execute('''
+                    INSERT INTO "CalendarEvent" (id, "userId", title, description, "eventType", color, "startTime", "endTime", "isAllDay", "attendeeIds", "createdAt", "updatedAt")
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (cuid, user_id, title_ev, desc, 'RECRUTEMENT', '#8b5cf6', start_utc, end_utc, False, '[]', now_utc, now_utc))
+                conn.commit()
+                crm_ok = True
+                print(f'[RECRUTEMENT-CA] CRM event inséré: {cuid} — {title_ev}')
+            cur.close()
+            conn.close()
         except Exception as e:
             crm_error = str(e)
             print(f'[RECRUTEMENT-CA] CRM exception: {e}')
+    else:
+        crm_error = 'CRM_DATABASE_URL non configuré'
     else:
         crm_error = 'CRM_API_URL ou CRM_API_TOKEN non configuré'
 
