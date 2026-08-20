@@ -2170,10 +2170,10 @@ def inviter_candidat_script():
                 iso_date = f'{dm.group(3)}-{dm.group(2)}-{dm.group(1)}'
             else:
                 iso_date = date_session
-            # Parser en heure locale (Europe/Paris = UTC+2 en été)
+            # Le CRM stocke l'heure locale Paris telle quelle (timestamp without time zone)
             local_dt = _dt.fromisoformat(f'{iso_date}T{heure_session}:00')
-            start_utc = local_dt - _td(hours=2)  # approximation été
-            end_utc = start_utc + _td(hours=1)
+            start_local = local_dt
+            end_local = start_local + _td(hours=1)
 
             # Générer un cuid (25 chars commençant par 'c')
             import random, string
@@ -2202,7 +2202,7 @@ def inviter_candidat_script():
                 cur.execute('''
                     INSERT INTO "CalendarEvent" (id, "userId", title, description, "eventType", color, "startTime", "endTime", "isAllDay", "attendeeIds", "createdAt", "updatedAt")
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''', (cuid, user_id, title_ev, desc, 'RECRUTEMENT', '#8b5cf6', start_utc, end_utc, False, '[]', now_utc, now_utc))
+                ''', (cuid, user_id, title_ev, desc, 'RECRUTEMENT', '#8b5cf6', start_local, end_local, False, '[]', now_utc, now_utc))
                 conn.commit()
                 crm_ok = True
                 print(f'[RECRUTEMENT-CA] CRM event inséré: {cuid} — {title_ev}')
