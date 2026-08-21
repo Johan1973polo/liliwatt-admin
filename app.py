@@ -4167,6 +4167,220 @@ def changer_referent():
     return jsonify({'success': True, 'results': results})
 
 
+@app.route('/api/corriger-email', methods=['POST'])
+@login_required
+def corriger_email():
+    """Corrige l'adresse email d'un vendeur dans Sheet, CRM et courtier.
+    Ne touche PAS à la boîte Zoho — signale si l'adresse Zoho réelle diffère."""
+    data = request.get_json()
+    ancien_email = (data.get('ancien_email') or '').strip().lower()
+    nouveau_email = (data.get('nouveau_email') or '').strip().lower()
+
+    if not ancien_email or not nouveau_email:
+        return jsonify({'success': False, 'error': 'ancien_email et nouveau_email requis'}), 400
+
+    if ancien_email == nouveau_email:
+        return jsonify({'success': False, 'error': 'Les deux adresses sont identiques'}), 400
+
+    if not re.match(r'^[a-z0-9]+(\.[a-z0-9]+)*@liliwatt\.fr$', nouveau_email):
+        return jsonify({
+            'success': False,
+            'error': f"L'email « {nouveau_email} » ne respecte pas le format attendu (a-z, chiffres, points, @liliwatt.fr)."
+        }), 400
+
+    # ── 1. Sheet : trouver la ligne, vérifier l'unicité, mettre à jour ──
+    try:
+        gc = get_sheets_client()
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+    except Exception as e:
+        print(f"❌ Erreur Sheet corriger-email: {e}")
+        return jsonify({'success': False, 'error': f'Impossible de lire le Sheet: {e}'}), 500
+
+    sheet_row_index = None
+    sheet_row_data = None
+    for i, row in enumerate(rows):
+        if len(row) <= 3:
+            continue
+        cell_email = row[3].strip().lower()
+        if cell_email == nouveau_email:
+            occupant = f"{row[1]} {row[0]}" if len(row) > 1 else '?'
+            return jsonify({
+                'success': False,
+                'error': f"L'adresse {nouveau_email} est déjà utilisée par {occupant}."
+            }), 409
+        if cell_email == ancien_email and sheet_row_index is None:
+            sheet_row_index = i
+            sheet_row_data = row
+
+    if sheet_row_index is None:
+        return jsonify({
+            'success': False,
+            'error': f"Aucun vendeur avec l'email {ancien_email} dans le Sheet."
+        }), 404
+
+    errors = []
+    results = {}
+
+    try:
+        ws.update_cell(sheet_row_index + 1, 4, nouveau_email)
+        print(f'✅ Sheet: email {ancien_email} → {nouveau_email} (ligne {sheet_row_index + 1})')
+        results['sheet'] = 'ok'
+    except Exception as e:
+        print(f"❌ Erreur Sheet update corriger-email: {e}")
+        return jsonify({
+            'success': False,
+            'error': f"Écriture Sheet impossible : {e}. Aucune autre étape n'a été exécutée."
+        }), 500
+
+    # Extraire les données du vendeur pour la signature
+    nom = sheet_row_data[0] if len(sheet_row_data) > 0 else ''
+    prenom = sheet_row_data[1] if len(sheet_row_data) > 1 else ''
+    poste = sheet_row_data[4] if len(sheet_row_data) > 4 else ''
+    telephone = sheet_row_data[13].strip() if len(sheet_row_data) > 13 else ''
+
+    # ── 2. Zoho : un seul GET pour signature + check de divergence ──
+    zoho_accounts = []
+    vendor_account = None
+    token = None
+    try:
+        token = get_zoho_token()
+        r = requests.get(
+            f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts',
+            headers={'Authorization': f'Zoho-oauthtoken {token}'},
+            timeout=15
+        )
+        zoho_accounts = r.json().get('data', [])
+        for acc in zoho_accounts:
+            addr = (acc.get('primaryEmailAddress') or '').lower()
+            if addr == ancien_email or addr == nouveau_email:
+                vendor_account = acc
+                break
+    except Exception as e:
+        results['zoho'] = f'vérification impossible: {e}'
+        print(f"⚠️ Erreur Zoho GET accounts corriger-email: {e}")
+
+    # ── 3. Signature : GET existante → PUT si trouvée, POST+PUT sinon ──
+    if vendor_account:
+        acc_id = vendor_account.get('accountId', '')
+        zoho_email = (vendor_account.get('primaryEmailAddress') or '').lower()
+        sig_html = make_signature(prenom, nom, poste, telephone, nouveau_email)
+        try:
+            # Lister les signatures existantes
+            sig_list_r = requests.get(
+                f'https://mail.zoho.eu/api/accounts/{acc_id}/signatures',
+                headers={'Authorization': f'Zoho-oauthtoken {token}'},
+                timeout=15
+            )
+            existing_sigs = sig_list_r.json().get('data', [])
+            existing_sig_id = None
+            for sig in existing_sigs:
+                if (sig.get('signatureName') or '').upper() == 'LILIWATT':
+                    existing_sig_id = sig.get('signatureId', '')
+                    break
+
+            if existing_sig_id:
+                # PUT sur la signature existante
+                requests.put(
+                    f'https://mail.zoho.eu/api/accounts/{acc_id}/signatures/{existing_sig_id}',
+                    headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                    json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
+                    timeout=15
+                )
+                print(f"✅ Signature LILIWATT mise à jour (PUT) pour {nouveau_email}")
+            else:
+                # POST nouvelle signature + PUT pour isDefault
+                sig_r = requests.post(
+                    f'https://mail.zoho.eu/api/accounts/{acc_id}/signatures',
+                    headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                    json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
+                    timeout=15
+                )
+                new_sig_id = sig_r.json().get('data', {}).get('signatureId', '')
+                if new_sig_id:
+                    requests.put(
+                        f'https://mail.zoho.eu/api/accounts/{acc_id}/signatures/{new_sig_id}',
+                        headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                        json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
+                        timeout=15
+                    )
+                print(f"✅ Signature LILIWATT créée (POST+PUT) pour {nouveau_email}")
+            results['signature'] = 'ok'
+        except Exception as e:
+            errors.append(f"Signature: {e}")
+            results['signature'] = str(e)
+            print(f"❌ Erreur signature corriger-email: {e}")
+
+        # Check divergence Zoho
+        if zoho_email == nouveau_email:
+            results['zoho'] = f'boîte Zoho {nouveau_email} trouvée — cohérent'
+        else:
+            results['zoho'] = f'⚠️ la boîte Zoho est encore sous {zoho_email} — renommage manuel nécessaire dans Zoho Admin'
+    else:
+        results['signature'] = 'compte Zoho introuvable (signature non mise à jour)'
+        if 'zoho' not in results:
+            results['zoho'] = f'⚠️ aucune boîte Zoho trouvée pour {ancien_email} ni {nouveau_email}'
+
+    # ── 4. CRM Neon ──
+    try:
+        crm_url = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+        crm_key = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+        r = requests.post(
+            f'{crm_url}/api/crm/update-user',
+            headers={'X-API-Key': crm_key, 'Content-Type': 'application/json'},
+            json={'ancien_email': ancien_email, 'nouveau_email': nouveau_email},
+            timeout=15
+        )
+        print(f'CRM update-user: {r.status_code}')
+        results['crm'] = 'ok' if r.ok else f'status {r.status_code} — {r.text[:200]}'
+        if not r.ok:
+            errors.append(f"CRM: status {r.status_code}")
+    except Exception as e:
+        errors.append(f"CRM: {e}")
+        results['crm'] = str(e)
+        print(f"❌ Erreur CRM corriger-email: {e}")
+
+    # ── 5. Courtier ──
+    try:
+        import jwt as pyjwt
+        courtier_url = os.environ.get('COURTIER_API_URL', 'https://liliwatt-courtier.onrender.com')
+        courtier_secret = os.environ.get('COURTIER_JWT_SECRET', 'liliwatt-jwt-secret-2026')
+        admin_token = pyjwt.encode(
+            {'id': 'admin_liliwatt', 'email': 'johan.mallet@liliwatt.fr', 'role': 'admin', 'exp': datetime.utcnow() + timedelta(hours=2)},
+            courtier_secret, algorithm='HS256'
+        )
+        r = requests.post(
+            f'{courtier_url}/api/auth/update-email',
+            headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
+            json={'ancien_email': ancien_email, 'nouveau_email': nouveau_email},
+            timeout=15
+        )
+        print(f'Courtier update-email: {r.status_code}')
+        results['courtier'] = 'ok' if r.ok else f'status {r.status_code} — {r.text[:200]}'
+        if not r.ok:
+            errors.append(f"Courtier: status {r.status_code}")
+    except Exception as e:
+        errors.append(f"Courtier: {e}")
+        results['courtier'] = str(e)
+        print(f"❌ Erreur courtier corriger-email: {e}")
+
+    if errors:
+        return jsonify({
+            'success': True,
+            'partial': True,
+            'message': f'Email corrigé avec erreurs partielles.',
+            'results': results,
+            'errors': errors
+        }), 207
+
+    return jsonify({
+        'success': True,
+        'message': f'Email corrigé de {ancien_email} vers {nouveau_email}.',
+        'results': results
+    })
+
+
 @app.route('/api/toggle-vendeur', methods=['POST'])
 @login_required
 def toggle_vendeur():
