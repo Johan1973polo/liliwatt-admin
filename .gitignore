@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.venv/
 env/
 venv/
 ENV/
@@ -35,3 +36,6 @@ token_response.json
 
 # Maquettes
 maquette_newsletter.png
+
+# Contrats clients (données personnelles réelles — NE JAMAIS COMMITER)
+contrats_test/

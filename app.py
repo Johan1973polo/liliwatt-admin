@@ -4,6 +4,7 @@ import requests
 import json
 import uuid
 import re
+import unicodedata
 import hmac
 import hashlib
 import html as html_mod
@@ -705,10 +706,24 @@ def create_user():
         # Générer automatiquement si vide
         password = password_input if password_input else generate_password()
 
-        email_local = f"{prenom.lower()}.{nom.lower()}@liliwatt.fr"
-        email_local = email_local.replace('é','e').replace('è','e').replace('ê','e').replace('ë','e')
-        email_local = email_local.replace('à','a').replace('â','a').replace('ù','u').replace('û','u')
-        email_local = email_local.replace(' ','.').replace("'",'')
+        # Normaliser les diacritiques (NFD → suppression des combining marks)
+        def _ascii_local(s):
+            s = unicodedata.normalize('NFD', s)
+            s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+            s = s.lower()
+            s = s.replace(' ', '.').replace("'", '').replace('-', '')
+            s = re.sub(r'\.+', '.', s).strip('.')
+            return s
+
+        local_part = f"{_ascii_local(prenom)}.{_ascii_local(nom)}"
+        local_part = re.sub(r'\.+', '.', local_part).strip('.')
+        email_local = f"{local_part}@liliwatt.fr"
+
+        if not local_part or not re.match(r'^[a-z0-9]+(\.[a-z0-9]+)*@liliwatt\.fr$', email_local):
+            return jsonify({
+                'success': False,
+                'error': f"L'email généré « {email_local} » contient des caractères invalides. Vérifiez le prénom/nom."
+            }), 400
 
         token = get_zoho_token()
 
@@ -726,119 +741,138 @@ def create_user():
         result = r.json()
         print(f"Création utilisateur: {result}")
 
-        if result.get('status', {}).get('code') in [200, 201, '200', '201'] or 'data' in result:
-            account_id = result.get('data', {}).get('accountId', '')
+        account_id = result.get('data', {}).get('accountId', '')
+        zoho_ok = result.get('status', {}).get('code') in [200, 201, '200', '201'] and account_id
 
-            # Appliquer la signature
-            if account_id:
-                sig_html = make_signature(prenom, nom, poste, telephone, email_local)
-                sig_r = requests.post(
-                    f'https://mail.zoho.eu/api/accounts/{account_id}/signatures',
+        if not zoho_ok:
+            return jsonify({
+                'success': False,
+                'error': f"Échec création boîte Zoho pour {email_local}. Aucune donnée n'a été écrite (Sheet, CRM, courtier). Réponse Zoho : {result}"
+            }), 502
+
+        # ── Étapes post-Zoho : on traque les échecs pour signaler un onboarding partiel ──
+        post_zoho_errors = []
+
+        # Appliquer la signature
+        try:
+            sig_html = make_signature(prenom, nom, poste, telephone, email_local)
+            sig_r = requests.post(
+                f'https://mail.zoho.eu/api/accounts/{account_id}/signatures',
+                headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
+                timeout=15
+            )
+            sig_result = sig_r.json()
+            print(f"📝 Signature API response: {sig_result}")
+            # Récupérer l'ID de la signature pour la définir par défaut
+            sig_id = sig_result.get('data', {}).get('signatureId', '')
+            if sig_id:
+                requests.put(
+                    f'https://mail.zoho.eu/api/accounts/{account_id}/signatures/{sig_id}',
                     headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
                     json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
                     timeout=15
                 )
-                sig_result = sig_r.json()
-                print(f"📝 Signature API response: {sig_result}")
-                # Récupérer l'ID de la signature pour la définir par défaut
-                sig_id = sig_result.get('data', {}).get('signatureId', '')
-                if sig_id:
-                    requests.put(
-                        f'https://mail.zoho.eu/api/accounts/{account_id}/signatures/{sig_id}',
-                        headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
-                        json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
-                        timeout=15
-                    )
-                    print(f"✅ Signature appliquée pour {email_local}")
+                print(f"✅ Signature appliquée pour {email_local}")
+        except Exception as e:
+            post_zoho_errors.append(f"Signature: {e}")
+            print(f"❌ Erreur signature (boîte Zoho {email_local} DÉJÀ CRÉÉE) : {e}")
 
-            # Configurer redirection vers contact@liliwatt.fr
-            try:
-                token_fwd = get_zoho_token()
-                account_id = result.get('data', {}).get('accountId', '')
-                if account_id:
-                    requests.post(
-                        f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts/{account_id}/settings/forwardingaddress',
-                        headers={
-                            'Authorization': f'Zoho-oauthtoken {token_fwd}',
-                            'Content-Type': 'application/json'
-                        },
-                        json={
-                            'forwardingAddress': 'contact@liliwatt.fr',
-                            'keepCopy': True
-                        },
-                        timeout=15
-                    )
-                    print(f"✅ Redirection configurée : {email_local} → contact@liliwatt.fr")
-            except Exception as e:
-                print(f"⚠️ Erreur redirection : {e}")
+        # Configurer redirection vers contact@liliwatt.fr
+        try:
+            token_fwd = get_zoho_token()
+            requests.post(
+                f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts/{account_id}/settings/forwardingaddress',
+                headers={
+                    'Authorization': f'Zoho-oauthtoken {token_fwd}',
+                    'Content-Type': 'application/json'
+                },
+                json={
+                    'forwardingAddress': 'contact@liliwatt.fr',
+                    'keepCopy': True
+                },
+                timeout=15
+            )
+            print(f"✅ Redirection configurée : {email_local} → contact@liliwatt.fr")
+        except Exception as e:
+            print(f"⚠️ Erreur redirection : {e}")
 
-            # Générer un token RGPD unique
-            token_rgpd = uuid.uuid4().hex[:12]
+        # Générer un token RGPD unique
+        token_rgpd = uuid.uuid4().hex[:12]
 
-            # Enregistrer dans Google Sheets
+        # Enregistrer dans Google Sheets
+        try:
             save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id, referent_email, token_rgpd, role)
+        except Exception as e:
+            post_zoho_errors.append(f"Sheet: {e}")
+            print(f"❌ Erreur Sheet (boîte Zoho {email_local} DÉJÀ CRÉÉE) : {e}")
 
-            # Créer l'utilisateur dans courtier-energie
-            try:
-                import jwt as pyjwt
-                courtier_url = os.environ.get('COURTIER_API_URL', 'https://liliwatt-courtier.onrender.com')
-                courtier_secret = os.environ.get('COURTIER_JWT_SECRET', 'liliwatt-jwt-secret-2026')
-                admin_token = pyjwt.encode(
-                    {'id': 'admin_liliwatt', 'email': 'johan.mallet@liliwatt.fr', 'role': 'admin', 'exp': datetime.utcnow() + timedelta(hours=2)},
-                    courtier_secret, algorithm='HS256'
-                )
-                courtier_r = requests.post(
-                    f'{courtier_url}/api/auth/create-user',
-                    headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
-                    json={
-                        'email': email_local,
-                        'password': password,
-                        'role': 'vendeur',
-                        'drive_folder_id': drive_folder_id
-                    },
-                    timeout=10
-                )
-                print(f"✅ Utilisateur créé dans courtier-energie: {courtier_r.json()}")
-            except Exception as e:
-                print(f"⚠️ Erreur création courtier-energie: {e}")
+        # Créer l'utilisateur dans courtier-energie
+        try:
+            import jwt as pyjwt
+            courtier_url = os.environ.get('COURTIER_API_URL', 'https://liliwatt-courtier.onrender.com')
+            courtier_secret = os.environ.get('COURTIER_JWT_SECRET', 'liliwatt-jwt-secret-2026')
+            admin_token = pyjwt.encode(
+                {'id': 'admin_liliwatt', 'email': 'johan.mallet@liliwatt.fr', 'role': 'admin', 'exp': datetime.utcnow() + timedelta(hours=2)},
+                courtier_secret, algorithm='HS256'
+            )
+            courtier_r = requests.post(
+                f'{courtier_url}/api/auth/create-user',
+                headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
+                json={
+                    'email': email_local,
+                    'password': password,
+                    'role': 'vendeur',
+                    'drive_folder_id': drive_folder_id
+                },
+                timeout=10
+            )
+            print(f"✅ Utilisateur créé dans courtier-energie: {courtier_r.json()}")
+        except Exception as e:
+            post_zoho_errors.append(f"Courtier: {e}")
+            print(f"❌ Erreur courtier (boîte Zoho {email_local} DÉJÀ CRÉÉE) : {e}")
 
-            # Créer l'utilisateur dans le CRM LILIWATT (Neon/Vercel)
-            try:
-                CRM_URL = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
-                CRM_API_KEY = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
-                lien_rgpd = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}'
-                # Numéro courtier auto
-                courtier_number = get_next_courtier_number()
-                crm_r = requests.post(
-                    f'{CRM_URL}/api/crm/create-user',
-                    headers={'X-API-Key': CRM_API_KEY, 'Content-Type': 'application/json'},
-                    json={
-                        'email': email_local,
-                        'firstName': prenom,
-                        'lastName': nom,
-                        'role': role.upper(),
-                        'password': password,
-                        'referentEmail': referent_email,
-                        'token_rgpd': token_rgpd,
-                        'lien_rgpd': lien_rgpd,
-                        'zoho_password': password,
-                        'courtierNumber': courtier_number
-                    },
-                    timeout=10
-                )
-                print(f"✅ CRM LILIWATT: {crm_r.status_code} — {crm_r.json()}")
-            except Exception as e:
-                print(f"⚠️ Erreur CRM LILIWATT: {e}")
+        # Créer l'utilisateur dans le CRM LILIWATT (Neon/Vercel)
+        try:
+            CRM_URL = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+            CRM_API_KEY = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+            lien_rgpd = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}'
+            # Numéro courtier auto
+            courtier_number = get_next_courtier_number()
+            crm_r = requests.post(
+                f'{CRM_URL}/api/crm/create-user',
+                headers={'X-API-Key': CRM_API_KEY, 'Content-Type': 'application/json'},
+                json={
+                    'email': email_local,
+                    'firstName': prenom,
+                    'lastName': nom,
+                    'role': role.upper(),
+                    'password': password,
+                    'referentEmail': referent_email,
+                    'token_rgpd': token_rgpd,
+                    'lien_rgpd': lien_rgpd,
+                    'zoho_password': password,
+                    'courtierNumber': courtier_number
+                },
+                timeout=10
+            )
+            print(f"✅ CRM LILIWATT: {crm_r.status_code} — {crm_r.json()}")
+        except Exception as e:
+            post_zoho_errors.append(f"CRM: {e}")
+            print(f"❌ Erreur CRM (boîte Zoho {email_local} DÉJÀ CRÉÉE) : {e}")
 
-            # Envoyer email de bienvenue
-            created_account_id = result.get('data', {}).get('accountId', '')
-            send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, created_account_id, token_rgpd, referent_email)
+        # Envoyer email de bienvenue
+        try:
+            send_welcome_email(prenom, nom, email_local, password, poste, telephone, email_perso, account_id, token_rgpd, referent_email)
+        except Exception as e:
+            post_zoho_errors.append(f"Email bienvenue: {e}")
+            print(f"❌ Erreur email bienvenue (boîte Zoho {email_local} DÉJÀ CRÉÉE) : {e}")
 
-            # Notifier bo@liliwatt.fr avec la signature HTML prête à copier
-            try:
-                sig_html = make_signature(prenom, nom, poste, telephone, email_local)
-                rgpd_link = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}'
-                bo_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+        # Notifier bo@liliwatt.fr avec la signature HTML prête à copier
+        try:
+            sig_html = make_signature(prenom, nom, poste, telephone, email_local)
+            rgpd_link = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}'
+            bo_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
   <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
     <h1 style="color:white;font-size:24px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
     <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:12px;">Nouveau commercial cr&eacute;&eacute;</p>
@@ -871,33 +905,41 @@ def create_user():
     </div>
   </div>
 </div>"""
-                bo_token = get_zoho_token()
-                if bo_token:
-                    account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
-                    requests.post(
-                        f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
-                        headers={'Authorization': f'Zoho-oauthtoken {bo_token}', 'Content-Type': 'application/json'},
-                        json={
-                            'fromAddress': 'bo@liliwatt.fr',
-                            'toAddress': 'bo@liliwatt.fr',
-                            'subject': f'Nouveau commercial : {prenom} {nom} — {poste}',
-                            'content': bo_body,
-                            'mailFormat': 'html'
-                        },
-                        timeout=15
-                    )
-                    print(f"✅ Notification bo@liliwatt.fr envoyée pour {prenom} {nom}")
-            except Exception as e:
-                print(f"⚠️ Erreur notification bo@: {e}")
+            bo_token = get_zoho_token()
+            if bo_token:
+                bo_account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+                requests.post(
+                    f'https://mail.zoho.eu/api/accounts/{bo_account_id}/messages',
+                    headers={'Authorization': f'Zoho-oauthtoken {bo_token}', 'Content-Type': 'application/json'},
+                    json={
+                        'fromAddress': 'bo@liliwatt.fr',
+                        'toAddress': 'bo@liliwatt.fr',
+                        'subject': f'Nouveau commercial : {prenom} {nom} — {poste}',
+                        'content': bo_body,
+                        'mailFormat': 'html'
+                    },
+                    timeout=15
+                )
+                print(f"✅ Notification bo@liliwatt.fr envoyée pour {prenom} {nom}")
+        except Exception as e:
+            print(f"⚠️ Erreur notification bo@: {e}")
 
+        if post_zoho_errors:
             return jsonify({
                 'success': True,
+                'partial': True,
                 'email': email_local,
                 'password': password,
-                'message': f'Utilisateur {prenom} {nom} créé avec succès'
-            })
-        else:
-            return jsonify({'success': False, 'error': str(result)})
+                'message': f'Utilisateur {prenom} {nom} créé dans Zoho MAIS onboarding incomplet.',
+                'errors': post_zoho_errors
+            }), 207
+
+        return jsonify({
+            'success': True,
+            'email': email_local,
+            'password': password,
+            'message': f'Utilisateur {prenom} {nom} créé avec succès'
+        })
 
     except Exception as e:
         import traceback
