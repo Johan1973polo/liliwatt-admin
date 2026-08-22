@@ -5538,7 +5538,7 @@ def test_mails():
 
     # 1. Welcome email (VOTRE ESPACE LILIWATT)
     corps_1 = '\n'.join([
-        paragraphe(f'Bienvenue {fake['prenom']} !'),
+        paragraphe('Bienvenue {} !'.format(fake['prenom'])),
         paragraphe('Nous sommes ravis de vous accueillir dans l&#39;&eacute;quipe LILIWATT.'),
         bouton('Acc&eacute;der &agrave; mon espace &rarr;', 'https://liliwatt-crm-8ofi.vercel.app'),
         bloc(tableau_infos([
@@ -5556,7 +5556,7 @@ def test_mails():
     # 2. Notification bo@ (NOUVEAU COMMERCIAL)
     sig_html = make_signature(fake['prenom'], fake['nom'], fake['poste'], fake['telephone'], fake['email'])
     corps_2 = '\n'.join([
-        paragraphe(f'{accent(f"{fake['prenom']} {fake['nom']}")} a &eacute;t&eacute; ajout&eacute; &agrave; l\'&eacute;quipe.'),
+        paragraphe('{} a &eacute;t&eacute; ajout&eacute; &agrave; l\'&eacute;quipe.'.format(accent(fake['prenom'] + ' ' + fake['nom']))),
         paragraphe(accent('&#128272; Identifiants Zoho Mail')),
         bloc(tableau_infos([
             ('Email', fake['email']),
@@ -5578,12 +5578,12 @@ def test_mails():
         paragraphe('Bonjour,'),
         paragraphe('Un nouveau commercial vient d\'&ecirc;tre ajout&eacute; &agrave; votre &eacute;quipe&nbsp;:'),
         bloc(tableau_infos([
-            ('Nom', f'{fake['prenom']} {fake['nom']}'),
+            ('Nom', fake['prenom'] + ' ' + fake['nom']),
             ('Poste', fake['poste']),
             ('T&eacute;l&eacute;phone', fake['telephone']),
-            ('Email', f'<a href="mailto:{fake['email']}" style="color:{VIOLET};text-decoration:none;font-weight:600;">{fake['email']}</a>'),
+            ('Email', '<a href="mailto:{e}" style="color:{v};text-decoration:none;font-weight:600;">{e}</a>'.format(e=fake['email'], v=VIOLET)),
         ])),
-        bloc(f'&#128222; Merci de prendre contact avec {accent(fake['prenom'])} au plus vite pour l\'accueillir et organiser son int&eacute;gration.', ROSE),
+        bloc('&#128222; Merci de prendre contact avec {} au plus vite pour l\'accueillir et organiser son int&eacute;gration.'.format(accent(fake['prenom'])), ROSE),
     ])
     mails.append(('[TEST 3/8] Nouvelle recrue dans votre équipe : Test EXEMPLE',
                   mail_liliwatt('NOUVELLE', 'RECRUE', corps_3)))
@@ -5593,7 +5593,7 @@ def test_mails():
         paragraphe('Bonjour,'),
         paragraphe('Un nouveau profil candidat vous est transmis pour &eacute;valuation :'),
         bloc(tableau_infos([
-            ('Nom', f'{fake['prenom']} {fake['nom']}'),
+            ('Nom', fake['prenom'] + ' ' + fake['nom']),
             ('Email', fake['email']),
             ('T&eacute;l', fake['telephone']),
             ('Adresse', '59 rue de Ponthieu, 75008 Paris'),
