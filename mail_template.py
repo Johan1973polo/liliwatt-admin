@@ -88,7 +88,7 @@ def mail_liliwatt(titre_accent, titre_blanc, corps, theme='sombre', avec_baselin
 
   <tr>
     <td align="center" style="background-color:{c['fond_entete']};padding:32px 24px 24px;">
-      <div style="font-size:34px;font-weight:800;color:{c['titre_entete']};letter-spacing:6px;line-height:1;">&#9889;&nbsp;LILIWATT&nbsp;&#9889;</div>
+      <div style="font-size:34px;font-weight:800;color:{c['titre_entete']};letter-spacing:6px;line-height:1;">LILIWATT</div>
       <div style="font-size:11px;color:{c['lavande']};letter-spacing:3px;margin-top:8px;">COURTAGE &Eacute;NERGIE &bull; B2B &amp; B2C</div>
     </td>
   </tr>
