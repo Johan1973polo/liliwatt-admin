@@ -5655,8 +5655,11 @@ def test_mails():
                                      bvn_body, 'https://example.com/unsub',
                                      fmt='bienvenue', prenom='Test')))
 
-        # Envoi
-        for subject, html in mails:
+        # Envoi avec délai entre chaque mail (rate limit Zoho)
+        import time as _time
+        for idx, (subject, html) in enumerate(mails):
+            if idx > 0:
+                _time.sleep(2)
             try:
                 r = requests.post(
                     f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
@@ -5699,7 +5702,7 @@ def test_mails_crm():
         r = requests.post(
             f'{CRM_URL}/api/test-mails',
             headers={'X-API-Key': CRM_API_KEY, 'Content-Type': 'application/json'},
-            timeout=60
+            timeout=120
         )
         return jsonify(r.json()), r.status_code
     except Exception as e:
@@ -5721,7 +5724,7 @@ def test_mails_courtier():
         r = requests.post(
             f'{courtier_url}/api/test-mails',
             headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
-            timeout=60
+            timeout=120
         )
         return jsonify(r.json()), r.status_code
     except Exception as e:
