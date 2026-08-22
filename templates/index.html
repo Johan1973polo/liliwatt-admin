@@ -4669,8 +4669,10 @@ async function envoyerTestMails() {
   res.style.display = 'none';
   try {
     var r = await fetch('/api/test-mails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' });
-    if (r.redirected || !r.ok) { throw new Error('Session expirée ou erreur serveur (HTTP ' + r.status + '). Rechargez la page.'); }
-    var d = await r.json();
+    if (r.redirected) { throw new Error('Session expirée. Rechargez la page et reconnectez-vous.'); }
+    var text = await r.text();
+    var d;
+    try { d = JSON.parse(text); } catch(pe) { throw new Error('Réponse non-JSON (HTTP ' + r.status + ') : ' + text.substring(0, 200)); }
     if (d.success) {
       res.style.background = '#f0fdf4';
       res.style.color = '#16a34a';
@@ -4683,6 +4685,7 @@ async function envoyerTestMails() {
       var msg = '<strong>⚠️ ' + (d.sent ? d.sent.length : 0) + '/8 mails envoyés</strong>';
       if (d.errors && d.errors.length) msg += '<br>Erreurs :<br>' + d.errors.map(function(e){ return '• ' + e; }).join('<br>');
       if (d.error) msg += '<br>' + d.error;
+      if (d.trace) msg += '<br><pre style="font-size:11px;white-space:pre-wrap;margin-top:8px;">' + d.trace + '</pre>';
       res.innerHTML = msg;
     }
     res.style.display = 'block';
