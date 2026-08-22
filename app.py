@@ -13,6 +13,10 @@ import time
 from functools import wraps
 from datetime import datetime, timedelta
 from google_meet_service import create_referent_meet_room
+from mail_template import (mail_liliwatt, paragraphe, accent, bloc, tableau_infos, bouton,
+                           signature_equipe, VIOLET, ROSE, TEXTE_FORT, FOND_BLOC, FOND_PAGE,
+                           FOND_ENTETE, FOND_PIED, TEXTE, TEXTE_DOUX, TEXTE_MENTION,
+                           VIOLET_CLAIR, LAVANDE, MAUVE)
 
 
 def sort_vendeurs(rows):
@@ -334,78 +338,53 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
 
         referent_block = ''
         if referent_name:
-            referent_block = f"""<div style="background:#f0fdf4;border-radius:16px;padding:28px;margin-bottom:24px;border:1px solid #bbf7d0;">
-    <h3 style="color:#166534;margin:0 0 8px;font-size:17px;">👤 Votre référent</h3>
-    <p style="color:#166534;margin:0;font-size:14px;line-height:1.8;">
-      <strong>{referent_name}</strong> est votre référent dédié chez LILIWATT. Il est disponible via la messagerie interne du CRM pour vous accompagner dans la prise en main de vos outils, répondre à vos questions et vous guider lors de vos premières semaines d'activité.<br><br>
-      N'hésitez pas à le contacter dès votre connexion.
-    </p>
-  </div>"""
+            referent_block = bloc(
+                f'{accent(referent_name)} est votre r&eacute;f&eacute;rent d&eacute;di&eacute; chez LILIWATT. Il est disponible via la messagerie interne du CRM pour vous accompagner dans la prise en main de vos outils, r&eacute;pondre &agrave; vos questions et vous guider lors de vos premi&egrave;res semaines d&#39;activit&eacute;.<br><br>'
+                'N&#39;h&eacute;sitez pas &agrave; le contacter d&egrave;s votre connexion.'
+            )
 
-        html_body = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f5f3ff;font-family:Arial,sans-serif;">
-<div style="max-width:600px;margin:0 auto;padding:40px 20px;">
-  <div style="background:linear-gradient(135deg,#7c3aed,#d946ef);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
-    <h1 style="color:white;margin:0;font-size:32px;font-weight:700;letter-spacing:2px;">⚡ LILIWATT</h1>
-    <p style="color:#e9d5ff;margin:8px 0 0;font-size:15px;">Cabinet de courtage en énergie B2B</p>
-  </div>
-  <div style="background:white;border-radius:16px;padding:32px;margin-bottom:24px;border:1px solid #e9d5ff;">
-    <h2 style="color:#7c3aed;margin:0 0 16px;font-size:22px;">Bienvenue {prenom} ! 🎉</h2>
-    <p style="color:#374151;line-height:1.8;margin:0;font-size:15px;">
-      Nous sommes ravis de vous accueillir dans l'équipe LILIWATT.<br><br>
-      Votre espace de travail est prêt. <strong>Votre point d'entrée unique est le CRM LILIWATT</strong> — depuis ce tableau de bord personnel, vous accédez directement à tous vos outils métier, vos modules de formation et votre messagerie interne.<br><br>
-      Dès votre première connexion, vous trouverez vos accès pré-configurés et vos modules de formation disponibles pour vous permettre de démarrer rapidement.
-    </p>
-  </div>
-  <div style="background:linear-gradient(135deg,#7c3aed,#d946ef);border-radius:16px;padding:36px;margin-bottom:24px;text-align:center;">
-    <h3 style="color:white;margin:0 0 8px;font-size:22px;">🖥️ Votre espace CRM LILIWATT</h3>
-    <p style="color:#e9d5ff;margin:0 0 6px;font-size:14px;">Tableau de bord — Formation — Messagerie — Outils métier</p>
-    <p style="color:#e9d5ff;margin:0 0 24px;font-size:13px;">Connectez-vous dès maintenant pour découvrir votre espace et commencer votre formation.</p>
-    <a href="https://liliwatt-crm-8ofi.vercel.app" style="background:white;color:#7c3aed;padding:16px 40px;border-radius:50px;text-decoration:none;font-weight:700;font-size:16px;display:inline-block;letter-spacing:0.5px;">Accéder à mon espace →</a>
-    <div style="margin-top:28px;background:rgba(0,0,0,0.2);border-radius:12px;padding:18px;">
-      <p style="color:#ffffff;margin:0 0 8px;font-size:14px;">📧 Identifiant : <strong>{email_liliwatt}</strong></p>
-      <p style="color:#ffffff;margin:0;font-size:14px;">🔑 Mot de passe : <strong>{password}</strong></p>
-    </div>
-  </div>
-  <div style="background:white;border-radius:16px;padding:32px;margin-bottom:24px;border:1px solid #e9d5ff;">
-    <h3 style="color:#374151;margin:0 0 6px;font-size:17px;">Vos outils accessibles depuis le CRM</h3>
-    <p style="color:#6b7280;margin:0 0 20px;font-size:13px;">Tous vos outils sont accessibles en un clic depuis votre tableau de bord personnel.</p>
-    <div style="padding:16px;background:#f5f3ff;border-radius:12px;margin-bottom:12px;">
-      <p style="margin:0 0 4px;font-weight:700;color:#374151;font-size:15px;">📞 Base Prospection</p>
-      <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">Vos prospects qualifiés avec coordonnées téléphoniques, secteur d'activité et statut d'appel. Commencez à prospecter dès le premier jour.</p>
-    </div>
-    <div style="padding:16px;background:#f5f3ff;border-radius:12px;">
-      <p style="margin:0 0 4px;font-weight:700;color:#374151;font-size:15px;">⚡ Outil Courtage — Extracteur &amp; Comparatif</p>
-      <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">Déposez la facture de votre prospect, notre outil extrait automatiquement les données et génère un comparatif personnalisé en moins de 2 minutes.</p>
-    </div>
-  </div>
-  <div style="background:white;border-radius:16px;padding:28px;margin-bottom:24px;border:1px solid #e9d5ff;">
-    <h3 style="color:#374151;margin:0 0 6px;font-size:17px;">✉️ Votre boîte mail professionnelle</h3>
-    <p style="color:#6b7280;margin:0 0 16px;font-size:13px;">Votre adresse email professionnelle est active. Utilisez-la pour toutes vos communications clients.</p>
-    <div style="background:#f5f3ff;border-radius:12px;padding:16px;">
-      <p style="margin:0 0 8px;font-size:14px;color:#374151;">🌐 Accès webmail : <a href="https://mail.zoho.eu" style="color:#7c3aed;font-weight:600;">mail.zoho.eu</a></p>
-      <p style="margin:0 0 8px;font-size:14px;color:#374151;">📧 Email : <strong>{email_liliwatt}</strong></p>
-      <p style="margin:0;font-size:14px;color:#374151;">🔑 Mot de passe : <strong>{password}</strong></p>
-    </div>
-  </div>
-  {referent_block}
-  <div style="background:white;border-radius:16px;padding:28px;margin-bottom:24px;border:1px solid #e9d5ff;">
-    <h3 style="color:#374151;margin:0 0 16px;font-size:17px;">🚀 Vos prochaines étapes</h3>
-    <div style="display:flex;gap:16px;margin-bottom:14px;align-items:flex-start;"><div style="background:#7c3aed;color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">1</div><p style="margin:0;color:#374151;font-size:14px;line-height:1.6;"><strong>Connectez-vous au CRM</strong> avec vos identifiants ci-dessus</p></div>
-    <div style="display:flex;gap:16px;margin-bottom:14px;align-items:flex-start;"><div style="background:#7c3aed;color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">2</div><p style="margin:0;color:#374151;font-size:14px;line-height:1.6;"><strong>Commencez votre formation</strong> — les modules sont déverrouillés progressivement par votre référent</p></div>
-    <div style="display:flex;gap:16px;margin-bottom:14px;align-items:flex-start;"><div style="background:#7c3aed;color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">3</div><p style="margin:0;color:#374151;font-size:14px;line-height:1.6;"><strong>Découvrez vos outils</strong> — prospection et courtage accessibles depuis votre tableau de bord</p></div>
-    <div style="display:flex;gap:16px;align-items:flex-start;"><div style="background:#d946ef;color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">4</div><p style="margin:0;color:#374151;font-size:14px;line-height:1.6;"><strong>Lancez vos premiers appels</strong> — votre base de prospects qualifiés vous attend</p></div>
-  </div>
-  <div style="text-align:center;padding:24px 0;">
-    <div style="background:linear-gradient(135deg,#7c3aed,#d946ef);border-radius:12px;padding:20px;margin-bottom:20px;">
-      <p style="color:white;margin:0;font-size:14px;font-weight:600;">Une question ? Contactez-nous</p>
-      <p style="color:#e9d5ff;margin:8px 0 0;font-size:13px;">contact@liliwatt.fr — 01 84 16 08 56</p>
-    </div>
-    <p style="color:#9ca3af;font-size:12px;margin:0;">LILIWATT — LILISTRAT STRATÉGIE SAS</p>
-    <p style="color:#9ca3af;font-size:12px;margin:4px 0 0;">59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
-    <p style="color:#9ca3af;font-size:12px;margin:4px 0 0;">www.liliwatt.fr</p>
-  </div>
-</div>
-</body></html>"""
+        corps = '\n'.join([
+            paragraphe(f'Bienvenue {prenom} !'),
+            paragraphe(
+                'Nous sommes ravis de vous accueillir dans l&#39;&eacute;quipe LILIWATT.<br><br>'
+                f'Votre espace de travail est pr&ecirc;t. {accent("Votre point d&#39;entr&eacute;e unique est le CRM LILIWATT", TEXTE_FORT)} &mdash; depuis ce tableau de bord personnel, vous acc&eacute;dez directement &agrave; tous vos outils m&eacute;tier, vos modules de formation et votre messagerie interne.<br><br>'
+                'D&egrave;s votre premi&egrave;re connexion, vous trouverez vos acc&egrave;s pr&eacute;-configur&eacute;s et vos modules de formation disponibles pour vous permettre de d&eacute;marrer rapidement.'
+            ),
+            paragraphe(accent('Votre espace CRM LILIWATT')),
+            paragraphe('Tableau de bord &mdash; Formation &mdash; Messagerie &mdash; Outils m&eacute;tier'),
+            paragraphe('Connectez-vous d&egrave;s maintenant pour d&eacute;couvrir votre espace et commencer votre formation.'),
+            bouton('Acc&eacute;der &agrave; mon espace &rarr;', 'https://liliwatt-crm-8ofi.vercel.app'),
+            bloc(tableau_infos([
+                ('Identifiant', f'{email_liliwatt}'),
+                ('Mot de passe', f'{password}'),
+            ])),
+            paragraphe(accent('Vos outils accessibles depuis le CRM')),
+            paragraphe('Tous vos outils sont accessibles en un clic depuis votre tableau de bord personnel.'),
+            bloc(
+                f'{accent("Base Prospection")}<br>'
+                'Vos prospects qualifi&eacute;s avec coordonn&eacute;es t&eacute;l&eacute;phoniques, secteur d&#39;activit&eacute; et statut d&#39;appel. Commencez &agrave; prospecter d&egrave;s le premier jour.'
+            ),
+            bloc(
+                f'{accent("Outil Courtage &mdash; Extracteur &amp; Comparatif")}<br>'
+                'D&eacute;posez la facture de votre prospect, notre outil extrait automatiquement les donn&eacute;es et g&eacute;n&egrave;re un comparatif personnalis&eacute; en moins de 2 minutes.'
+            ),
+            paragraphe(accent('Votre bo&icirc;te mail professionnelle')),
+            paragraphe('Votre adresse email professionnelle est active. Utilisez-la pour toutes vos communications clients.'),
+            bloc(tableau_infos([
+                ('Acc&egrave;s webmail', f'<a href="https://mail.zoho.eu" style="color:{VIOLET};font-weight:600;">mail.zoho.eu</a>'),
+                ('Email', f'{email_liliwatt}'),
+                ('Mot de passe', f'{password}'),
+            ])),
+            referent_block,
+            paragraphe(accent('Vos prochaines &eacute;tapes')),
+            paragraphe(f'1. {accent("Connectez-vous au CRM", TEXTE_FORT)} avec vos identifiants ci-dessus'),
+            paragraphe(f'2. {accent("Commencez votre formation", TEXTE_FORT)} &mdash; les modules sont d&eacute;verrouill&eacute;s progressivement par votre r&eacute;f&eacute;rent'),
+            paragraphe(f'3. {accent("D&eacute;couvrez vos outils", TEXTE_FORT)} &mdash; prospection et courtage accessibles depuis votre tableau de bord'),
+            paragraphe(f'4. {accent("Lancez vos premiers appels", ROSE)} &mdash; votre base de prospects qualifi&eacute;s vous attend'),
+            signature_equipe(),
+        ])
+
+        html_body = mail_liliwatt('VOTRE', 'ESPACE LILIWATT', corps)
 
         account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
         print(f"📧 Envoi email bienvenue à {destinataire} depuis account_id: {account_id}")
@@ -900,39 +879,25 @@ def create_user():
         try:
             sig_html = make_signature(prenom, nom, poste, telephone, email_local)
             rgpd_link = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}'
-            bo_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-  <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
-    <h1 style="color:white;font-size:24px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
-    <p style="color:#e9d5ff;margin:6px 0 0;font-size:12px;">Nouveau commercial cr&eacute;&eacute;</p>
-  </div>
-  <div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
-    <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;"><strong>{prenom} {nom}</strong> a &eacute;t&eacute; ajout&eacute; &agrave; l'&eacute;quipe.</p>
-
-    <div style="background:#fef3c7;border:2px solid #fbbf24;border-radius:10px;padding:20px;margin-bottom:20px;">
-      <p style="margin:0 0 12px;font-weight:700;color:#92400e;font-size:14px;">&#128272; Identifiants Zoho Mail</p>
-      <table style="width:100%;font-size:14px;border-collapse:collapse;">
-        <tr><td style="padding:6px 0;color:#92400e;font-weight:700;width:130px;">Email</td><td style="color:#1e1b4b;font-weight:700;">{email_local}</td></tr>
-        <tr><td style="padding:6px 0;color:#92400e;font-weight:700;">Mot de passe</td><td style="color:#1e1b4b;font-weight:700;font-size:16px;">{password}</td></tr>
-        <tr><td style="padding:6px 0;color:#92400e;font-weight:700;">Connexion</td><td><a href="https://mail.zoho.eu" style="color:#7c3aed;font-weight:700;text-decoration:none;">mail.zoho.eu</a></td></tr>
-      </table>
-    </div>
-
-    <div style="background:white;border-radius:10px;padding:20px;margin-bottom:20px;border-left:4px solid #7c3aed;">
-      <table style="width:100%;font-size:13px;border-collapse:collapse;">
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;width:130px;">Poste</td><td style="color:#1e1b4b;">{poste}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">T&eacute;l&eacute;phone</td><td style="color:#1e1b4b;">{telephone}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">R&eacute;f&eacute;rent</td><td style="color:#1e1b4b;">{referent_email or '&mdash;'}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Lien RGPD</td><td><a href="{rgpd_link}" style="color:#7c3aed;word-break:break-all;">{rgpd_link}</a></td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Drive</td><td><a href="https://drive.google.com/drive/folders/{drive_folder_id}" style="color:#7c3aed;">Ouvrir le dossier</a></td></tr>
-      </table>
-    </div>
-
-    <div style="background:#ede9fe;border-radius:10px;padding:16px;margin-bottom:16px;">
-      <p style="margin:0 0 10px;font-weight:700;color:#1e1b4b;font-size:13px;">&#9999;&#65039; Signature email pr&ecirc;te &agrave; copier dans Zoho :</p>
-      <div style="background:white;border-radius:8px;padding:16px;border:1px solid #e9d5ff;">{sig_html}</div>
-    </div>
-  </div>
-</div>"""
+            bo_corps = '\n'.join([
+                paragraphe(f'{accent(f"{prenom} {nom}")} a &eacute;t&eacute; ajout&eacute; &agrave; l\'&eacute;quipe.'),
+                paragraphe(accent('&#128272; Identifiants Zoho Mail')),
+                bloc(tableau_infos([
+                    ('Email', f'{email_local}'),
+                    ('Mot de passe', f'{password}'),
+                    ('Connexion', f'<a href="https://mail.zoho.eu" style="color:{VIOLET};font-weight:700;text-decoration:none;">mail.zoho.eu</a>'),
+                ])),
+                bloc(tableau_infos([
+                    ('Poste', f'{poste}'),
+                    ('T&eacute;l&eacute;phone', f'{telephone}'),
+                    ('R&eacute;f&eacute;rent', f'{referent_email or "&mdash;"}'),
+                    ('Lien RGPD', f'<a href="{rgpd_link}" style="color:{VIOLET};word-break:break-all;">{rgpd_link}</a>'),
+                    ('Drive', f'<a href="https://drive.google.com/drive/folders/{drive_folder_id}" style="color:{VIOLET};">Ouvrir le dossier</a>'),
+                ])),
+                paragraphe(accent('&#9999;&#65039; Signature email pr&ecirc;te &agrave; copier dans Zoho :')),
+                bloc(f'{sig_html}'),
+            ])
+            bo_body = mail_liliwatt('NOUVEAU', 'COMMERCIAL', bo_corps)
             bo_token = get_zoho_token()
             if bo_token:
                 bo_account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
@@ -955,29 +920,18 @@ def create_user():
         # Notifier le référent de sa nouvelle recrue
         if referent_email:
             try:
-                ref_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-  <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
-    <h1 style="color:white;font-size:24px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
-    <p style="color:#e9d5ff;margin:6px 0 0;font-size:12px;">Nouvelle recrue dans votre &eacute;quipe</p>
-  </div>
-  <div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
-    <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;">Bonjour,</p>
-    <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;">Un nouveau commercial vient d'&ecirc;tre ajout&eacute; &agrave; votre &eacute;quipe&nbsp;:</p>
-
-    <div style="background:white;border-radius:10px;padding:20px;margin-bottom:20px;border-left:4px solid #7c3aed;">
-      <table style="width:100%;font-size:14px;border-collapse:collapse;">
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;width:130px;">Nom</td><td style="color:#1e1b4b;font-weight:700;">{prenom} {nom}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Poste</td><td style="color:#1e1b4b;">{poste}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">T&eacute;l&eacute;phone</td><td style="color:#1e1b4b;">{telephone or '&mdash;'}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Email</td><td style="color:#1e1b4b;"><a href="mailto:{email_local}" style="color:#7c3aed;text-decoration:none;font-weight:600;">{email_local}</a></td></tr>
-      </table>
-    </div>
-
-    <div style="background:#fef3c7;border:2px solid #fbbf24;border-radius:10px;padding:16px;margin-bottom:16px;">
-      <p style="margin:0;font-size:14px;color:#92400e;font-weight:700;">&#128222; Merci de prendre contact avec {prenom} au plus vite pour l'accueillir et organiser son int&eacute;gration.</p>
-    </div>
-  </div>
-</div>"""
+                ref_corps = '\n'.join([
+                    paragraphe('Bonjour,'),
+                    paragraphe('Un nouveau commercial vient d\'&ecirc;tre ajout&eacute; &agrave; votre &eacute;quipe&nbsp;:'),
+                    bloc(tableau_infos([
+                        ('Nom', f'{prenom} {nom}'),
+                        ('Poste', f'{poste}'),
+                        ('T&eacute;l&eacute;phone', f'{telephone or "&mdash;"}'),
+                        ('Email', f'<a href="mailto:{email_local}" style="color:{VIOLET};text-decoration:none;font-weight:600;">{email_local}</a>'),
+                    ])),
+                    bloc(f'&#128222; Merci de prendre contact avec {accent(prenom)} au plus vite pour l\'accueillir et organiser son int&eacute;gration.', ROSE),
+                ])
+                ref_body = mail_liliwatt('NOUVELLE', 'RECRUE', ref_corps)
                 ref_token = get_zoho_token()
                 if ref_token:
                     ref_account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
@@ -1223,27 +1177,23 @@ def envoyer_referent_phase1():
         token = get_zoho_token()
         if not token:
             return jsonify({'success': False, 'error': 'Zoho token non obtenu'})
-        mail_html = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-<div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
-<h1 style="color:#fff;font-size:24px;letter-spacing:3px;margin:0;">LILIWATT</h1>
-<p style="color:#e9d5ff;font-size:12px;margin:4px 0 0;">Profil candidat à évaluer</p>
-</div>
-<div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
-<p style="font-size:15px;color:#1e1b4b;">Bonjour,</p>
-<p style="color:#374151;line-height:1.7;">Un nouveau profil candidat vous est transmis pour évaluation :</p>
-<div style="background:#fff;border-radius:10px;padding:20px;margin:16px 0;border-left:4px solid #7c3aed;">
-<table style="width:100%;font-size:13px;border-collapse:collapse;">
-<tr><td style="padding:6px 0;color:#6b7280;font-weight:700;width:100px;">Nom</td><td style="color:#1e1b4b;">{candidat.get('prenom','')} {candidat.get('nom','')}</td></tr>
-<tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Email</td><td style="color:#1e1b4b;">{candidat.get('email','')}</td></tr>
-<tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Tél</td><td style="color:#1e1b4b;">{candidat.get('telephone','')}</td></tr>
-<tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Adresse</td><td style="color:#1e1b4b;">{candidat.get('adresse','')}</td></tr>
-</table>
-</div>
-{('<p style="margin:12px 0;"><a href="' + candidat.get('lien_cv','') + '" style="color:#7c3aed;font-weight:600;">📄 Voir le CV</a></p>') if candidat.get('lien_cv') else ''}
-<p style="color:#374151;">Lien session Meet : <a href="https://meet.google.com/tzv-pgjc-und?authuser=0" style="color:#7c3aed;font-weight:600;">Rejoindre</a></p>
-<hr style="border:1px solid #e9d5ff;margin:20px 0;">
-<p style="font-size:11px;color:#9ca3af;">LILIWATT — LILISTRAT STRATÉGIE SAS — 59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
-</div></div>"""
+        cv_link = ''
+        if candidat.get('lien_cv'):
+            cv_link = bouton('Voir le CV', candidat.get('lien_cv',''))
+        ref_phase1_corps = '\n'.join([
+            paragraphe('Bonjour,'),
+            paragraphe('Un nouveau profil candidat vous est transmis pour &eacute;valuation :'),
+            bloc(tableau_infos([
+                ('Nom', f"{candidat.get('prenom','')} {candidat.get('nom','')}"),
+                ('Email', f"{candidat.get('email','')}"),
+                ('T&eacute;l', f"{candidat.get('telephone','')}"),
+                ('Adresse', f"{candidat.get('adresse','')}"),
+            ])),
+            cv_link,
+            paragraphe(f'Lien session Meet : <a href="https://meet.google.com/tzv-pgjc-und?authuser=0" style="color:{VIOLET};font-weight:600;">Rejoindre</a>'),
+            signature_equipe(),
+        ])
+        mail_html = mail_liliwatt('PROFIL', 'CANDIDAT', ref_phase1_corps)
         account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
         requests.post(
             f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
@@ -1479,26 +1429,18 @@ def inviter_phase1():
         row_num = d.get('row')
 
         # Envoyer le mail d'invitation
-        mail_html = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-<div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
-<h1 style="color:#fff;font-size:28px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
-<p style="color:#e9d5ff;font-size:12px;margin:6px 0 0;">Invitation session de présentation</p>
-</div>
-<div style="background:#f5f3ff;padding:32px;border-radius:0 0 12px 12px;">
-<p style="font-size:16px;color:#1e1b4b;">Bonjour <strong>{prenom}</strong>,</p>
-<p style="color:#374151;line-height:1.7;">Suite à notre échange, nous avons le plaisir de vous inviter à rejoindre notre session de présentation LILIWATT.</p>
-<div style="background:#fff;border-radius:10px;padding:24px;margin:24px 0;border-left:4px solid #7c3aed;">
-<table style="width:100%;font-size:14px;border-collapse:collapse;">
-<tr><td style="padding:8px 0;color:#6b7280;font-weight:700;width:100px;">Date</td><td style="color:#1e1b4b;font-weight:700;">{date_session}</td></tr>
-<tr><td style="padding:8px 0;color:#6b7280;font-weight:700;">Heure</td><td style="color:#1e1b4b;font-weight:700;">{heure_session}</td></tr>
-</table>
-</div>
-<a href="https://meet.google.com/tzv-pgjc-und?authuser=0" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#d946ef);color:#fff;padding:14px 32px;border-radius:50px;text-decoration:none;font-weight:700;font-size:14px;">Rejoindre la session Google Meet</a>
-<p style="color:#374151;margin-top:20px;line-height:1.7;">À très bientôt !</p>
-<p style="color:#6b7280;font-size:13px;">L'équipe LILIWATT<br>recrutement@liliwatt.fr</p>
-<hr style="border:1px solid #e9d5ff;margin:24px 0;">
-<p style="font-size:11px;color:#9ca3af;">LILIWATT — LILISTRAT STRATÉGIE SAS — 59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
-</div></div>"""
+        inv_corps = '\n'.join([
+            paragraphe(f'Bonjour {accent(prenom)},'),
+            paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
+            bloc(tableau_infos([
+                ('Date', f'{date_session}'),
+                ('Heure', f'{heure_session}'),
+            ])),
+            bouton('Rejoindre la session Google Meet', 'https://meet.google.com/tzv-pgjc-und?authuser=0'),
+            paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
+            signature_equipe(),
+        ])
+        mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_corps)
 
         token = get_zoho_token()
         if token:
@@ -2223,26 +2165,18 @@ def inviter_candidat_script():
         return jsonify({'success': False, 'error': 'Email, date et heure requis'}), 400
 
     # 1. Envoyer l'email d'invitation (PRIORITAIRE)
-    mail_html = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-<div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
-<h1 style="color:#fff;font-size:28px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
-<p style="color:#e9d5ff;font-size:12px;margin:6px 0 0;">Invitation session de présentation</p>
-</div>
-<div style="background:#f5f3ff;padding:32px;border-radius:0 0 12px 12px;">
-<p style="font-size:16px;color:#1e1b4b;">Bonjour <strong>{prenom or 'Monsieur/Madame'}</strong>,</p>
-<p style="color:#374151;line-height:1.7;">Suite à notre échange, nous avons le plaisir de vous inviter à rejoindre notre session de présentation LILIWATT.</p>
-<div style="background:#fff;border-radius:10px;padding:24px;margin:24px 0;border-left:4px solid #7c3aed;">
-<table style="width:100%;font-size:14px;border-collapse:collapse;">
-<tr><td style="padding:8px 0;color:#6b7280;font-weight:700;width:100px;">Date</td><td style="color:#1e1b4b;font-weight:700;">{date_session}</td></tr>
-<tr><td style="padding:8px 0;color:#6b7280;font-weight:700;">Heure</td><td style="color:#1e1b4b;font-weight:700;">{heure_session}</td></tr>
-</table>
-</div>
-<a href="https://meet.google.com/tzv-pgjc-und?authuser=0" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#d946ef);color:#fff;padding:14px 32px;border-radius:50px;text-decoration:none;font-weight:700;font-size:14px;">Rejoindre la session Google Meet</a>
-<p style="color:#374151;margin-top:20px;line-height:1.7;">À très bientôt !</p>
-<p style="color:#6b7280;font-size:13px;">Carole Andria<br>carole.andria@liliwatt.fr</p>
-<hr style="border:1px solid #e9d5ff;margin:24px 0;">
-<p style="font-size:11px;color:#9ca3af;">LILIWATT — LILISTRAT STRATÉGIE SAS — 59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
-</div></div>"""
+    inv_ca_corps = '\n'.join([
+        paragraphe(f'Bonjour {accent(prenom or "Monsieur/Madame")},'),
+        paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
+        bloc(tableau_infos([
+            ('Date', f'{date_session}'),
+            ('Heure', f'{heure_session}'),
+        ])),
+        bouton('Rejoindre la session Google Meet', 'https://meet.google.com/tzv-pgjc-und?authuser=0'),
+        paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
+        paragraphe(f'Carole Andria<br>carole.andria@liliwatt.fr'),
+    ])
+    mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_ca_corps)
 
     mail_ok = False
     try:
