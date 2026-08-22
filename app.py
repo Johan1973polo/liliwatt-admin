@@ -5689,6 +5689,45 @@ def test_mails():
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
 
+@app.route('/api/test-mails-crm', methods=['POST'])
+@login_required
+def test_mails_crm():
+    """Proxy : déclenche les 6 mails de test du CRM."""
+    try:
+        CRM_URL = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+        CRM_API_KEY = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+        r = requests.post(
+            f'{CRM_URL}/api/test-mails',
+            headers={'X-API-Key': CRM_API_KEY, 'Content-Type': 'application/json'},
+            timeout=60
+        )
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/test-mails-courtier', methods=['POST'])
+@login_required
+def test_mails_courtier():
+    """Proxy : déclenche les 6 mails de test du courtier."""
+    try:
+        import jwt as pyjwt
+        courtier_url = os.environ.get('COURTIER_API_URL', 'https://liliwatt-courtier.onrender.com')
+        courtier_secret = os.environ.get('COURTIER_JWT_SECRET', 'liliwatt-jwt-secret-2026')
+        admin_token = pyjwt.encode(
+            {'id': 'admin_liliwatt', 'email': 'johan.mallet@liliwatt.fr', 'role': 'admin', 'exp': datetime.utcnow() + timedelta(hours=2)},
+            courtier_secret, algorithm='HS256'
+        )
+        r = requests.post(
+            f'{courtier_url}/api/test-mails',
+            headers={'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'},
+            timeout=60
+        )
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/newsletter/unsubscribe')
 def newsletter_unsubscribe():
     email = (request.args.get('email') or '').strip().lower()
