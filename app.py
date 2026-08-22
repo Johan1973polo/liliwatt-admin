@@ -3594,15 +3594,25 @@ def export_vendeur():
                 continue
             filtered_rows.append(row)
 
-        # Construire un mapping email → (nom, prenom) depuis la Sheet vendeurs
+        # Construire un mapping email → (nom, prenom) depuis la Sheet vendeurs + archive
         vendeur_sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
         email_to_name = {}
         try:
-            ws_vendeurs = gc.open_by_key(vendeur_sheet_id).sheet1
-            vendeur_rows = ws_vendeurs.get_all_values()
-            for vrow in vendeur_rows[1:]:
+            sh_vendeurs = gc.open_by_key(vendeur_sheet_id)
+            # Feuille 1 (vendeurs actifs)
+            for vrow in sh_vendeurs.sheet1.get_all_values()[1:]:
                 if len(vrow) > 3 and '@' in vrow[3]:
                     email_to_name[vrow[3].strip().lower()] = (vrow[0], vrow[1])
+            # Onglet ARCHIVE VENDEURS (vendeurs supprimés — compta)
+            try:
+                ws_archive = sh_vendeurs.worksheet('ARCHIVE VENDEURS')
+                for vrow in ws_archive.get_all_values()[1:]:
+                    if len(vrow) > 3 and '@' in vrow[3]:
+                        key = vrow[3].strip().lower()
+                        if key not in email_to_name:
+                            email_to_name[key] = (vrow[0], vrow[1])
+            except Exception:
+                pass  # onglet pas encore créé — pas d'archivés
         except Exception as e:
             print(f"⚠️ export-vendeur: impossible de lire le Sheet vendeurs pour le tri — fallback sur email: {e}")
 
@@ -4490,7 +4500,9 @@ def supprimer_vendeur():
     if not email:
         return jsonify({'error': 'Email requis'}), 400
 
-    # 1. Google Sheets — marque SUPPRIMÉ dans colonne K
+    errors = []
+
+    # 1. Google Sheets — archiver la ligne puis la supprimer physiquement
     gc = get_sheets_client()
     if gc:
         try:
@@ -4498,12 +4510,39 @@ def supprimer_vendeur():
             sh = gc.open_by_key(sheet_id)
             ws = sh.sheet1
             all_values = ws.get_all_values()
+            row_index = None
+            row_data = None
             for i, row in enumerate(all_values):
-                if len(row) > 3 and row[3].lower() == email.lower():
-                    ws.update_cell(i + 1, 11, 'supprime')
-                    print(f'✅ Sheets supprimé: {email}')
+                if len(row) > 3 and row[3].strip().lower() == email.lower():
+                    row_index = i
+                    row_data = row
                     break
+
+            if row_index is not None:
+                # Copier dans l'onglet ARCHIVE VENDEURS (le créer s'il n'existe pas)
+                archive_headers = all_values[0] + ['DATE_SORTIE'] if all_values else ['NOM', 'PRENOM', 'MDP', 'EMAIL', 'POSTE', 'DRIVE', 'REFERENT', 'TOKEN_RGPD', 'LIEN_RGPD', 'ROLE', 'STATUT', 'DATE_SORTIE']
+                try:
+                    ws_archive = sh.worksheet('ARCHIVE VENDEURS')
+                except Exception:
+                    ws_archive = sh.add_worksheet(title='ARCHIVE VENDEURS', rows=500, cols=len(archive_headers))
+                    ws_archive.update('A1:' + chr(64 + len(archive_headers)) + '1', [archive_headers])
+                    print(f'📂 Onglet ARCHIVE VENDEURS créé')
+
+                # Padder row_data pour que DATE_SORTIE tombe toujours dans la bonne colonne
+                nb_cols = len(all_values[0]) if all_values else 0
+                row_data = row_data + [''] * max(0, nb_cols - len(row_data))
+                archive_row = row_data + [datetime.now().strftime('%Y-%m-%d %H:%M')]
+                ws_archive.append_row(archive_row)
+                print(f'📂 Archivé: {email} dans ARCHIVE VENDEURS')
+
+                # Supprimer physiquement la ligne de la Feuille 1
+                ws.delete_rows(row_index + 1)
+                print(f'✅ Ligne supprimée physiquement de la Feuille 1: {email}')
+            else:
+                errors.append(f'Sheet: vendeur {email} introuvable')
+                print(f'⚠️ Vendeur {email} introuvable dans le Sheet')
         except Exception as e:
+            errors.append(f'Sheet: {e}')
             print(f'❌ Sheets suppress error: {e}')
 
     # 2. CRM Neon — marque inactif + deletedAt
@@ -4517,10 +4556,19 @@ def supprimer_vendeur():
             timeout=10
         )
     except Exception as e:
+        errors.append(f'CRM: {e}')
         print(f'CRM delete error: {e}')
 
     # 3. Orpheliner si c'est un référent
-    orphelins = orpheliner_vendeurs(email)
+    orphelins = []
+    try:
+        orphelins = orpheliner_vendeurs(email)
+    except Exception as e:
+        errors.append(f'Orphelinage: {e}')
+        print(f'❌ Erreur orphelinage {email}: {e}')
+
+    if errors:
+        return jsonify({'success': True, 'partial': True, 'email': email, 'orphelins': orphelins, 'errors': errors}), 207
 
     return jsonify({'success': True, 'email': email, 'orphelins': orphelins})
 
