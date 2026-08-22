@@ -80,8 +80,12 @@
 <div class="bar"></div>
 <header>
   <h1>LILIWATT Admin</h1>
-  <a href="/logout">Déconnexion</a>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <button onclick="envoyerTestMails()" id="btn-test-mails" style="padding:7px 14px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap;">📧 Envoyer les mails de test</button>
+    <a href="/logout">Déconnexion</a>
+  </div>
 </header>
+<div id="test-mails-result" style="display:none;max-width:900px;margin:10px auto;padding:12px 20px;border-radius:10px;font-size:13px;"></div>
 
 <div class="tabs">
 
@@ -4655,6 +4659,42 @@ document.addEventListener('drop',     function(e){ e.preventDefault(); });
 
   dzSetState('idle');
 })();
+</script>
+<script>
+async function envoyerTestMails() {
+  var btn = document.getElementById('btn-test-mails');
+  var res = document.getElementById('test-mails-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ Envoi en cours...';
+  res.style.display = 'none';
+  try {
+    var r = await fetch('/api/test-mails', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    var d = await r.json();
+    if (d.success) {
+      res.style.background = '#f0fdf4';
+      res.style.color = '#16a34a';
+      res.style.border = '1px solid #bbf7d0';
+      res.innerHTML = '<strong>✅ ' + d.sent.length + '/8 mails envoyés avec succès</strong><br>' + d.sent.map(function(s){ return '• ' + s; }).join('<br>');
+    } else {
+      res.style.background = '#fef2f2';
+      res.style.color = '#ef4444';
+      res.style.border = '1px solid #fecaca';
+      var msg = '<strong>⚠️ ' + (d.sent ? d.sent.length : 0) + '/8 mails envoyés</strong>';
+      if (d.errors && d.errors.length) msg += '<br>Erreurs :<br>' + d.errors.map(function(e){ return '• ' + e; }).join('<br>');
+      if (d.error) msg += '<br>' + d.error;
+      res.innerHTML = msg;
+    }
+    res.style.display = 'block';
+  } catch(e) {
+    res.style.background = '#fef2f2';
+    res.style.color = '#ef4444';
+    res.style.border = '1px solid #fecaca';
+    res.innerHTML = '<strong>❌ Erreur réseau</strong> : ' + e.message;
+    res.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = '📧 Envoyer les mails de test';
+}
 </script>
 </body>
 </html>

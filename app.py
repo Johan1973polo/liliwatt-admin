@@ -5511,6 +5511,179 @@ def bienvenue_test_send():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/test-mails', methods=['POST'])
+@login_required
+def test_mails():
+    """Envoie les 8 templates email avec des données fictives à bo@liliwatt.fr."""
+    sent = []
+    errors = []
+
+    try:
+        token = get_zoho_token()
+        if not token:
+            return jsonify({'success': False, 'error': 'Impossible d\'obtenir le token Zoho'}), 500
+        account_id = _zoho_get_account_id(token)
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Erreur Zoho auth : {e}'}), 500
+
+    # Données fictives
+    fake = {
+        'prenom': 'Test', 'nom': 'EXEMPLE', 'email': 'test.exemple@liliwatt.fr',
+        'password': 'MotDePasse123!', 'telephone': '0612345678',
+        'poste': 'Courtier test', 'referent': 'referent.test@liliwatt.fr',
+    }
+
+    mails = []
+
+    # 1. Welcome email (VOTRE ESPACE LILIWATT)
+    corps_1 = '\n'.join([
+        paragraphe(f'Bienvenue {fake['prenom']} !'),
+        paragraphe('Nous sommes ravis de vous accueillir dans l&#39;&eacute;quipe LILIWATT.'),
+        bouton('Acc&eacute;der &agrave; mon espace &rarr;', 'https://liliwatt-crm-8ofi.vercel.app'),
+        bloc(tableau_infos([
+            ('Identifiant', fake['email']),
+            ('Mot de passe', fake['password']),
+        ])),
+        paragraphe(accent('Vos prochaines &eacute;tapes')),
+        paragraphe(f'1. {accent("Connectez-vous au CRM", TEXTE_FORT)} avec vos identifiants ci-dessus'),
+        paragraphe(f'2. {accent("Commencez votre formation", TEXTE_FORT)}'),
+        signature_equipe(),
+    ])
+    mails.append(('[TEST 1/8] Bienvenue chez LILIWATT — Vos accès Test',
+                  mail_liliwatt('VOTRE', 'ESPACE LILIWATT', corps_1)))
+
+    # 2. Notification bo@ (NOUVEAU COMMERCIAL)
+    sig_html = make_signature(fake['prenom'], fake['nom'], fake['poste'], fake['telephone'], fake['email'])
+    corps_2 = '\n'.join([
+        paragraphe(f'{accent(f"{fake['prenom']} {fake['nom']}")} a &eacute;t&eacute; ajout&eacute; &agrave; l\'&eacute;quipe.'),
+        paragraphe(accent('&#128272; Identifiants Zoho Mail')),
+        bloc(tableau_infos([
+            ('Email', fake['email']),
+            ('Mot de passe', fake['password']),
+        ])),
+        bloc(tableau_infos([
+            ('Poste', fake['poste']),
+            ('T&eacute;l&eacute;phone', fake['telephone']),
+            ('R&eacute;f&eacute;rent', fake['referent']),
+        ])),
+        paragraphe(accent('&#9999;&#65039; Signature email pr&ecirc;te &agrave; copier dans Zoho :')),
+        bloc(f'{sig_html}'),
+    ])
+    mails.append(('[TEST 2/8] Nouveau commercial : Test EXEMPLE — Courtier test',
+                  mail_liliwatt('NOUVEAU', 'COMMERCIAL', corps_2)))
+
+    # 3. Recrue au référent (NOUVELLE RECRUE)
+    corps_3 = '\n'.join([
+        paragraphe('Bonjour,'),
+        paragraphe('Un nouveau commercial vient d\'&ecirc;tre ajout&eacute; &agrave; votre &eacute;quipe&nbsp;:'),
+        bloc(tableau_infos([
+            ('Nom', f'{fake['prenom']} {fake['nom']}'),
+            ('Poste', fake['poste']),
+            ('T&eacute;l&eacute;phone', fake['telephone']),
+            ('Email', f'<a href="mailto:{fake['email']}" style="color:{VIOLET};text-decoration:none;font-weight:600;">{fake['email']}</a>'),
+        ])),
+        bloc(f'&#128222; Merci de prendre contact avec {accent(fake['prenom'])} au plus vite pour l\'accueillir et organiser son int&eacute;gration.', ROSE),
+    ])
+    mails.append(('[TEST 3/8] Nouvelle recrue dans votre équipe : Test EXEMPLE',
+                  mail_liliwatt('NOUVELLE', 'RECRUE', corps_3)))
+
+    # 4. Profil candidat (PROFIL CANDIDAT)
+    corps_4 = '\n'.join([
+        paragraphe('Bonjour,'),
+        paragraphe('Un nouveau profil candidat vous est transmis pour &eacute;valuation :'),
+        bloc(tableau_infos([
+            ('Nom', f'{fake['prenom']} {fake['nom']}'),
+            ('Email', fake['email']),
+            ('T&eacute;l', fake['telephone']),
+            ('Adresse', '59 rue de Ponthieu, 75008 Paris'),
+        ])),
+        signature_equipe(),
+    ])
+    mails.append(('[TEST 4/8] Profil candidat — Test EXEMPLE',
+                  mail_liliwatt('PROFIL', 'CANDIDAT', corps_4)))
+
+    # 5. Invitation session (INVITATION SESSION)
+    corps_5 = '\n'.join([
+        paragraphe(f'Bonjour {accent(fake['prenom'])},'),
+        paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
+        bloc(tableau_infos([
+            ('Date', '15/09/2026'),
+            ('Heure', '14:30'),
+        ])),
+        bouton('Rejoindre la session Google Meet', 'https://meet.google.com/test-session'),
+        paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
+        signature_equipe(),
+    ])
+    mails.append(('[TEST 5/8] Invitation session LILIWATT — 15/09/2026 à 14:30',
+                  mail_liliwatt('INVITATION', 'SESSION', corps_5)))
+
+    # 6. Invitation session CA (INVITATION SESSION — Carole Andria)
+    corps_6 = '\n'.join([
+        paragraphe(f'Bonjour {accent(fake['prenom'])},'),
+        paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
+        bloc(tableau_infos([
+            ('Date', '16/09/2026'),
+            ('Heure', '10:00'),
+        ])),
+        bouton('Rejoindre la session Google Meet', 'https://meet.google.com/test-session-ca'),
+        paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
+        paragraphe(f'Carole Andria<br>carole.andria@liliwatt.fr'),
+    ])
+    mails.append(('[TEST 6/8] Invitation session LILIWATT — 16/09/2026 à 10:00',
+                  mail_liliwatt('INVITATION', 'SESSION', corps_6)))
+
+    # 7. Newsletter (LA LETTRE LILIWATT)
+    nl_body = (
+        '<p style="font-size:15px;line-height:1.7;color:#241f47;">'
+        'Ceci est un <strong>contenu de test</strong> pour la newsletter LILIWATT.<br><br>'
+        'Le march&eacute; de l\'&eacute;nergie &eacute;volue, et nous vous accompagnons.</p>'
+    )
+    mails.append(('[TEST 7/8] La Lettre LILIWATT — Août 2026',
+                  _nl_build_html('La Lettre LILIWATT', 'Actualités énergie',
+                                 nl_body, 'https://example.com/unsub',
+                                 fmt='newsletter',
+                                 cta_texte='Découvrir nos offres',
+                                 cta_lien='https://liliwatt.fr/offres.html',
+                                 prenom='Test')))
+
+    # 8. Bienvenue newsletter (BIENVENUE CHEZ LILIWATT)
+    bvn_msg = BIENVENUE_DEFAUT['message']
+    escaped = html_mod.escape(bvn_msg)
+    escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
+    bvn_body = _nl_parse_balises(escaped)
+    mails.append(('[TEST 8/8] Bienvenue chez LILIWATT',
+                  _nl_build_html('Bienvenue chez LILIWATT', 'Bienvenue chez LILIWATT',
+                                 bvn_body, 'https://example.com/unsub',
+                                 fmt='bienvenue', prenom='Test')))
+
+    # Envoi
+    for subject, html in mails:
+        try:
+            r = requests.post(
+                f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+                headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                json={
+                    'fromAddress': 'bo@liliwatt.fr',
+                    'toAddress': 'bo@liliwatt.fr',
+                    'subject': subject,
+                    'content': html,
+                    'mailFormat': 'html'
+                },
+                timeout=15
+            )
+            if r.status_code < 300:
+                sent.append(subject)
+                print(f'[TEST-MAILS] OK : {subject}')
+            else:
+                errors.append(f'{subject} — Zoho HTTP {r.status_code}')
+                print(f'[TEST-MAILS] ERREUR {r.status_code} : {subject}')
+        except Exception as e:
+            errors.append(f'{subject} — {e}')
+            print(f'[TEST-MAILS] EXCEPTION : {subject} — {e}')
+
+    return jsonify({'success': len(errors) == 0, 'sent': sent, 'errors': errors})
+
+
 @app.route('/newsletter/unsubscribe')
 def newsletter_unsubscribe():
     email = (request.args.get('email') or '').strip().lower()
