@@ -1201,26 +1201,39 @@ async function promouvoir(email, role) {
 async function toggleActif(email, actuelActif) {
   const action = actuelActif ? 'désactiver' : 'réactiver';
   if(!confirm('Voulez-vous ' + action + ' ' + email + ' ?')) return;
-  await fetch('/api/toggle-vendeur', {
+  const r = await fetch('/api/toggle-vendeur', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({email, actif: !actuelActif})
   });
-  alert('✅ ' + email + ' ' + action + ' avec succès');
+  const d = await r.json();
+  let msg = '✅ ' + email + ' ' + action + ' avec succès';
+  if (d.mails && d.mails.length > 0) {
+    msg += '\n\n📧 Notifications :\n' + d.mails.join('\n');
+  }
+  alert(msg);
   loadUsers();
 }
 
 async function supprimerVendeur(email, name) {
   if(!confirm('ATTENTION: Supprimer définitivement ' + (name||email) + ' de tous les systèmes ?')) return;
   if(!confirm('Dernière confirmation — cette action est irréversible.')) return;
-  await fetch('/api/supprimer-vendeur', {
+  const r = await fetch('/api/supprimer-vendeur', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({email})
   });
+  const d = await r.json();
   // Aussi supprimer du Zoho
   await fetch('/api/users/' + encodeURIComponent(email), {method: 'DELETE'});
-  alert('✅ ' + (name||email) + ' supprimé de tous les systèmes');
+  let msg = '✅ ' + (name||email) + ' supprimé de tous les systèmes';
+  if (d.partial) {
+    msg = '⚠️ ' + (name||email) + ' supprimé avec des erreurs partielles :\n' + (d.errors || []).join('\n');
+  }
+  if (d.mails && d.mails.length > 0) {
+    msg += '\n\n📧 Notifications :\n' + d.mails.join('\n');
+  }
+  alert(msg);
   loadUsers();
 }
 

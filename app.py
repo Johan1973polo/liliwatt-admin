@@ -4585,6 +4585,84 @@ def corriger_telephone():
     })
 
 
+def notifier_fin_collaboration(prenom, nom, email_liliwatt, email_perso, referent_email, motif):
+    """Envoie les mails de fin de collaboration (vendeur + référent/bo).
+    Retourne une liste de messages pour le rapport (succès et échecs)."""
+    rapport = []
+
+    # 1. Mail au vendeur — vers son email perso
+    if not email_perso:
+        rapport.append('Mail vendeur non envoyé : aucune adresse personnelle enregistrée')
+    else:
+        try:
+            corps = '\n'.join([
+                paragraphe(f'Bonjour {accent(prenom)},'),
+                paragraphe('Suite &agrave; nos &eacute;changes, nous vous confirmons la fin de notre collaboration &agrave; compter de ce jour.'),
+                paragraphe('Nous vous remercions pour le temps pass&eacute; aux c&ocirc;t&eacute;s de LILIWATT ainsi que pour votre implication durant cette p&eacute;riode.'),
+                paragraphe('Nous vous souhaitons le meilleur pour la suite de votre parcours professionnel.'),
+                paragraphe('Nous restons disponibles si n&eacute;cessaire pour assurer une transition fluide.'),
+                signature_equipe(),
+            ])
+            html = mail_liliwatt('FIN DE', 'COLLABORATION', corps)
+            token = get_zoho_token()
+            if token:
+                bo_account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+                requests.post(
+                    f'https://mail.zoho.eu/api/accounts/{bo_account_id}/messages',
+                    headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                    json={
+                        'fromAddress': 'bo@liliwatt.fr',
+                        'toAddress': email_perso,
+                        'ccAddress': 'bo@liliwatt.fr',
+                        'subject': f'Fin de collaboration — {prenom} {nom}',
+                        'content': html,
+                        'mailFormat': 'html'
+                    },
+                    timeout=15
+                )
+                rapport.append(f'Mail vendeur envoyé à {email_perso}')
+                print(f'✅ Mail fin collaboration envoyé à {email_perso}')
+        except Exception as e:
+            rapport.append(f'Mail vendeur échoué : {e}')
+            print(f'❌ Erreur mail fin collaboration vendeur: {e}')
+
+    # 2. Mail d'information au référent (ou bo@ si pas de référent)
+    dest_info = referent_email if referent_email else 'bo@liliwatt.fr'
+    try:
+        date_jour = datetime.now().strftime('%d/%m/%Y')
+        corps_info = '\n'.join([
+            paragraphe(f'Bonjour,'),
+            paragraphe(f'{accent(f"{prenom} {nom}")} ne fait plus partie de l\'&eacute;quipe &agrave; compter du {accent(date_jour)}.'),
+            paragraphe(f'Motif : {accent(motif)}.'),
+            paragraphe('Les prospects et dossiers en cours ont &eacute;t&eacute; d&eacute;tach&eacute;s. Merci de v&eacute;rifier qu\'aucun suivi n\'est en suspens.'),
+            signature_equipe(),
+        ])
+        html_info = mail_liliwatt('FIN DE', 'COLLABORATION', corps_info)
+        token = get_zoho_token()
+        if token:
+            bo_account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+            requests.post(
+                f'https://mail.zoho.eu/api/accounts/{bo_account_id}/messages',
+                headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                json={
+                    'fromAddress': 'bo@liliwatt.fr',
+                    'toAddress': dest_info,
+                    'ccAddress': 'bo@liliwatt.fr' if dest_info != 'bo@liliwatt.fr' else '',
+                    'subject': f'Fin de collaboration — {prenom} {nom}',
+                    'content': html_info,
+                    'mailFormat': 'html'
+                },
+                timeout=15
+            )
+            rapport.append(f'Mail info envoyé à {dest_info}')
+            print(f'✅ Mail info fin collaboration envoyé à {dest_info}')
+    except Exception as e:
+        rapport.append(f'Mail info échoué : {e}')
+        print(f'❌ Erreur mail info fin collaboration: {e}')
+
+    return rapport
+
+
 @app.route('/api/toggle-vendeur', methods=['POST'])
 @login_required
 def toggle_vendeur():
@@ -4595,7 +4673,10 @@ def toggle_vendeur():
     if not email or actif is None:
         return jsonify({'error': 'Paramètres invalides'}), 400
 
+    mail_rapport = []
+
     # 1. Google Sheets — colonne K = STATUT
+    vendeur_prenom = vendeur_nom = vendeur_referent = vendeur_email_perso = ''
     gc = get_sheets_client()
     if gc:
         try:
@@ -4605,11 +4686,24 @@ def toggle_vendeur():
             all_values = ws.get_all_values()
             for i, row in enumerate(all_values):
                 if len(row) > 3 and row[3].lower() == email.lower():
+                    # Capturer les données AVANT modification
+                    vendeur_nom = row[0] if len(row) > 0 else ''
+                    vendeur_prenom = row[1] if len(row) > 1 else ''
+                    vendeur_referent = row[6] if len(row) > 6 else ''
+                    vendeur_email_perso = row[14].strip() if len(row) > 14 else ''
                     ws.update_cell(i + 1, 11, 'actif' if actif else 'inactif')
                     print(f'✅ Sheets toggle: {email} → {"actif" if actif else "inactif"}')
                     break
         except Exception as e:
             print(f'❌ Sheets toggle error: {e}')
+
+    # Notification fin de collaboration si désactivation
+    if not actif and vendeur_prenom:
+        try:
+            mail_rapport = notifier_fin_collaboration(vendeur_prenom, vendeur_nom, email, vendeur_email_perso, vendeur_referent, 'suspension')
+        except Exception as e:
+            mail_rapport.append(f'Notification: {e}')
+            print(f'❌ Erreur notification fin collaboration: {e}')
 
     # 2. CRM Neon
     CRM_URL = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
@@ -4636,7 +4730,7 @@ def toggle_vendeur():
                     break
         except: pass
 
-    return jsonify({'success': True, 'email': email, 'actif': actif, 'orphelins': orphelins})
+    return jsonify({'success': True, 'email': email, 'actif': actif, 'orphelins': orphelins, 'mails': mail_rapport})
 
 
 @app.route('/api/supprimer-vendeur', methods=['POST'])
@@ -4649,8 +4743,10 @@ def supprimer_vendeur():
         return jsonify({'error': 'Email requis'}), 400
 
     errors = []
+    mail_rapport = []
 
     # 1. Google Sheets — archiver la ligne puis la supprimer physiquement
+    vendeur_prenom = vendeur_nom = vendeur_referent = vendeur_email_perso = ''
     gc = get_sheets_client()
     if gc:
         try:
@@ -4664,6 +4760,11 @@ def supprimer_vendeur():
                 if len(row) > 3 and row[3].strip().lower() == email.lower():
                     row_index = i
                     row_data = row
+                    # Capturer les données AVANT archivage/suppression
+                    vendeur_nom = row[0] if len(row) > 0 else ''
+                    vendeur_prenom = row[1] if len(row) > 1 else ''
+                    vendeur_referent = row[6] if len(row) > 6 else ''
+                    vendeur_email_perso = row[14].strip() if len(row) > 14 else ''
                     break
 
             if row_index is not None:
@@ -4715,10 +4816,18 @@ def supprimer_vendeur():
         errors.append(f'Orphelinage: {e}')
         print(f'❌ Erreur orphelinage {email}: {e}')
 
-    if errors:
-        return jsonify({'success': True, 'partial': True, 'email': email, 'orphelins': orphelins, 'errors': errors}), 207
+    # 4. Notification fin de collaboration
+    if vendeur_prenom:
+        try:
+            mail_rapport = notifier_fin_collaboration(vendeur_prenom, vendeur_nom, email, vendeur_email_perso, vendeur_referent, 'suppression')
+        except Exception as e:
+            mail_rapport.append(f'Notification: {e}')
+            print(f'❌ Erreur notification fin collaboration: {e}')
 
-    return jsonify({'success': True, 'email': email, 'orphelins': orphelins})
+    if errors:
+        return jsonify({'success': True, 'partial': True, 'email': email, 'orphelins': orphelins, 'errors': errors, 'mails': mail_rapport}), 207
+
+    return jsonify({'success': True, 'email': email, 'orphelins': orphelins, 'mails': mail_rapport})
 
 
 # ===== NEWSLETTER =====
