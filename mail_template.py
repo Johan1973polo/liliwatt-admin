@@ -64,8 +64,8 @@ RESEAUX = [
 
 NAVIGATION = [
     ('Nos offres',        'https://liliwatt.fr/offres.html'),
-    ('Qui sommes-nous ?', 'https://liliwatt.fr/a-propos.html'),
-    ('Actualités',        'https://liliwatt.fr/actualites.html'),
+    ('Qui sommes-nous ?', 'https://liliwatt.fr/apropos.html'),
+    ('Actualit\u00e9s',   'https://liliwatt.fr/blog'),
     ('Contact',           'https://liliwatt.fr/contact.html'),
 ]
 

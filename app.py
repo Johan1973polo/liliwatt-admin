@@ -4985,7 +4985,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
     social_ftr = f'<table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>{_social_cells()}</tr></table>'
 
     _sep = '<span style="color:#4c4a7a;margin:0 8px;">|</span>'
-    _link_tpl = '<a href="{u}" style="color:#1e1b4b;text-decoration:none;font-size:13px;" target="_blank">{l}</a>'
+    _link_tpl = '<a href="{u}" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">{l}</a>'
     footer_nav_html = _sep.join(
         _link_tpl.format(u=u, l=html_mod.escape(l)) for l, u in FOOTER_NAV
     )
