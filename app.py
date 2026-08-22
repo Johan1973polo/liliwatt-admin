@@ -158,52 +158,45 @@ def _zoho_get_account_id(token=None):
 
 
 def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', referent_email='', token_rgpd='', role='vendeur', courtier_number='', lien_visio='', telephone=''):
-    """Enregistre le commercial dans Google Sheets"""
-    try:
-        import gspread
-        from google.oauth2.service_account import Credentials
-        import json
-        from datetime import datetime
+    """Enregistre le commercial dans Google Sheets. Lève une exception en cas d'échec
+    pour que l'appelant puisse alimenter post_zoho_errors."""
+    import gspread
+    from google.oauth2.service_account import Credentials
 
-        creds_json = os.environ.get('GOOGLE_CREDS_JSON', '')
-        if not creds_json:
-            print("⚠️ GOOGLE_CREDS_JSON non défini")
-            return False
+    creds_json = os.environ.get('GOOGLE_CREDS_JSON', '')
+    if not creds_json:
+        raise RuntimeError("GOOGLE_CREDS_JSON non défini — impossible d'écrire dans le Sheet")
 
-        creds_dict = json.loads(creds_json)
-        creds = Credentials.from_service_account_info(
-            creds_dict,
-            scopes=[
-                'https://spreadsheets.google.com/feeds',
-                'https://www.googleapis.com/auth/drive'
-            ]
-        )
-        gc = gspread.authorize(creds)
-        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
-        sh = gc.open_by_key(sheet_id)
-        ws = sh.sheet1
-        rgpd_link = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}' if token_rgpd else ''
-        ws.append_row([
-            nom.upper(),
-            prenom.capitalize(),
-            password,
-            email,
-            poste,
-            drive_folder_id,
-            referent_email,
-            token_rgpd,
-            rgpd_link,
-            role,
-            'actif',
-            str(courtier_number) if courtier_number else '',
-            lien_visio,
-            telephone
-        ])
-        print(f"✅ {nom} {prenom} enregistré dans Google Sheets (token RGPD: {token_rgpd})")
-        return True
-    except Exception as e:
-        print(f"⚠️ Erreur Google Sheets : {e}")
-        return False
+    creds_dict = json.loads(creds_json)
+    creds = Credentials.from_service_account_info(
+        creds_dict,
+        scopes=[
+            'https://spreadsheets.google.com/feeds',
+            'https://www.googleapis.com/auth/drive'
+        ]
+    )
+    gc = gspread.authorize(creds)
+    sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+    sh = gc.open_by_key(sheet_id)
+    ws = sh.sheet1
+    rgpd_link = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}' if token_rgpd else ''
+    ws.append_row([
+        nom.upper(),
+        prenom.capitalize(),
+        password,
+        email,
+        poste,
+        drive_folder_id,
+        referent_email,
+        token_rgpd,
+        rgpd_link,
+        role,
+        'actif',
+        str(courtier_number) if courtier_number else '',
+        lien_visio,
+        telephone
+    ])
+    print(f"✅ {nom} {prenom} enregistré dans Google Sheets (token RGPD: {token_rgpd})")
 
 def orpheliner_vendeurs(ancien_referent_email):
     """Détache tous les vendeurs de leur ancien référent."""

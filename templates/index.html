@@ -1122,7 +1122,11 @@ async function createUser() {
   });
   const data = await r.json();
 
-  if (data.success) {
+  if (data.success && data.partial) {
+    // Onboarding incomplet — certaines étapes ont échoué
+    result.className = 'result err';
+    result.innerHTML = `⚠️ ONBOARDING INCOMPLET — ${data.message}<br><strong>Email :</strong> ${data.email}<br><strong>Mot de passe :</strong> ${data.password}<br><br><strong>Étapes en échec :</strong><ul>${(data.errors || []).map(e => '<li>' + e + '</li>').join('')}</ul><br>⚠️ <strong>NE RECRÉEZ PAS</strong> ce vendeur — sa boîte Zoho existe déjà et une nouvelle création produirait un doublon. Corrigez uniquement l'étape en échec listée ci-dessus, puis vérifiez que le vendeur apparaît bien dans le Sheet et dans le CRM.`;
+  } else if (data.success) {
     result.className = 'result ok';
     result.innerHTML = `✅ ${data.message}<br><strong>Email :</strong> ${data.email}<br><strong>Mot de passe :</strong> ${data.password}`;
     document.getElementById('prenom').value = '';
