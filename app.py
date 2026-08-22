@@ -14,6 +14,19 @@ from functools import wraps
 from datetime import datetime, timedelta
 from google_meet_service import create_referent_meet_room
 
+
+def sort_vendeurs(rows):
+    """Tri alphabétique NOM puis PRÉNOM, insensible aux accents."""
+    def _strip_accents(s):
+        return ''.join(
+            c for c in unicodedata.normalize('NFD', s or '')
+            if unicodedata.category(c) != 'Mn'
+        ).lower()
+
+    return sorted(rows, key=lambda r: (_strip_accents(r.get('nom', '')),
+                                       _strip_accents(r.get('prenom', ''))))
+
+
 # ── Newsletter : constantes ────────────────────────────────────────────────
 MENTIONS_LEGALES = {
     "raison_sociale": "LILISTRAT STRATÉGIE SAS",
@@ -591,7 +604,7 @@ def list_vendeurs_api():
                     'role': (row[9] if len(row) > 9 else 'vendeur').strip().lower(),
                     'statut': statut
                 })
-        return jsonify({'success': True, 'vendeurs': vendeurs})
+        return jsonify({'success': True, 'vendeurs': sort_vendeurs(vendeurs)})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
@@ -620,7 +633,7 @@ def referents_avec_equipe():
                 email = row[3].strip()
                 equipe = [r[3] for r in rows[1:] if len(r) > 6 and r[6].strip().lower() == email.lower() and r[3] != email]
                 referents.append({'email': email, 'nom': row[0], 'prenom': row[1], 'vendeurs': equipe})
-        return jsonify({'success': True, 'referents': referents})
+        return jsonify({'success': True, 'referents': sort_vendeurs(referents)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -670,7 +683,7 @@ def get_referents():
                     })
                     existing_emails.add(email.lower())
 
-        return jsonify({'success': True, 'referents': referents})
+        return jsonify({'success': True, 'referents': sort_vendeurs(referents)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -1135,7 +1148,7 @@ def referents_liste():
         for row in rows:
             if len(row) > 9 and row[9] in ('referent', 'admin') and '@' in (row[3] or ''):
                 refs.append({'nom': row[0], 'prenom': row[1], 'email': row[3]})
-        return jsonify({'success': True, 'referents': refs})
+        return jsonify({'success': True, 'referents': sort_vendeurs(refs)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -3569,6 +3582,8 @@ def export_vendeur():
         csv_lines = ['ROLE,REF,SOCIETE,VENDEUR,PERIODE,COMMISSION']
         total = 0.0
 
+        # Filtrer les lignes applicables
+        filtered_rows = []
         for row in rows[1:]:
             if len(row) < 14:
                 continue
@@ -3577,7 +3592,38 @@ def export_vendeur():
                 continue
             if annee and not row_periode.startswith(annee):
                 continue
+            filtered_rows.append(row)
 
+        # Construire un mapping email → (nom, prenom) depuis la Sheet vendeurs
+        vendeur_sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        email_to_name = {}
+        try:
+            ws_vendeurs = gc.open_by_key(vendeur_sheet_id).sheet1
+            vendeur_rows = ws_vendeurs.get_all_values()
+            for vrow in vendeur_rows[1:]:
+                if len(vrow) > 3 and '@' in vrow[3]:
+                    email_to_name[vrow[3].strip().lower()] = (vrow[0], vrow[1])
+        except Exception as e:
+            print(f"⚠️ export-vendeur: impossible de lire le Sheet vendeurs pour le tri — fallback sur email: {e}")
+
+        # Tri alphabétique par NOM puis PRENOM du vendeur
+        def _strip_accents(s):
+            return ''.join(
+                c for c in unicodedata.normalize('NFD', s or '')
+                if unicodedata.category(c) != 'Mn'
+            ).lower()
+
+        def _sort_key(r):
+            vemail = g(r, 3).strip().lower()
+            if vemail in email_to_name:
+                nom, prenom = email_to_name[vemail]
+                return (_strip_accents(nom), _strip_accents(prenom))
+            return (_strip_accents(g(r, 3)), '')
+
+        filtered_rows.sort(key=_sort_key)
+
+        for row in filtered_rows:
+            row_periode = g(row, 5)
             ref = g(row, 0)
             societe = g(row, 2)
             vendeur = g(row, 3)
