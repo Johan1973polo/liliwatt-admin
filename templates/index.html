@@ -4668,7 +4668,8 @@ async function envoyerTestMails() {
   btn.textContent = '⏳ Envoi en cours...';
   res.style.display = 'none';
   try {
-    var r = await fetch('/api/test-mails', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    var r = await fetch('/api/test-mails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' });
+    if (r.redirected || !r.ok) { throw new Error('Session expirée ou erreur serveur (HTTP ' + r.status + '). Rechargez la page.'); }
     var d = await r.json();
     if (d.success) {
       res.style.background = '#f0fdf4';
