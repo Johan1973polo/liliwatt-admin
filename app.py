@@ -930,7 +930,7 @@ def create_user():
                         ('T&eacute;l&eacute;phone', f'{telephone or "&mdash;"}'),
                         ('Email', f'<a href="mailto:{email_local}" style="color:{VIOLET};text-decoration:none;font-weight:600;">{email_local}</a>'),
                     ])),
-                    bloc(f'&#128222; Merci de prendre contact avec {accent(prenom)} au plus vite pour l\'accueillir et organiser son int&eacute;gration.', ROSE),
+                    bloc(f'&#128222; Merci de prendre contact avec {accent(prenom)} au plus vite pour l\'accueillir et organiser son int&eacute;gration.'),
                 ])
                 ref_body = mail_liliwatt('NOUVELLE', 'RECRUE', ref_corps)
                 ref_token = get_zoho_token()
@@ -5581,7 +5581,7 @@ def test_mails():
                 ('T&eacute;l&eacute;phone', fake['telephone']),
                 ('Email', '<a href="mailto:{e}" style="color:{v};text-decoration:none;font-weight:600;">{e}</a>'.format(e=fake['email'], v=VIOLET)),
             ])),
-            bloc('&#128222; Merci de prendre contact avec {} au plus vite pour l\'accueillir et organiser son int&eacute;gration.'.format(accent(fake['prenom'])), ROSE),
+            bloc('&#128222; Merci de prendre contact avec {} au plus vite pour l\'accueillir et organiser son int&eacute;gration.'.format(accent(fake['prenom']))),
         ])
         mails.append(('[TEST 3/8] Nouvelle recrue dans votre équipe : Test EXEMPLE',
                       mail_liliwatt('NOUVELLE', 'RECRUE', corps_3)))
