@@ -3,7 +3,8 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from mail_template import mail_liliwatt, paragraphe, accent, bloc, tableau_infos, bouton, signature_equipe, VIOLET, ROSE, TEXTE_FORT
+from mail_template import mail_liliwatt, paragraphe, accent, bloc, tableau_infos, bouton, signature_equipe, ROSE, TEXTE_FORT, ACCENT
+VIOLET = '#8b5cf6'
 
 OUT = '/tmp/apercu_mails'
 os.makedirs(OUT, exist_ok=True)
@@ -76,46 +77,46 @@ write('03_recrue_referent', 'NOUVELLE RECRUE', mail_liliwatt('NOUVELLE', 'RECRUE
 # 4. envoyer_referent_phase1
 corps = (
     paragraphe('Bonjour,') +
-    paragraphe('Un nouveau candidat est &agrave; &eacute;valuer pour votre &eacute;quipe.') +
+    paragraphe('Un nouveau candidat est &agrave; &eacute;valuer pour votre &eacute;quipe.', theme='clair') +
     bloc(tableau_infos([
         ('Nom', 'Pierre MARTIN'),
         ('Email', 'pierre.martin@gmail.com'),
         ('T&eacute;l&eacute;phone', '0698765432'),
         ('Exp&eacute;rience', '3 ans en vente B2B'),
-    ])) +
-    bouton('Voir le CV', 'https://drive.google.com/file/xxx') +
-    bouton('Rejoindre la salle Meet', 'https://meet.google.com/abc-defg-hij') +
-    signature_equipe()
+    ], theme='clair'), theme='clair') +
+    bouton('Voir le CV', 'https://drive.google.com/file/xxx', theme='clair') +
+    bouton('Rejoindre la salle Meet', 'https://meet.google.com/abc-defg-hij', theme='clair') +
+    signature_equipe(theme='clair')
 )
-write('04_profil_candidat', 'PROFIL CANDIDAT', mail_liliwatt('PROFIL', 'CANDIDAT', corps))
+write('04_profil_candidat', 'PROFIL CANDIDAT', mail_liliwatt('PROFIL', 'CANDIDAT', corps, theme='clair'))
 
 # 5. inviter_phase1
 corps = (
-    paragraphe(f'Bonjour {accent("Pierre")},') +
-    paragraphe('Nous avons le plaisir de vous inviter &agrave; une session de pr&eacute;sentation LILIWATT.') +
+    paragraphe(f'Bonjour {accent("Pierre", theme="clair")},', theme='clair') +
+    paragraphe('Nous avons le plaisir de vous inviter &agrave; une session de pr&eacute;sentation LILIWATT.', theme='clair') +
     bloc(tableau_infos([
         ('Date', 'Lundi 25 ao&ucirc;t 2026'),
         ('Heure', '14h00'),
         ('Dur&eacute;e', '45 minutes'),
-    ])) +
-    bouton('Rejoindre la session', 'https://meet.google.com/abc-defg-hij') +
-    signature_equipe()
+    ], theme='clair'), theme='clair') +
+    bouton('Rejoindre la session', 'https://meet.google.com/abc-defg-hij', theme='clair') +
+    signature_equipe(theme='clair')
 )
-write('05_invitation_session', 'INVITATION SESSION', mail_liliwatt('INVITATION', 'SESSION', corps))
+write('05_invitation_session', 'INVITATION SESSION', mail_liliwatt('INVITATION', 'SESSION DE PR&Eacute;SENTATION', corps, theme='clair'))
 
 # 6. inviter_candidat_script (Carole Andria)
 corps = (
-    paragraphe(f'Bonjour {accent("Sophie")},') +
-    paragraphe('Suite &agrave; votre candidature, nous souhaitons vous pr&eacute;senter LILIWATT lors d\'une session en visio.') +
+    paragraphe(f'Bonjour {accent("Sophie", theme="clair")},', theme='clair') +
+    paragraphe('Suite &agrave; votre candidature, nous souhaitons vous pr&eacute;senter LILIWATT lors d\'une session en visio.', theme='clair') +
     bloc(tableau_infos([
         ('Date', 'Mardi 26 ao&ucirc;t 2026'),
         ('Heure', '10h00'),
         ('Dur&eacute;e', '30 minutes'),
-    ])) +
-    bouton('Rejoindre la session', 'https://meet.google.com/xyz-uvwx-yz') +
-    paragraphe(f'Carole Andria<br>{accent("carole.andria@liliwatt.fr")}')
+    ], theme='clair'), theme='clair') +
+    bouton('Rejoindre la session', 'https://meet.google.com/xyz-uvwx-yz', theme='clair') +
+    paragraphe(f'Carole Andria<br>{accent("carole.andria@liliwatt.fr", theme="clair")}', theme='clair')
 )
-write('06_invitation_session_ca', 'INVITATION SESSION (CA)', mail_liliwatt('INVITATION', 'SESSION', corps))
+write('06_invitation_session_ca', 'INVITATION SESSION (CA)', mail_liliwatt('INVITATION', 'SESSION DE PR&Eacute;SENTATION', corps, theme='clair'))
 
 # 7. newsletter
 corps = (

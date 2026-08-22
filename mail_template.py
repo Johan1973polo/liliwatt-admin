@@ -1,94 +1,114 @@
 """
-Gabarit unique des e-mails LILIWATT — charte sombre néon.
+Gabarit unique des e-mails LILIWATT — deux thèmes, une seule structure.
 
-Tous les mails automatisés passent par mail_liliwatt(). Les couleurs et la
-structure ne sont définies qu'ICI : une modification de charte se fait en un
-seul endroit.
+  theme='sombre'  (défaut) : mails INTERNES — équipe, référents, back-office
+  theme='clair'            : mails EXTERNES — candidats, invitations
+
+Ne JAMAIS convertir avec ce gabarit : newsletter, bienvenue newsletter,
+demande de parrainage. Ils gardent leur design d'origine.
 
 Contraintes e-mail respectées :
   - tables uniquement (pas de flex/grid)
   - couleurs hexadécimales (rgba() est ignoré par Outlook)
   - aucun dégradé (Outlook ne les rend pas), aplats de couleur
-  - aucune image distante : le texte reste lisible images bloquées
   - styles inline (les <style> sont supprimés par Gmail)
+  - les seules images sont celles du pied de page : le mail reste
+    entièrement lisible si elles sont bloquées
 """
 
-# ── Palette : le seul endroit où les couleurs sont définies ──
-FOND_PAGE     = '#0a0616'
-FOND_CARTE    = '#120b26'
-FOND_ENTETE   = '#160d2e'
-FOND_BLOC     = '#1a1033'
-FOND_PIED     = '#0d0819'
+# ── Les deux palettes : le seul endroit où les couleurs sont définies ──
+THEMES = {
+    'sombre': {
+        'fond_page':   '#17102e', 'fond_carte':  '#211846',
+        'fond_entete': '#2a1f57', 'fond_bloc':   '#312468',
+        'texte':       '#f2eefb', 'texte_fort':  '#ffffff',
+        'texte_doux':  '#ddd3f2',
+        'violet':      '#8b5cf6', 'accent':      '#c4a5fd',
+        'lavande':     '#ddd0ff', 'libelle':     '#e0c9ff',
+        'rose':        '#f9a8d4',
+        'titre_entete': '#ffffff',
+        'bouton_fond': '#ffffff', 'bouton_texte': '#5b21b6',
+    },
+    'clair': {
+        'fond_page':   '#f5f3ff', 'fond_carte':  '#ffffff',
+        'fond_entete': '#1e1b4b', 'fond_bloc':   '#f5f3ff',
+        'texte':       '#332d5c', 'texte_fort':  '#1e1b4b',
+        'texte_doux':  '#6b6490',
+        'violet':      '#7c3aed', 'accent':      '#7c3aed',
+        'lavande':     '#ddd0ff', 'libelle':     '#7c3aed',
+        'rose':        '#d946ef',
+        'titre_entete': '#ffffff',
+        'bouton_fond': '#7c3aed', 'bouton_texte': '#ffffff',
+    },
+}
 
-TEXTE         = '#e9e4f5'
-TEXTE_FORT    = '#ffffff'
-TEXTE_DOUX    = '#cbc3e3'
-TEXTE_MENTION = '#7e718f'
+# Constantes exportées pour les appels accent(texte, COULEUR)
+ROSE = 'rose'
+TEXTE_FORT = 'texte_fort'
+ACCENT = 'accent'
 
-VIOLET        = '#7c3aed'
-VIOLET_CLAIR  = '#a855f7'
-LAVANDE       = '#c4b5fd'
-MAUVE         = '#c084fc'
-ROSE          = '#f472b6'
+# ── Pied de page (images hébergées sur Render) ──
+ASSETS = 'https://liliwatt-admin.onrender.com/static/newsletter'
+FOND_PIED = '#1b1338'
+PIED_TEXTE = '#ddd3f2'
+PIED_MENTION = '#a99fc4'
+PIED_ACCENT = '#c4a5fd'
 
-_BASELINE = ('Courtier &Eacute;nergie B2B &amp; B2C &nbsp;&bull;&nbsp; '
-             '<span style="color:%s;">18%% d\'&eacute;conomies en moyenne</span> &nbsp;&bull;&nbsp; '
-             'Sans engagement &nbsp;&bull;&nbsp; Sans coupure &nbsp;&bull;&nbsp; '
-             '18+ fournisseurs compar&eacute;s') % ROSE
+RESEAUX = [
+    ('LinkedIn',  'https://www.linkedin.com/company/liliwatt/',             'linkedin.png'),
+    ('Instagram', 'https://www.instagram.com/liliwatt.fr/',                 'instagram.png'),
+    ('X',         'https://x.com/liliwattfrance',                           'x.png'),
+    ('YouTube',   'https://www.youtube.com/@liliwattfrance',                'youtube.png'),
+    ('Facebook',  'https://www.facebook.com/profile.php?id=61577269553280', 'facebook.png'),
+]
+
+NAVIGATION = [
+    ('Nos offres',        'https://liliwatt.fr/offres.html'),
+    ('Qui sommes-nous ?', 'https://liliwatt.fr/a-propos.html'),
+    ('Actualités',        'https://liliwatt.fr/actualites.html'),
+    ('Contact',           'https://liliwatt.fr/contact.html'),
+]
+
+LILISTRAT_URL = 'https://lilistrat.fr'
 
 
-def mail_liliwatt(titre_accent, titre_blanc, corps, avec_coordonnees=True, avec_baseline=True):
+def _p(theme):
+    return THEMES[theme]
+
+
+def mail_liliwatt(titre_accent, titre_blanc, corps, theme='sombre', avec_baseline=True):
     """Construit un e-mail LILIWATT complet.
 
-    titre_accent : première partie du titre, en violet   (ex. "FIN DE")
-    titre_blanc  : seconde partie du titre, en blanc     (ex. "COLLABORATION")
-    corps        : HTML libre, déjà mis en forme — utiliser les briques
-                   paragraphe(), bloc(), bouton(), tableau_infos()
+    theme : 'sombre' pour l'interne, 'clair' pour les candidats et invitations
     """
-    coordonnees = _coordonnees() if avec_coordonnees else ''
-    baseline = f'''
-  <tr>
-    <td align="center" style="background-color:{FOND_ENTETE};padding:16px 24px;">
-      <span style="color:{TEXTE_DOUX};font-size:11px;line-height:20px;">{_BASELINE}</span>
-    </td>
-  </tr>''' if avec_baseline else ''
-
-    return f'''<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{FOND_PAGE};margin:0;padding:24px 0;">
+    c = _p(theme)
+    return f'''<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{c['fond_page']};margin:0;padding:24px 0;">
 <tr><td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:{FOND_CARTE};border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:{c['fond_carte']};border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
 
   <tr>
-    <td align="center" style="background-color:{FOND_ENTETE};padding:32px 24px 24px;">
-      <div style="font-size:34px;font-weight:800;color:{TEXTE_FORT};letter-spacing:6px;line-height:1;">&#9889;&nbsp;LILIWATT&nbsp;&#9889;</div>
-      <div style="font-size:11px;color:{LAVANDE};letter-spacing:3px;margin-top:8px;">COURTAGE &Eacute;NERGIE &bull; B2B &amp; B2C</div>
+    <td align="center" style="background-color:{c['fond_entete']};padding:32px 24px 24px;">
+      <div style="font-size:34px;font-weight:800;color:{c['titre_entete']};letter-spacing:6px;line-height:1;">&#9889;&nbsp;LILIWATT&nbsp;&#9889;</div>
+      <div style="font-size:11px;color:{c['lavande']};letter-spacing:3px;margin-top:8px;">COURTAGE &Eacute;NERGIE &bull; B2B &amp; B2C</div>
     </td>
   </tr>
 
   <tr>
-    <td align="center" style="background-color:{FOND_ENTETE};padding:0 24px 32px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:2px solid {VIOLET};border-radius:12px;">
+    <td align="center" style="background-color:{c['fond_entete']};padding:0 24px 32px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:2px solid {c['violet']};border-radius:12px;">
         <tr><td align="center" style="padding:20px 16px;">
-          <span style="font-size:24px;font-weight:800;color:{VIOLET_CLAIR};letter-spacing:2px;">{titre_accent} </span><span style="font-size:24px;font-weight:800;color:{TEXTE_FORT};letter-spacing:2px;">{titre_blanc}</span>
+          <span style="font-size:24px;font-weight:800;color:{c['accent'] if theme == 'sombre' else '#c4a5fd'};letter-spacing:2px;">{titre_accent} </span><span style="font-size:24px;font-weight:800;color:#ffffff;letter-spacing:2px;">{titre_blanc}</span>
         </td></tr>
       </table>
     </td>
   </tr>
 
   <tr>
-    <td style="padding:36px 40px 28px;color:{TEXTE};font-size:15px;line-height:26px;">
+    <td style="padding:36px 40px 28px;color:{c['texte']};font-size:15px;line-height:26px;">
 {corps}
     </td>
   </tr>
-{coordonnees}{baseline}
-  <tr>
-    <td align="center" style="background-color:{FOND_PIED};padding:16px 24px;">
-      <span style="color:{TEXTE_MENTION};font-size:11px;line-height:18px;">
-        LILIWATT &mdash; LILISTRAT STRAT&Eacute;GIE SAS<br>
-        59 rue de Ponthieu, Bureau 326 &mdash; 75008 Paris
-      </span>
-    </td>
-  </tr>
-
+{_baseline(theme) if avec_baseline else ''}{signature()}
 </table>
 </td></tr>
 </table>'''
@@ -96,62 +116,119 @@ def mail_liliwatt(titre_accent, titre_blanc, corps, avec_coordonnees=True, avec_
 
 # ────────── Briques de contenu ──────────
 
-def paragraphe(html, marge_bas=22):
-    return f'      <p style="margin:0 0 {marge_bas}px;">{html}</p>'
+def paragraphe(html, marge_bas=22, theme='sombre'):
+    return f'      <p style="margin:0 0 {marge_bas}px;color:{_p(theme)["texte"]};">{html}</p>'
 
 
-def accent(texte, couleur=VIOLET_CLAIR):
-    """Met un fragment en valeur dans un paragraphe."""
-    return f'<strong style="color:{couleur};">{texte}</strong>'
+def accent(texte, couleur=ACCENT, theme='sombre'):
+    """couleur : ACCENT, ROSE ou TEXTE_FORT."""
+    return f'<strong style="color:{_p(theme)[couleur]};">{texte}</strong>'
 
 
-def bloc(contenu, bordure=VIOLET):
-    """Encadré sombre à liseré violet — identifiants, récapitulatifs."""
-    return f'''      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{FOND_BLOC};border-left:4px solid {bordure};border-radius:10px;margin:0 0 22px;">
-        <tr><td style="padding:18px 20px;color:{TEXTE};font-size:14px;line-height:24px;">{contenu}</td></tr>
+def titre_section(texte, theme='sombre'):
+    return f'      <p style="margin:0 0 14px;color:{_p(theme)["texte_fort"]};font-size:18px;font-weight:700;">{texte}</p>'
+
+
+def bloc(contenu, theme='sombre'):
+    c = _p(theme)
+    return f'''      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{c['fond_bloc']};border-left:4px solid {c['violet']};border-radius:10px;margin:0 0 22px;">
+        <tr><td style="padding:18px 20px;color:{c['texte']};font-size:14px;line-height:24px;">{contenu}</td></tr>
       </table>'''
 
 
-def tableau_infos(lignes):
-    """lignes : liste de (libellé, valeur HTML)."""
+def tableau_infos(lignes, theme='sombre'):
+    c = _p(theme)
     corps = ''.join(
-        f'<tr><td style="padding:5px 0;color:{MAUVE};font-weight:700;width:140px;font-size:13px;">{lib}</td>'
-        f'<td style="padding:5px 0;color:{TEXTE_FORT};font-size:14px;">{val}</td></tr>'
+        f'<tr>'
+        f'<td style="padding:6px 12px 6px 0;color:{c["libelle"]};font-weight:700;width:140px;font-size:13px;vertical-align:top;">{lib}</td>'
+        f'<td style="padding:6px 0;color:{c["texte_fort"]};font-size:14px;">{val}</td>'
+        f'</tr>'
         for lib, val in lignes
     )
     return f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">{corps}</table>'
 
 
-def bouton(libelle, url):
-    """Bouton blanc sur fond sombre — bien rendu partout, Outlook compris."""
+def bouton(libelle, url, theme='sombre'):
+    c = _p(theme)
     return f'''      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:8px auto 24px;">
-        <tr><td align="center" bgcolor="{TEXTE_FORT}" style="border-radius:50px;">
-          <a href="{url}" style="display:inline-block;padding:15px 38px;color:{VIOLET};font-size:15px;font-weight:700;text-decoration:none;letter-spacing:0.5px;">{libelle}</a>
+        <tr><td align="center" bgcolor="{c['bouton_fond']}" style="border-radius:50px;">
+          <a href="{url}" style="display:inline-block;padding:15px 38px;color:{c['bouton_texte']};font-size:15px;font-weight:700;text-decoration:none;letter-spacing:0.5px;">{libelle}</a>
         </td></tr>
       </table>'''
 
 
-def signature_equipe():
-    equipe = accent('L&rsquo;&eacute;quipe LILIWATT')
-    return f'      <p style="margin:0;">Bien cordialement,<br>{equipe}</p>'
+def signature_equipe(theme='sombre'):
+    c = _p(theme)
+    return f'      <p style="margin:0;color:{c["texte"]};">Bien cordialement,<br><strong style="color:{c["accent"]};">L&rsquo;&eacute;quipe LILIWATT</strong></p>'
 
 
-def _coordonnees():
-    def case(libelle, valeur, padding_bas):
-        return (f'<td width="50%" style="padding:{padding_bas};color:{TEXTE};font-size:13px;line-height:20px;" valign="top">'
-                f'<div style="color:{MAUVE};font-size:11px;letter-spacing:1.5px;font-weight:700;">{libelle}</div>'
-                f'<div style="margin-top:4px;color:{TEXTE_FORT};">{valeur}</div></td>')
+# ────────── Bandeau et signature ──────────
 
-    tel = f'<a href="tel:0184160856" style="color:{TEXTE_FORT};text-decoration:none;">01 84 16 08 56</a>'
-    mail = f'<a href="mailto:bo@liliwatt.fr" style="color:{TEXTE_FORT};text-decoration:none;">bo@liliwatt.fr</a>'
-    web = f'<a href="https://www.liliwatt.fr" style="color:{TEXTE_FORT};text-decoration:none;">www.liliwatt.fr</a>'
+def _baseline(theme='sombre'):
+    c = _p(theme)
+    fond = c['fond_entete'] if theme == 'sombre' else '#ede9fe'
+    txt = c['texte_doux'] if theme == 'sombre' else '#4c1d95'
+    rose = c['rose']
+    return f'''
+  <tr>
+    <td align="center" style="background-color:{fond};padding:18px 24px;">
+      <div style="color:{txt};font-size:12px;line-height:22px;">
+        Courtier &Eacute;nergie B2B &amp; B2C &nbsp;&middot;&nbsp; <span style="color:{rose};font-weight:700;">18&nbsp;% d&rsquo;&eacute;conomies en moyenne</span>
+      </div>
+      <div style="color:{txt};font-size:12px;line-height:22px;">
+        Sans engagement &nbsp;&middot;&nbsp; Sans coupure &nbsp;&middot;&nbsp; 18+ fournisseurs compar&eacute;s
+      </div>
+    </td>
+  </tr>'''
+
+
+def signature():
+    """Signature complète — identique dans les deux thèmes, présente dans
+    TOUS les mails. Logo, réseaux, navigation, coordonnées, LILIWATT by LILISTRAT."""
+
+    icones = ''.join(
+        f'<td style="padding:0 7px;">'
+        f'<a href="{url}" style="text-decoration:none;">'
+        f'<img src="{ASSETS}/{img}" width="30" height="30" alt="{nom}" '
+        f'style="display:block;border:0;width:30px;height:30px;"></a></td>'
+        for nom, url, img in RESEAUX
+    )
+
+    nav = f'<span style="color:#8b5cf6;">&nbsp;|&nbsp;</span>'.join(
+        f'<a href="{url}" style="color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;">{lib}</a>'
+        for lib, url in NAVIGATION
+    )
 
     return f'''
   <tr>
-    <td style="padding:0 24px 24px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{FOND_BLOC};border-radius:12px;">
-        <tr>{case('T&Eacute;L&Eacute;PHONE', tel, '18px 20px')}{case('EMAIL', mail, '18px 20px')}</tr>
-        <tr>{case('WEB', web, '0 20px 18px')}{case('ADRESSE', '59 rue de Ponthieu<br>75008 Paris', '0 20px 18px')}</tr>
+    <td align="center" style="background-color:{FOND_PIED};padding:32px 24px 16px;">
+      <a href="https://liliwatt.fr" style="text-decoration:none;">
+        <img src="{ASSETS}/logo_blanc.png" width="170" alt="LILIWATT" style="display:block;border:0;width:170px;max-width:170px;margin:0 auto 22px;">
+      </a>
+
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 22px;">
+        <tr>{icones}</tr>
       </table>
+
+      <div style="margin:0 0 18px;line-height:24px;">{nav}</div>
+
+      <div style="color:{PIED_TEXTE};font-size:12px;line-height:21px;">
+        LILIWATT &middot; 59 rue de Ponthieu, Bureau 326, 75008 Paris<br>
+        <a href="mailto:contact@liliwatt.fr" style="color:{PIED_ACCENT};text-decoration:none;">contact@liliwatt.fr</a>
+        &nbsp;&middot;&nbsp;
+        <a href="tel:0184160856" style="color:{PIED_ACCENT};text-decoration:none;">01 84 16 08 56</a>
+      </div>
+    </td>
+  </tr>
+
+  <tr>
+    <td align="center" style="background-color:{FOND_PIED};padding:0 24px 26px;">
+      <a href="{LILISTRAT_URL}" style="text-decoration:none;">
+        <span style="color:#ffffff;font-size:14px;font-weight:700;letter-spacing:1px;">LILIWATT</span><span style="color:{PIED_TEXTE};font-size:13px;"> by </span><span style="color:{PIED_ACCENT};font-size:14px;font-weight:700;letter-spacing:1px;text-decoration:underline;">LILISTRAT</span>
+      </a>
+      <div style="color:{PIED_MENTION};font-size:11px;line-height:18px;margin-top:10px;">
+        LILISTRAT STRAT&Eacute;GIE SAS au capital de 10&nbsp;000&nbsp;&euro; &middot; SIREN 103&nbsp;572&nbsp;947<br>
+        59 rue de Ponthieu, Bureau 326 &mdash; 75008 Paris
+      </div>
     </td>
   </tr>'''
