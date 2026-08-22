@@ -76,7 +76,7 @@ def _p(theme):
     return THEMES[theme]
 
 
-def mail_liliwatt(titre_accent, titre_blanc, corps, theme='sombre', avec_baseline=True):
+def mail_liliwatt(titre_accent, titre_blanc, corps, theme='clair', avec_baseline=False):
     """Construit un e-mail LILIWATT complet.
 
     theme : 'sombre' pour l'interne, 'clair' pour les candidats et invitations
@@ -116,27 +116,27 @@ def mail_liliwatt(titre_accent, titre_blanc, corps, theme='sombre', avec_baselin
 
 # ────────── Briques de contenu ──────────
 
-def paragraphe(html, marge_bas=22, theme='sombre'):
+def paragraphe(html, marge_bas=22, theme='clair'):
     return f'      <p style="margin:0 0 {marge_bas}px;color:{_p(theme)["texte"]};">{html}</p>'
 
 
-def accent(texte, couleur=ACCENT, theme='sombre'):
+def accent(texte, couleur=ACCENT, theme='clair'):
     """couleur : ACCENT, ROSE ou TEXTE_FORT."""
     return f'<strong style="color:{_p(theme)[couleur]};">{texte}</strong>'
 
 
-def titre_section(texte, theme='sombre'):
+def titre_section(texte, theme='clair'):
     return f'      <p style="margin:0 0 14px;color:{_p(theme)["texte_fort"]};font-size:18px;font-weight:700;">{texte}</p>'
 
 
-def bloc(contenu, theme='sombre'):
+def bloc(contenu, theme='clair'):
     c = _p(theme)
     return f'''      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{c['fond_bloc']};border-left:4px solid {c['violet']};border-radius:10px;margin:0 0 22px;">
         <tr><td style="padding:18px 20px;color:{c['texte']};font-size:14px;line-height:24px;">{contenu}</td></tr>
       </table>'''
 
 
-def tableau_infos(lignes, theme='sombre'):
+def tableau_infos(lignes, theme='clair'):
     c = _p(theme)
     corps = ''.join(
         f'<tr>'
@@ -148,7 +148,7 @@ def tableau_infos(lignes, theme='sombre'):
     return f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">{corps}</table>'
 
 
-def bouton(libelle, url, theme='sombre'):
+def bouton(libelle, url, theme='clair'):
     c = _p(theme)
     return f'''      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:8px auto 24px;">
         <tr><td align="center" bgcolor="{c['bouton_fond']}" style="border-radius:50px;">
@@ -157,7 +157,7 @@ def bouton(libelle, url, theme='sombre'):
       </table>'''
 
 
-def signature_equipe(theme='sombre'):
+def signature_equipe(theme='clair'):
     c = _p(theme)
     return f'      <p style="margin:0;color:{c["texte"]};">Bien cordialement,<br><strong style="color:{c["accent"]};">L&rsquo;&eacute;quipe LILIWATT</strong></p>'
 

@@ -372,7 +372,7 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
             paragraphe(accent('Votre bo&icirc;te mail professionnelle')),
             paragraphe('Votre adresse email professionnelle est active. Utilisez-la pour toutes vos communications clients.'),
             bloc(tableau_infos([
-                ('Acc&egrave;s webmail', f'<a href="https://mail.zoho.eu" style="color:#ffffff;font-weight:600;">mail.zoho.eu</a>'),
+                ('Acc&egrave;s webmail', f'<a href="https://mail.zoho.eu" style="color:#1e1b4b;font-weight:600;">mail.zoho.eu</a>'),
                 ('Email', f'{email_liliwatt}'),
                 ('Mot de passe', f'{password}'),
             ])),
@@ -886,14 +886,14 @@ def create_user():
                 bloc(tableau_infos([
                     ('Email', f'{email_local}'),
                     ('Mot de passe', f'{password}'),
-                    ('Connexion', f'<a href="https://mail.zoho.eu" style="color:#ffffff;font-weight:700;text-decoration:none;">mail.zoho.eu</a>'),
+                    ('Connexion', f'<a href="https://mail.zoho.eu" style="color:#1e1b4b;font-weight:700;text-decoration:none;">mail.zoho.eu</a>'),
                 ])),
                 bloc(tableau_infos([
                     ('Poste', f'{poste}'),
                     ('T&eacute;l&eacute;phone', f'{telephone}'),
                     ('R&eacute;f&eacute;rent', f'{referent_email or "&mdash;"}'),
-                    ('Lien RGPD', f'<a href="{rgpd_link}" style="color:#ffffff;word-break:break-all;">{rgpd_link}</a>'),
-                    ('Drive', f'<a href="https://drive.google.com/drive/folders/{drive_folder_id}" style="color:#ffffff;">Ouvrir le dossier</a>'),
+                    ('Lien RGPD', f'<a href="{rgpd_link}" style="color:#1e1b4b;word-break:break-all;">{rgpd_link}</a>'),
+                    ('Drive', f'<a href="https://drive.google.com/drive/folders/{drive_folder_id}" style="color:#1e1b4b;">Ouvrir le dossier</a>'),
                 ])),
                 paragraphe(accent('&#9999;&#65039; Signature email pr&ecirc;te &agrave; copier dans Zoho :')),
                 bloc(f'{sig_html}'),
@@ -928,7 +928,7 @@ def create_user():
                         ('Nom', f'{prenom} {nom}'),
                         ('Poste', f'{poste}'),
                         ('T&eacute;l&eacute;phone', f'{telephone or "&mdash;"}'),
-                        ('Email', f'<a href="mailto:{email_local}" style="color:#ffffff;text-decoration:none;font-weight:600;">{email_local}</a>'),
+                        ('Email', f'<a href="mailto:{email_local}" style="color:#1e1b4b;text-decoration:none;font-weight:600;">{email_local}</a>'),
                     ])),
                     bloc(f'&#128222; Merci de prendre contact avec {accent(prenom)} au plus vite pour l\'accueillir et organiser son int&eacute;gration.'),
                 ])
@@ -1180,21 +1180,21 @@ def envoyer_referent_phase1():
             return jsonify({'success': False, 'error': 'Zoho token non obtenu'})
         cv_link = ''
         if candidat.get('lien_cv'):
-            cv_link = bouton('Voir le CV', candidat.get('lien_cv',''), theme='clair')
+            cv_link = bouton('Voir le CV', candidat.get('lien_cv',''))
         ref_phase1_corps = '\n'.join([
-            paragraphe('Bonjour,', theme='clair'),
-            paragraphe('Un nouveau profil candidat vous est transmis pour &eacute;valuation :', theme='clair'),
+            paragraphe('Bonjour,'),
+            paragraphe('Un nouveau profil candidat vous est transmis pour &eacute;valuation :'),
             bloc(tableau_infos([
                 ('Nom', f"{candidat.get('prenom','')} {candidat.get('nom','')}"),
                 ('Email', f"{candidat.get('email','')}"),
                 ('T&eacute;l', f"{candidat.get('telephone','')}"),
                 ('Adresse', f"{candidat.get('adresse','')}"),
-            ], theme='clair'), theme='clair'),
+            ])),
             cv_link,
-            paragraphe(f'Lien session Meet : <a href="https://meet.google.com/tzv-pgjc-und?authuser=0" style="color:#ffffff;font-weight:600;">Rejoindre</a>', theme='clair'),
-            signature_equipe(theme='clair'),
+            paragraphe(f'Lien session Meet : <a href="https://meet.google.com/tzv-pgjc-und?authuser=0" style="color:#1e1b4b;font-weight:600;">Rejoindre</a>'),
+            signature_equipe(),
         ])
-        mail_html = mail_liliwatt('PROFIL', 'CANDIDAT', ref_phase1_corps, theme='clair')
+        mail_html = mail_liliwatt('PROFIL', 'CANDIDAT', ref_phase1_corps)
         account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
         requests.post(
             f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
@@ -1431,17 +1431,17 @@ def inviter_phase1():
 
         # Envoyer le mail d'invitation
         inv_corps = '\n'.join([
-            paragraphe(f'Bonjour {accent(prenom, theme="clair")},', theme='clair'),
-            paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.', theme='clair'),
+            paragraphe(f'Bonjour {accent(prenom, theme="clair")},'),
+            paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
             bloc(tableau_infos([
                 ('Date', f'{date_session}'),
                 ('Heure', f'{heure_session}'),
-            ], theme='clair'), theme='clair'),
-            bouton('Rejoindre la session Google Meet', 'https://meet.google.com/tzv-pgjc-und?authuser=0', theme='clair'),
-            paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !', theme='clair'),
-            signature_equipe(theme='clair'),
+            ])),
+            bouton('Rejoindre la session Google Meet', 'https://meet.google.com/tzv-pgjc-und?authuser=0'),
+            paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
+            signature_equipe(),
         ])
-        mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_corps, theme='clair')
+        mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_corps)
 
         token = get_zoho_token()
         if token:
@@ -2167,17 +2167,17 @@ def inviter_candidat_script():
 
     # 1. Envoyer l'email d'invitation (PRIORITAIRE)
     inv_ca_corps = '\n'.join([
-        paragraphe(f'Bonjour {accent(prenom or "Monsieur/Madame", theme="clair")},', theme='clair'),
-        paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.', theme='clair'),
+        paragraphe(f'Bonjour {accent(prenom or "Monsieur/Madame", theme="clair")},'),
+        paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
         bloc(tableau_infos([
             ('Date', f'{date_session}'),
             ('Heure', f'{heure_session}'),
-        ], theme='clair'), theme='clair'),
-        bouton('Rejoindre la session Google Meet', 'https://meet.google.com/tzv-pgjc-und?authuser=0', theme='clair'),
-        paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !', theme='clair'),
-        paragraphe(f'Carole Andria<br>carole.andria@liliwatt.fr', theme='clair'),
+        ])),
+        bouton('Rejoindre la session Google Meet', 'https://meet.google.com/tzv-pgjc-und?authuser=0'),
+        paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
+        paragraphe(f'Carole Andria<br>carole.andria@liliwatt.fr'),
     ])
-    mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_ca_corps, theme='clair')
+    mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_ca_corps)
 
     mail_ok = False
     try:
@@ -4985,7 +4985,7 @@ def _nl_build_html(objet, titre, body_html, unsub_url, fmt='newsletter', cta_tex
     social_ftr = f'<table role="presentation" cellpadding="0" cellspacing="0" align="center"><tr>{_social_cells()}</tr></table>'
 
     _sep = '<span style="color:#4c4a7a;margin:0 8px;">|</span>'
-    _link_tpl = '<a href="{u}" style="color:#ffffff;text-decoration:none;font-size:13px;" target="_blank">{l}</a>'
+    _link_tpl = '<a href="{u}" style="color:#1e1b4b;text-decoration:none;font-size:13px;" target="_blank">{l}</a>'
     footer_nav_html = _sep.join(
         _link_tpl.format(u=u, l=html_mod.escape(l)) for l, u in FOOTER_NAV
     )
@@ -5579,7 +5579,7 @@ def test_mails():
                 ('Nom', fake['prenom'] + ' ' + fake['nom']),
                 ('Poste', fake['poste']),
                 ('T&eacute;l&eacute;phone', fake['telephone']),
-                ('Email', '<a href="mailto:{e}" style="color:#ffffff;text-decoration:none;font-weight:600;">{e}</a>'.format(e=fake['email'])),
+                ('Email', '<a href="mailto:{e}" style="color:#1e1b4b;text-decoration:none;font-weight:600;">{e}</a>'.format(e=fake['email'])),
             ])),
             bloc('&#128222; Merci de prendre contact avec {} au plus vite pour l\'accueillir et organiser son int&eacute;gration.'.format(accent(fake['prenom']))),
         ])
@@ -5603,33 +5603,33 @@ def test_mails():
 
         # 5. Invitation session (INVITATION SESSION)
         corps_5 = '\n'.join([
-            paragraphe(f'Bonjour {accent(fake["prenom"], theme="clair")},', theme='clair'),
-            paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.', theme='clair'),
+            paragraphe(f'Bonjour {accent(fake["prenom"], theme="clair")},'),
+            paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
             bloc(tableau_infos([
                 ('Date', '15/09/2026'),
                 ('Heure', '14:30'),
-            ], theme='clair'), theme='clair'),
-            bouton('Rejoindre la session Google Meet', 'https://meet.google.com/test-session', theme='clair'),
-            paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !', theme='clair'),
-            signature_equipe(theme='clair'),
+            ])),
+            bouton('Rejoindre la session Google Meet', 'https://meet.google.com/test-session'),
+            paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
+            signature_equipe(),
         ])
         mails.append(('[TEST 5/8] Invitation session LILIWATT — 15/09/2026 à 14:30',
-                      mail_liliwatt('INVITATION', 'SESSION', corps_5, theme='clair')))
+                      mail_liliwatt('INVITATION', 'SESSION', corps_5)))
 
         # 6. Invitation session CA (INVITATION SESSION — Carole Andria)
         corps_6 = '\n'.join([
-            paragraphe(f'Bonjour {accent(fake["prenom"], theme="clair")},', theme='clair'),
-            paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.', theme='clair'),
+            paragraphe(f'Bonjour {accent(fake["prenom"], theme="clair")},'),
+            paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
             bloc(tableau_infos([
                 ('Date', '16/09/2026'),
                 ('Heure', '10:00'),
-            ], theme='clair'), theme='clair'),
-            bouton('Rejoindre la session Google Meet', 'https://meet.google.com/test-session-ca', theme='clair'),
-            paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !', theme='clair'),
-            paragraphe(f'Carole Andria<br>carole.andria@liliwatt.fr', theme='clair'),
+            ])),
+            bouton('Rejoindre la session Google Meet', 'https://meet.google.com/test-session-ca'),
+            paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
+            paragraphe(f'Carole Andria<br>carole.andria@liliwatt.fr'),
         ])
         mails.append(('[TEST 6/8] Invitation session LILIWATT — 16/09/2026 à 10:00',
-                      mail_liliwatt('INVITATION', 'SESSION', corps_6, theme='clair')))
+                      mail_liliwatt('INVITATION', 'SESSION', corps_6)))
 
         # 7. Newsletter (LA LETTRE LILIWATT)
         nl_body = (
