@@ -250,6 +250,21 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def login_or_api_key(f):
+    """Accepte soit une session login, soit un header X-API-Key valide (SHEET_HOOK_KEY)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # 1. Session
+        if session.get('logged_in'):
+            return f(*args, **kwargs)
+        # 2. Clé API (pour les hooks Google Apps Script)
+        hook_key = os.environ.get('SHEET_HOOK_KEY')
+        api_key = request.headers.get('X-API-Key')
+        if hook_key and api_key and hmac.compare_digest(api_key.encode(), hook_key.encode()):
+            return f(*args, **kwargs)
+        return jsonify({'error': 'Non autorisé'}), 401
+    return decorated
+
 def make_signature(prenom, nom, poste, telephone, email):
     return f"""<table cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,sans-serif;max-width:480px;">
   <tr><td colspan="2" style="border-top:4px solid #7c3aed;padding-bottom:12px;"></td></tr>
@@ -4483,7 +4498,7 @@ def corriger_email():
 
 
 @app.route('/api/corriger-telephone', methods=['POST'])
-@login_required
+@login_or_api_key
 def corriger_telephone():
     """Corrige le téléphone d'un vendeur dans Sheet, CRM et signature Zoho."""
     data = request.get_json()
