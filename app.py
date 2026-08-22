@@ -4482,6 +4482,159 @@ def corriger_email():
     })
 
 
+@app.route('/api/corriger-telephone', methods=['POST'])
+@login_required
+def corriger_telephone():
+    """Corrige le téléphone d'un vendeur dans Sheet, CRM et signature Zoho."""
+    data = request.get_json()
+    email = (data.get('email') or '').strip().lower()
+    nouveau_tel = (data.get('nouveau_telephone') or '').strip()
+
+    if not email or not nouveau_tel:
+        return jsonify({'success': False, 'error': 'email et nouveau_telephone requis'}), 400
+
+    # Normaliser : supprimer espaces, points, tirets
+    nouveau_tel = nouveau_tel.replace(' ', '').replace('.', '').replace('-', '')
+
+    if not re.match(r'^0[1-9][0-9]{8}$', nouveau_tel):
+        return jsonify({
+            'success': False,
+            'error': f"Le numéro « {nouveau_tel} » n'est pas un numéro français valide (10 chiffres commençant par 0)."
+        }), 400
+
+    # ── 1. Sheet : trouver la ligne, écrire en colonne N (14) ──
+    try:
+        gc = get_sheets_client()
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', '')
+        ws = gc.open_by_key(sheet_id).sheet1
+        rows = ws.get_all_values()
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Impossible de lire le Sheet: {e}'}), 500
+
+    sheet_row_index = None
+    sheet_row_data = None
+    for i, row in enumerate(rows):
+        if len(row) > 3 and row[3].strip().lower() == email:
+            sheet_row_index = i
+            sheet_row_data = row
+            break
+
+    if sheet_row_index is None:
+        return jsonify({'success': False, 'error': f"Aucun vendeur avec l'email {email} dans le Sheet."}), 404
+
+    try:
+        ws.update(f'N{sheet_row_index + 1}', [[nouveau_tel]], value_input_option='RAW')
+        print(f'✅ Sheet: téléphone {email} → {nouveau_tel}')
+    except Exception as e:
+        print(f"❌ Erreur Sheet update corriger-telephone: {e}")
+        return jsonify({'success': False, 'error': f"Écriture Sheet impossible : {e}. Aucune autre étape n'a été exécutée."}), 500
+
+    errors = []
+    results = {'sheet': 'ok'}
+
+    # Extraire les données du vendeur pour la signature
+    nom = sheet_row_data[0] if len(sheet_row_data) > 0 else ''
+    prenom = sheet_row_data[1] if len(sheet_row_data) > 1 else ''
+    poste = sheet_row_data[4] if len(sheet_row_data) > 4 else ''
+
+    # ── 2. Zoho : mettre à jour la signature ──
+    try:
+        token = get_zoho_token()
+        r = requests.get(
+            f'https://mail.zoho.eu/api/organization/{ZOHO_ORG_ID}/accounts',
+            headers={'Authorization': f'Zoho-oauthtoken {token}'},
+            timeout=15
+        )
+        zoho_accounts = r.json().get('data', [])
+        vendor_account = None
+        for acc in zoho_accounts:
+            if (acc.get('primaryEmailAddress') or '').lower() == email:
+                vendor_account = acc
+                break
+
+        if vendor_account:
+            acc_id = vendor_account.get('accountId', '')
+            sig_html = make_signature(prenom, nom, poste, nouveau_tel, email)
+
+            # GET signatures existantes → PUT si LILIWATT existe, POST+PUT sinon
+            sig_list_r = requests.get(
+                f'https://mail.zoho.eu/api/accounts/{acc_id}/signatures',
+                headers={'Authorization': f'Zoho-oauthtoken {token}'},
+                timeout=15
+            )
+            existing_sigs = sig_list_r.json().get('data', [])
+            existing_sig_id = None
+            for sig in existing_sigs:
+                if (sig.get('signatureName') or '').upper() == 'LILIWATT':
+                    existing_sig_id = sig.get('signatureId', '')
+                    break
+
+            if existing_sig_id:
+                requests.put(
+                    f'https://mail.zoho.eu/api/accounts/{acc_id}/signatures/{existing_sig_id}',
+                    headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                    json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
+                    timeout=15
+                )
+                print(f"✅ Signature LILIWATT mise à jour (PUT) pour {email}")
+            else:
+                sig_r = requests.post(
+                    f'https://mail.zoho.eu/api/accounts/{acc_id}/signatures',
+                    headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                    json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
+                    timeout=15
+                )
+                new_sig_id = sig_r.json().get('data', {}).get('signatureId', '')
+                if new_sig_id:
+                    requests.put(
+                        f'https://mail.zoho.eu/api/accounts/{acc_id}/signatures/{new_sig_id}',
+                        headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                        json={'signatureName': 'LILIWATT', 'signature': sig_html, 'isDefault': True},
+                        timeout=15
+                    )
+                print(f"✅ Signature LILIWATT créée (POST+PUT) pour {email}")
+            results['signature'] = 'ok'
+        else:
+            results['signature'] = 'compte Zoho introuvable (signature non mise à jour)'
+    except Exception as e:
+        errors.append(f"Signature: {e}")
+        results['signature'] = str(e)
+        print(f"❌ Erreur signature corriger-telephone: {e}")
+
+    # ── 3. CRM Neon ──
+    try:
+        crm_url = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
+        crm_key = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
+        r = requests.post(
+            f'{crm_url}/api/crm/update-phone',
+            headers={'X-API-Key': crm_key, 'Content-Type': 'application/json'},
+            json={'email': email, 'phone': nouveau_tel},
+            timeout=15
+        )
+        results['crm'] = 'ok' if r.ok else f'status {r.status_code} — {r.text[:200]}'
+        if not r.ok:
+            errors.append(f"CRM: status {r.status_code}")
+    except Exception as e:
+        errors.append(f"CRM: {e}")
+        results['crm'] = str(e)
+        print(f"❌ Erreur CRM corriger-telephone: {e}")
+
+    if errors:
+        return jsonify({
+            'success': True,
+            'partial': True,
+            'message': f'Téléphone corrigé avec erreurs partielles.',
+            'results': results,
+            'errors': errors
+        }), 207
+
+    return jsonify({
+        'success': True,
+        'message': f'Téléphone de {email} corrigé en {nouveau_tel}.',
+        'results': results
+    })
+
+
 @app.route('/api/toggle-vendeur', methods=['POST'])
 @login_required
 def toggle_vendeur():
