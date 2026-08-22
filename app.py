@@ -157,7 +157,7 @@ def _zoho_get_account_id(token=None):
     return '8439060000000002002'
 
 
-def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', referent_email='', token_rgpd='', role='vendeur'):
+def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', referent_email='', token_rgpd='', role='vendeur', courtier_number='', lien_visio='', telephone=''):
     """Enregistre le commercial dans Google Sheets"""
     try:
         import gspread
@@ -194,7 +194,10 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', refer
             token_rgpd,
             rgpd_link,
             role,
-            'actif'
+            'actif',
+            str(courtier_number) if courtier_number else '',
+            lien_visio,
+            telephone
         ])
         print(f"✅ {nom} {prenom} enregistré dans Google Sheets (token RGPD: {token_rgpd})")
         return True
@@ -813,9 +816,13 @@ def create_user():
         # Générer un token RGPD unique
         token_rgpd = uuid.uuid4().hex[:12]
 
+        # Numéro courtier (calculé une seule fois, partagé entre Sheet et CRM)
+        courtier_number = get_next_courtier_number()
+
         # Enregistrer dans Google Sheets
         try:
-            save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id, referent_email, token_rgpd, role)
+            save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id, referent_email, token_rgpd, role,
+                          courtier_number='', lien_visio='', telephone=telephone)
         except Exception as e:
             post_zoho_errors.append(f"Sheet: {e}")
             print(f"❌ Erreur Sheet (boîte Zoho {email_local} DÉJÀ CRÉÉE) : {e}")
@@ -850,8 +857,6 @@ def create_user():
             CRM_URL = os.environ.get('CRM_URL', 'https://liliwatt-crm-8ofi.vercel.app')
             CRM_API_KEY = os.environ.get('CRM_API_KEY', 'liliwatt-crm-api-key-2026')
             lien_rgpd = f'https://liliwatt-courtier.onrender.com/rgpd/{token_rgpd}'
-            # Numéro courtier auto
-            courtier_number = get_next_courtier_number()
             crm_r = requests.post(
                 f'{CRM_URL}/api/crm/create-user',
                 headers={'X-API-Key': CRM_API_KEY, 'Content-Type': 'application/json'},
@@ -862,6 +867,7 @@ def create_user():
                     'role': role.upper(),
                     'password': password,
                     'referentEmail': referent_email,
+                    'phone': telephone,
                     'token_rgpd': token_rgpd,
                     'lien_rgpd': lien_rgpd,
                     'zoho_password': password,
@@ -936,6 +942,52 @@ def create_user():
                 print(f"✅ Notification bo@liliwatt.fr envoyée pour {prenom} {nom}")
         except Exception as e:
             print(f"⚠️ Erreur notification bo@: {e}")
+
+        # Notifier le référent de sa nouvelle recrue
+        if referent_email:
+            try:
+                ref_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+  <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
+    <h1 style="color:white;font-size:24px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
+    <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:12px;">Nouvelle recrue dans votre &eacute;quipe</p>
+  </div>
+  <div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
+    <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;">Bonjour,</p>
+    <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;">Un nouveau commercial vient d'&ecirc;tre ajout&eacute; &agrave; votre &eacute;quipe&nbsp;:</p>
+
+    <div style="background:white;border-radius:10px;padding:20px;margin-bottom:20px;border-left:4px solid #7c3aed;">
+      <table style="width:100%;font-size:14px;border-collapse:collapse;">
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;width:130px;">Nom</td><td style="color:#1e1b4b;font-weight:700;">{prenom} {nom}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Poste</td><td style="color:#1e1b4b;">{poste}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">T&eacute;l&eacute;phone</td><td style="color:#1e1b4b;">{telephone or '&mdash;'}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;font-weight:700;">Email</td><td style="color:#1e1b4b;"><a href="mailto:{email_local}" style="color:#7c3aed;text-decoration:none;font-weight:600;">{email_local}</a></td></tr>
+      </table>
+    </div>
+
+    <div style="background:#fef3c7;border:2px solid #fbbf24;border-radius:10px;padding:16px;margin-bottom:16px;">
+      <p style="margin:0;font-size:14px;color:#92400e;font-weight:700;">&#128222; Merci de prendre contact avec {prenom} au plus vite pour l'accueillir et organiser son int&eacute;gration.</p>
+    </div>
+  </div>
+</div>"""
+                ref_token = get_zoho_token()
+                if ref_token:
+                    ref_account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
+                    requests.post(
+                        f'https://mail.zoho.eu/api/accounts/{ref_account_id}/messages',
+                        headers={'Authorization': f'Zoho-oauthtoken {ref_token}', 'Content-Type': 'application/json'},
+                        json={
+                            'fromAddress': 'bo@liliwatt.fr',
+                            'toAddress': referent_email,
+                            'subject': f'Nouvelle recrue dans votre \u00e9quipe : {prenom} {nom}',
+                            'content': ref_body,
+                            'mailFormat': 'html'
+                        },
+                        timeout=15
+                    )
+                    print(f"✅ Notification référent {referent_email} envoyée pour {prenom} {nom}")
+            except Exception as e:
+                post_zoho_errors.append(f"Email référent: {e}")
+                print(f"❌ Erreur email référent (boîte Zoho {email_local} DÉJÀ CRÉÉE) : {e}")
 
         if post_zoho_errors:
             return jsonify({
