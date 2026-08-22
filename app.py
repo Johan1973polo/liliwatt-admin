@@ -157,7 +157,7 @@ def _zoho_get_account_id(token=None):
     return '8439060000000002002'
 
 
-def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', referent_email='', token_rgpd='', role='vendeur', courtier_number='', lien_visio='', telephone=''):
+def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', referent_email='', token_rgpd='', role='vendeur', courtier_number='', lien_visio='', telephone='', email_perso=''):
     """Enregistre le commercial dans Google Sheets. Lève une exception en cas d'échec
     pour que l'appelant puisse alimenter post_zoho_errors."""
     import gspread
@@ -194,7 +194,8 @@ def save_to_sheet(prenom, nom, email, password, poste, drive_folder_id='', refer
         'actif',
         str(courtier_number) if courtier_number else '',
         lien_visio,
-        telephone
+        telephone,
+        email_perso
     ])
     print(f"✅ {nom} {prenom} enregistré dans Google Sheets (token RGPD: {token_rgpd})")
 
@@ -345,7 +346,7 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
 <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
   <div style="background:linear-gradient(135deg,#7c3aed,#d946ef);border-radius:16px;padding:40px;text-align:center;margin-bottom:32px;">
     <h1 style="color:white;margin:0;font-size:32px;font-weight:700;letter-spacing:2px;">⚡ LILIWATT</h1>
-    <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:15px;">Cabinet de courtage en énergie B2B</p>
+    <p style="color:#e9d5ff;margin:8px 0 0;font-size:15px;">Cabinet de courtage en énergie B2B</p>
   </div>
   <div style="background:white;border-radius:16px;padding:32px;margin-bottom:24px;border:1px solid #e9d5ff;">
     <h2 style="color:#7c3aed;margin:0 0 16px;font-size:22px;">Bienvenue {prenom} ! 🎉</h2>
@@ -357,12 +358,12 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
   </div>
   <div style="background:linear-gradient(135deg,#7c3aed,#d946ef);border-radius:16px;padding:36px;margin-bottom:24px;text-align:center;">
     <h3 style="color:white;margin:0 0 8px;font-size:22px;">🖥️ Votre espace CRM LILIWATT</h3>
-    <p style="color:rgba(255,255,255,0.85);margin:0 0 6px;font-size:14px;">Tableau de bord — Formation — Messagerie — Outils métier</p>
-    <p style="color:rgba(255,255,255,0.75);margin:0 0 24px;font-size:13px;">Connectez-vous dès maintenant pour découvrir votre espace et commencer votre formation.</p>
+    <p style="color:#e9d5ff;margin:0 0 6px;font-size:14px;">Tableau de bord — Formation — Messagerie — Outils métier</p>
+    <p style="color:#e9d5ff;margin:0 0 24px;font-size:13px;">Connectez-vous dès maintenant pour découvrir votre espace et commencer votre formation.</p>
     <a href="https://liliwatt-crm-8ofi.vercel.app" style="background:white;color:#7c3aed;padding:16px 40px;border-radius:50px;text-decoration:none;font-weight:700;font-size:16px;display:inline-block;letter-spacing:0.5px;">Accéder à mon espace →</a>
     <div style="margin-top:28px;background:rgba(0,0,0,0.2);border-radius:12px;padding:18px;">
-      <p style="color:rgba(255,255,255,0.9);margin:0 0 8px;font-size:14px;">📧 Identifiant : <strong>{email_liliwatt}</strong></p>
-      <p style="color:rgba(255,255,255,0.9);margin:0;font-size:14px;">🔑 Mot de passe : <strong>{password}</strong></p>
+      <p style="color:#ffffff;margin:0 0 8px;font-size:14px;">📧 Identifiant : <strong>{email_liliwatt}</strong></p>
+      <p style="color:#ffffff;margin:0;font-size:14px;">🔑 Mot de passe : <strong>{password}</strong></p>
     </div>
   </div>
   <div style="background:white;border-radius:16px;padding:32px;margin-bottom:24px;border:1px solid #e9d5ff;">
@@ -397,7 +398,7 @@ def send_welcome_email(prenom, nom, email, password, poste='', telephone='', ema
   <div style="text-align:center;padding:24px 0;">
     <div style="background:linear-gradient(135deg,#7c3aed,#d946ef);border-radius:12px;padding:20px;margin-bottom:20px;">
       <p style="color:white;margin:0;font-size:14px;font-weight:600;">Une question ? Contactez-nous</p>
-      <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:13px;">contact@liliwatt.fr — 01 84 16 08 56</p>
+      <p style="color:#e9d5ff;margin:8px 0 0;font-size:13px;">contact@liliwatt.fr — 01 84 16 08 56</p>
     </div>
     <p style="color:#9ca3af;font-size:12px;margin:0;">LILIWATT — LILISTRAT STRATÉGIE SAS</p>
     <p style="color:#9ca3af;font-size:12px;margin:4px 0 0;">59 rue de Ponthieu, Bureau 326 — 75008 Paris</p>
@@ -830,7 +831,7 @@ def create_user():
         # Enregistrer dans Google Sheets
         try:
             save_to_sheet(prenom, nom, email_local, password, poste, drive_folder_id, referent_email, token_rgpd, role,
-                          courtier_number='', lien_visio='', telephone=telephone)
+                          courtier_number='', lien_visio='', telephone=telephone, email_perso=email_perso)
         except Exception as e:
             post_zoho_errors.append(f"Sheet: {e}")
             print(f"❌ Erreur Sheet (boîte Zoho {email_local} DÉJÀ CRÉÉE) : {e}")
@@ -902,7 +903,7 @@ def create_user():
             bo_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
   <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
     <h1 style="color:white;font-size:24px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
-    <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:12px;">Nouveau commercial cr&eacute;&eacute;</p>
+    <p style="color:#e9d5ff;margin:6px 0 0;font-size:12px;">Nouveau commercial cr&eacute;&eacute;</p>
   </div>
   <div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
     <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;"><strong>{prenom} {nom}</strong> a &eacute;t&eacute; ajout&eacute; &agrave; l'&eacute;quipe.</p>
@@ -957,7 +958,7 @@ def create_user():
                 ref_body = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
   <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
     <h1 style="color:white;font-size:24px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
-    <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:12px;">Nouvelle recrue dans votre &eacute;quipe</p>
+    <p style="color:#e9d5ff;margin:6px 0 0;font-size:12px;">Nouvelle recrue dans votre &eacute;quipe</p>
   </div>
   <div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
     <p style="font-size:15px;color:#1e1b4b;margin-bottom:20px;">Bonjour,</p>
@@ -1225,7 +1226,7 @@ def envoyer_referent_phase1():
         mail_html = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
 <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:24px;border-radius:12px 12px 0 0;text-align:center;">
 <h1 style="color:#fff;font-size:24px;letter-spacing:3px;margin:0;">LILIWATT</h1>
-<p style="color:rgba(255,255,255,.8);font-size:12px;margin:4px 0 0;">Profil candidat à évaluer</p>
+<p style="color:#e9d5ff;font-size:12px;margin:4px 0 0;">Profil candidat à évaluer</p>
 </div>
 <div style="background:#f5f3ff;padding:28px;border-radius:0 0 12px 12px;">
 <p style="font-size:15px;color:#1e1b4b;">Bonjour,</p>
@@ -1481,7 +1482,7 @@ def inviter_phase1():
         mail_html = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
 <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
 <h1 style="color:#fff;font-size:28px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
-<p style="color:rgba(255,255,255,.8);font-size:12px;margin:6px 0 0;">Invitation session de présentation</p>
+<p style="color:#e9d5ff;font-size:12px;margin:6px 0 0;">Invitation session de présentation</p>
 </div>
 <div style="background:#f5f3ff;padding:32px;border-radius:0 0 12px 12px;">
 <p style="font-size:16px;color:#1e1b4b;">Bonjour <strong>{prenom}</strong>,</p>
@@ -2225,7 +2226,7 @@ def inviter_candidat_script():
     mail_html = f"""<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
 <div style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);padding:32px;border-radius:12px 12px 0 0;text-align:center;">
 <h1 style="color:#fff;font-size:28px;font-weight:800;letter-spacing:3px;margin:0;">LILIWATT</h1>
-<p style="color:rgba(255,255,255,.8);font-size:12px;margin:6px 0 0;">Invitation session de présentation</p>
+<p style="color:#e9d5ff;font-size:12px;margin:6px 0 0;">Invitation session de présentation</p>
 </div>
 <div style="background:#f5f3ff;padding:32px;border-radius:0 0 12px 12px;">
 <p style="font-size:16px;color:#1e1b4b;">Bonjour <strong>{prenom or 'Monsieur/Madame'}</strong>,</p>
