@@ -39,3 +39,6 @@ maquette_newsletter.png
 
 # Contrats clients (données personnelles réelles — NE JAMAIS COMMITER)
 contrats_test/
+
+# Docs internes (non committés)
+docs/
