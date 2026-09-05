@@ -6,7 +6,7 @@
 <title>LILIWATT Admin</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: #f5f3ff; min-height: 100vh; }
+  body { font-family: Arial, sans-serif; background: #f5f3ff; min-height: 100vh; overflow-x: hidden; }
   header { background: linear-gradient(135deg, #1e1b4b, #7c3aed); padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
   header h1 { color: white; font-size: 20px; font-weight: 800; letter-spacing: 2px; }
   header a { color: rgba(255,255,255,0.7); font-size: 13px; text-decoration: none; }
@@ -959,6 +959,22 @@
   <!-- Script de recrutement CA -->
   <div class="panel" id="tab-scriptrecrutement">
     <div style="max-width:1200px;margin:0 auto;padding:24px 0;">
+
+      <!-- ===== SESSION VISIO ===== -->
+      <div id="sectionSessionVisio" style="margin-bottom:24px;padding:20px;border:1px solid #e9d5ff;border-radius:12px;background:#faf5ff;">
+        <h2 style="color:#1e1b4b;font-size:20px;font-weight:800;margin:0 0 16px;">📅 Session visio — Présence &amp; envoi</h2>
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
+          <label style="font-size:13px;font-weight:700;color:#374151;white-space:nowrap;">Session :</label>
+          <select id="sessionSelect" onchange="loadSessionCandidats()" style="flex:1;max-width:400px;padding:8px 12px;border:1.5px solid #d8b4fe;border-radius:8px;font-size:14px;background:#fff;">
+            <option value="">— Sélectionnez —</option>
+          </select>
+          <button onclick="loadSessions()" style="padding:8px 14px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Charger</button>
+        </div>
+        <div id="sessionCandidats" style="font-size:13px;min-height:40px;">
+          <div style="color:#9ca3af;">Chargement des sessions…</div>
+        </div>
+      </div>
+
       <!-- Zone CV + bouton accès direct -->
       <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
         <input type="file" id="scrCvInput" accept=".pdf,.docx,.doc" style="display:none" onchange="scrUploadCv(this.files)">
@@ -975,9 +991,9 @@
         <input type="email" id="scrEmailOverride" placeholder="Adresse personnelle du candidat" style="display:block;margin-top:8px;width:100%;padding:8px;border:1.5px solid #ef4444;border-radius:8px;font-size:13px;box-sizing:border-box;" oninput="scrCheckEmailOverride()">
       </div>
 
-      <div style="display:flex;gap:20px;">
+      <div style="display:flex;gap:20px;flex-wrap:wrap;">
         <!-- Colonne gauche : script -->
-        <div style="flex:7;min-width:0;position:relative;">
+        <div style="flex:7 1 600px;min-width:0;position:relative;">
           <h2 style="color:#1e1b4b;font-size:20px;font-weight:800;margin:0 0 16px;">📞 Script d'appel — Recrutement</h2>
           <div id="scrPhaseIndicator" style="font-size:12px;color:#6b7280;margin-bottom:12px;"></div>
           <div id="scrContent" style="font-size:18px;line-height:1.8;color:#1e1b4b;min-height:300px;"></div>
@@ -993,7 +1009,7 @@
           </div>
         </div>
         <!-- Colonne droite : objections -->
-        <div style="flex:3;min-width:200px;">
+        <div style="flex:3 1 180px;min-width:0;">
           <h3 style="color:#1e1b4b;font-size:14px;font-weight:800;margin:0 0 12px;">💬 Objections <span style="font-size:10px;color:#9ca3af;font-weight:400;">(1-9 / Échap)</span></h3>
           <div id="scrObjections" style="display:flex;flex-direction:column;gap:6px;"></div>
         </div>
@@ -1032,6 +1048,7 @@ function showTab(name) {
   if (name === 'newsletter') { nlCount(); nlSetFormat(_nlFormat); nlLoadClients(); }
   if (name === 'bienvenue') { bvInit(); }
   if (name === 'echeancier') { echLoad(); }
+  if (name === 'scriptrecrutement' && typeof loadSessions === 'function') { loadSessions(); }
 }
 
 function normalize(s) {
@@ -3918,6 +3935,123 @@ async function scrConfirmInvite(){
 
 // Init au chargement
 if(document.getElementById('scrContent')) scrRender();
+
+// ===== SESSION VISIO =====
+
+var _svSessions = [];
+var _svCandidats = [];
+
+async function loadSessions() {
+  var sel = document.getElementById('sessionSelect');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">⏳ Chargement…</option>';
+  try {
+    var r = await fetch('/api/recrutement/sessions');
+    var d = await r.json();
+    if (!d.success) { sel.innerHTML = '<option value="">Erreur</option>'; return; }
+    _svSessions = d.sessions || [];
+    if (!_svSessions.length) {
+      sel.innerHTML = '<option value="">Aucune session trouvée</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">— Sélectionnez —</option>' +
+      _svSessions.map(function(s) {
+        var label = _svFormatSession(s.session) + ' (' + s.count + ' candidat' + (s.count > 1 ? 's' : '') + ')';
+        return '<option value="' + s.session + '">' + label + '</option>';
+      }).join('');
+  } catch(e) {
+    sel.innerHTML = '<option value="">Erreur réseau</option>';
+  }
+}
+
+function _svFormatSession(raw) {
+  // raw = "YYYY-MM-DD HH:MM" → "Jeu. 4 sept. 2026 à 14h00"
+  try {
+    var parts = raw.split(' ');
+    var dateParts = parts[0].split('-');
+    var timeParts = (parts[1] || '00:00').split(':');
+    var dt = new Date(parseInt(dateParts[0]), parseInt(dateParts[1])-1, parseInt(dateParts[2]),
+                      parseInt(timeParts[0]), parseInt(timeParts[1]));
+    if (isNaN(dt.getTime())) return raw;
+    var opts = { weekday:'short', day:'numeric', month:'short', year:'numeric' };
+    return dt.toLocaleDateString('fr-FR', opts) + ' à ' + timeParts[0] + 'h' + timeParts[1];
+  } catch(e) { return raw; }
+}
+
+async function loadSessionCandidats() {
+  var sel = document.getElementById('sessionSelect');
+  var div = document.getElementById('sessionCandidats');
+  var session = sel ? sel.value : '';
+  if (!session) { div.innerHTML = '<div style="color:#9ca3af;">Sélectionnez une session ci-dessus.</div>'; return; }
+
+  div.innerHTML = '<div style="color:#9ca3af;">⏳ Chargement…</div>';
+  try {
+    var r = await fetch('/api/recrutement/candidats-phase1');
+    var d = await r.json();
+    if (!d.success) { div.innerHTML = '<div style="color:#ef4444;">Erreur : ' + d.error + '</div>'; return; }
+    _svCandidats = (d.candidats || []).filter(function(c) { return c.session && c.session.trim() === session; });
+    _svRender(session);
+  } catch(e) {
+    div.innerHTML = '<div style="color:#ef4444;">Erreur réseau</div>';
+  }
+}
+
+function _svRender(session) {
+  var div = document.getElementById('sessionCandidats');
+  if (!_svCandidats.length) {
+    div.innerHTML = '<div style="color:#9ca3af;">Aucun candidat convié à cette session.</div>';
+    return;
+  }
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    + '<tr style="background:#f5f3ff;font-weight:700;color:#1e1b4b;">'
+    + '<td style="padding:8px 10px;">Nom</td><td style="padding:8px 10px;">Prénom</td>'
+    + '<td style="padding:8px 10px;">Téléphone</td><td style="padding:8px 10px;">Email</td>'
+    + '<td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;text-align:center;">Présence</td></tr>';
+
+  _svCandidats.forEach(function(c, idx) {
+    var pres = c.presence || '';
+    var esc = session.replace(/'/g,"\\'");
+    var presBtn = '<div style="display:flex;gap:6px;justify-content:center;">'
+      + '<button onclick="_svSetPresence(' + idx + ',\'PRESENT\',\'' + esc + '\')" '
+      + 'style="min-height:32px;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
+      + (pres === 'PRESENT' ? 'background:#16a34a;color:#fff;border:2px solid #16a34a;' : 'background:#fff;color:#16a34a;border:2px solid #16a34a;') + '">✓ Présent</button>'
+      + '<button onclick="_svSetPresence(' + idx + ',\'ABSENT\',\'' + esc + '\')" '
+      + 'style="min-height:32px;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
+      + (pres === 'ABSENT' ? 'background:#ef4444;color:#fff;border:2px solid #ef4444;' : 'background:#fff;color:#6b7280;border:2px solid #d1d5db;') + '">✗ Absent</button></div>';
+
+    var lienEnvoye = c.lien_candidature_envoye ? '<span style="font-size:10px;color:#16a34a;font-weight:600;" title="Lien envoyé le ' + c.lien_candidature_envoye + '">📧</span>' : '';
+
+    html += '<tr style="border-bottom:1px solid #f3f4f6;">'
+      + '<td style="padding:8px 10px;font-weight:600;">' + (c.nom || '') + '</td>'
+      + '<td style="padding:8px 10px;">' + (c.prenom || '') + '</td>'
+      + '<td style="padding:8px 10px;">' + (c.telephone || '—') + '</td>'
+      + '<td style="padding:8px 10px;">' + (c.email || '—') + ' ' + lienEnvoye + '</td>'
+      + '<td style="padding:8px 10px;">' + (c.statut || '') + '</td>'
+      + '<td style="padding:8px 10px;text-align:center;">' + presBtn + '</td></tr>';
+  });
+  html += '</table>';
+  div.innerHTML = html;
+}
+
+async function _svSetPresence(idx, presence, session) {
+  var c = _svCandidats[idx];
+  if (!c) return;
+  try {
+    var r = await fetch('/api/recrutement/session/presence', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email: c.email, session: session, presence: presence })
+    });
+    var d = await r.json();
+    if (d.success) {
+      _svCandidats[idx].presence = presence;
+      _svRender(session);
+    } else {
+      alert('Erreur : ' + (d.error || 'inconnue'));
+    }
+  } catch(e) {
+    alert('Erreur réseau : ' + e.message);
+  }
+}
 
 // ===== RATTACHEMENT MEC =====
 

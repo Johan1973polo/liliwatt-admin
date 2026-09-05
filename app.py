@@ -1103,6 +1103,20 @@ def envoyer_contrat():
         print(f"⚠️ Erreur contrat: {e}")
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
 
+PHASE1_HEADERS = ['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV', 'PRESENCE', 'LIEN_CANDIDATURE_ENVOYE', 'DRIVE_FILE_ID', 'DRIVE_MOVE_STATUS', 'DRIVE_MOVE_ERREUR']
+
+def _get_or_create_phase1(sh):
+    """Retourne le worksheet PHASE 1, le crée si absent, et s'assure que le header va jusqu'à O1."""
+    try:
+        ws = sh.worksheet('PHASE 1')
+        hdr = ws.row_values(1)
+        if len(hdr) < len(PHASE1_HEADERS):
+            ws.update(f'A1:O1', [PHASE1_HEADERS], value_input_option='RAW')
+    except Exception:
+        ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=len(PHASE1_HEADERS))
+        ws.update(f'A1:O1', [PHASE1_HEADERS], value_input_option='RAW')
+    return ws
+
 # ===== PHASE 1 — Import CV + Profils =====
 
 @app.route('/api/recrutement/candidats-phase1')
@@ -1113,23 +1127,17 @@ def list_candidats_phase1():
         if not gc:
             return jsonify({'success': False, 'error': 'Sheets non configuré'})
         sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
-        try:
-            ws = sh.worksheet('PHASE 1')
-        except Exception:
-            ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=10)
-            ws.update('A1:J1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV']])
+        ws = _get_or_create_phase1(sh)
         rows = ws.get_all_values()
         candidats = []
         for i, row in enumerate(rows):
             if i == 0:
-                # Log les headers pour debug
                 print(f"📋 PHASE 1 headers ({len(row)} cols): {row}")
                 continue
             if len(row) < 3 or not row[2]:
                 continue
             lien_cv = row[9] if len(row) > 9 else ''
             if not lien_cv and len(row) > 8:
-                # Chercher un lien Drive dans toutes les colonnes restantes
                 for col_idx in range(8, len(row)):
                     if row[col_idx] and ('drive.google.com' in row[col_idx] or row[col_idx].startswith('http')):
                         lien_cv = row[col_idx]
@@ -1143,7 +1151,9 @@ def list_candidats_phase1():
                 'note': row[6] if len(row) > 6 else '',
                 'date': row[7] if len(row) > 7 else '',
                 'session': row[8] if len(row) > 8 else '',
-                'lien_cv': lien_cv
+                'lien_cv': lien_cv,
+                'presence': row[10] if len(row) > 10 else '',
+                'lien_candidature_envoye': row[11] if len(row) > 11 else '',
             })
             if lien_cv:
                 print(f"  📄 CV trouvé pour {row[1]} {row[0]}: {lien_cv[:60]}...")
@@ -1250,11 +1260,7 @@ def save_cv_to_sheet(data, lien_cv=''):
     """Sauvegarde les données extraites dans PHASE 1."""
     gc = get_sheets_client()
     sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
-    try:
-        ws = sh.worksheet('PHASE 1')
-    except Exception:
-        ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=10)
-        ws.update('A1:J1', [['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV']])
+    ws = _get_or_create_phase1(sh)
     import time
     date_str = datetime.now().strftime('%d/%m/%Y')
     tel = data.get('telephone', '') or ''
@@ -1511,6 +1517,73 @@ def delete_phase1_profil(row_id):
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
+
+# ===== SESSION VISIO =====
+
+@app.route('/api/recrutement/sessions')
+@login_required
+def list_sessions():
+    """Retourne les sessions distinctes de PHASE 1, triées par date décroissante."""
+    try:
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'})
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        rows = ws.get_all_values()
+        counts = {}
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            session = row[8] if len(row) > 8 else ''
+            if session.strip():
+                counts[session.strip()] = counts.get(session.strip(), 0) + 1
+        sessions = [{'session': s, 'count': c} for s, c in counts.items()]
+        sessions.sort(key=lambda x: x['session'], reverse=True)
+        return jsonify({'success': True, 'sessions': sessions})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/recrutement/session/presence', methods=['POST'])
+@login_required
+def update_session_presence():
+    """Marque un candidat PRESENT ou ABSENT pour une session donnée."""
+    try:
+        d = request.get_json()
+        email = (d.get('email', '') or '').strip().lower()
+        session = (d.get('session', '') or '').strip()
+        presence = (d.get('presence', '') or '').strip()
+
+        if not email or not session or presence not in ('PRESENT', 'ABSENT'):
+            return jsonify({'success': False, 'error': 'email, session et presence (PRESENT/ABSENT) requis'}), 400
+
+        gc = get_sheets_client()
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        rows = ws.get_all_values()
+
+        target_row = None
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            row_email = (row[2] if len(row) > 2 else '').strip().lower()
+            row_session = (row[8] if len(row) > 8 else '').strip()
+            if row_email == email and row_session == session:
+                target_row = i + 1
+                break
+
+        if not target_row:
+            return jsonify({'success': False, 'error': 'Candidat non trouvé pour cette session'}), 404
+
+        ws.update(f'K{target_row}', [[presence]], value_input_option='RAW')
+        print(f'[SESSION] {email} → {presence} (session {session}, row {target_row})')
+        return jsonify({'success': True, 'row': target_row})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
 
 # ===== DEROGATION OHM =====
 SUIVI_VENTES_SHEET_ID = os.environ.get('SUIVI_VENTES_SHEET_ID', '1Ld1Zl3qVzdVZsyksdfxYfL1LiVcFd5BEbrPV6NYLfcA')
