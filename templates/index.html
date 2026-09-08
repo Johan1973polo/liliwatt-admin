@@ -1496,7 +1496,7 @@ function renderP1() {
       '<input type="text" value="' + (c.note||'').replace(/"/g,'&quot;') + '" placeholder="Note..." onblur="saveP1Note('+c.row+',this.value)" style="padding:4px 8px;border:1.5px solid #e9d5ff;border-radius:6px;font-size:11px;width:120px;">' +
       '<select onchange="changeP1Statut('+c.row+',this.value)" style="padding:3px 6px;border:1.5px solid #e9d5ff;border-radius:6px;font-size:11px;">' +
       ['NON CONTACTÉ','CONTACTÉ','RELANCÉ'].map(s => '<option value="'+s+'"'+(c.statut===s?' selected':'')+'>'+s+'</option>').join('') + '</select>' +
-      '<button onclick="openInvite('+c.row+',\''+c.email.replace(/'/g,"\\'")+'\',\''+c.prenom.replace(/'/g,"\\'")+'\','+'\''+c.nom.replace(/'/g,"\\'")+'\''+')" style="padding:4px 8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📧 Inviter</button>' +
+      '<button onclick="openInvite('+c.row+',\''+c.email.replace(/'/g,"\\'")+'\',\''+c.prenom.replace(/'/g,"\\'")+'\',\''+c.nom.replace(/'/g,"\\'")+'\',\''+(c.telephone||'').replace(/'/g,"\\'")+'\''+')" style="padding:4px 8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📧 Inviter</button>' +
       (c.lien_cv ? '<a href="'+c.lien_cv+'" target="_blank" style="padding:4px 8px;background:#ede9fe;color:#7c3aed;border:none;border-radius:6px;font-size:11px;text-decoration:none;font-weight:600;">📄 CV</a>' : '<span style="padding:4px 8px;background:#f3f4f6;color:#9ca3af;border-radius:6px;font-size:11px;">📄 CV —</span>') +
       '<button onclick="openSendRef('+JSON.stringify(c).replace(/"/g,'&quot;')+')" style="padding:4px 8px;background:#e0e7ff;color:#2563eb;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📤 Réf.</button>' +
       '</div></div></div>';
@@ -1540,8 +1540,8 @@ async function supprimerProfil(rowId, driveFileId) {
 }
 
 let _inviteData = {};
-function openInvite(row, email, prenom, nom) {
-  _inviteData = {row, email, prenom, nom};
+function openInvite(row, email, prenom, nom, telephone) {
+  _inviteData = {row, email, prenom, nom, telephone: telephone || ''};
   document.getElementById('inviteLabel').textContent = 'Inviter ' + prenom + ' ' + nom + ' (' + email + ')';
   document.getElementById('modalInvite').style.display = 'flex';
 }
@@ -1551,11 +1551,21 @@ async function confirmInvite() {
   const h = document.getElementById('inviteHeure').value;
   if (!d || !h) { alert('Remplissez date et heure'); return; }
   const btn = event.target; btn.disabled=true; btn.textContent='⏳...';
-  await fetch('/api/recrutement/phase1/inviter', { method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({row:_inviteData.row, email:_inviteData.email, prenom:_inviteData.prenom, date_session:d, heure_session:h}) });
-  document.getElementById('modalInvite').style.display = 'none';
+  try {
+    const r = await fetch('/api/recrutement/inviter-candidat', { method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:_inviteData.email, prenom:_inviteData.prenom, nom:_inviteData.nom||'', telephone:_inviteData.telephone||'', date_session:d, heure_session:h}) });
+    const data = await r.json();
+    document.getElementById('modalInvite').style.display = 'none';
+    let msg = '✅ Invitation envoyée à ' + _inviteData.email;
+    if (data.crm_ok) msg += ' · RDV créé dans l\'agenda';
+    else if (data.crm_error) msg += ' · ⚠ Agenda : ' + data.crm_error;
+    if (data.sheet_ok === false && data.sheet_error) msg += ' · ⚠ Sheet : ' + data.sheet_error;
+    alert(msg);
+  } catch(e) {
+    document.getElementById('modalInvite').style.display = 'none';
+    alert('❌ Erreur réseau : ' + e.message);
+  }
   btn.disabled=false; btn.textContent='Envoyer';
-  alert('✅ Invitation envoyée à ' + _inviteData.email);
   setTimeout(loadPhase1, 1500);
 }
 
@@ -3907,20 +3917,18 @@ async function scrConfirmInvite(){
   var heureEl = document.getElementById('scrHeure');
   var tel = document.getElementById('scrTel')?.value?.trim() || '';
   var exp = document.getElementById('scrExp')?.value?.trim() || '';
-  var parts = dateEl.value.split('-');
-  var dateFR = parts[2]+'/'+parts[1]+'/'+parts[0];
-  var desc = 'Candidat : '+prenom+' '+nom+'\nTéléphone : '+tel+'\nEmail : '+email+'\nDernière expérience : '+exp+'\nAppel réalisé par : Carole Andria le '+new Date().toLocaleDateString('fr-FR');
   try {
     var r = await fetch('/api/recrutement/inviter-candidat', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({email:email, prenom:prenom, nom:nom, date_session:dateFR, heure_session:heureEl.value, description_crm:desc})
+      body: JSON.stringify({email:email, prenom:prenom, nom:nom, telephone:tel, experience:exp, date_session:dateEl.value, heure_session:heureEl.value})
     });
     var d = await r.json();
     var res = document.getElementById('scrInviteResult');
     if(d.success){
       var msg = '✅ Invitation envoyée à '+email;
       if(d.crm_ok) msg += ' · RDV créé dans l\'agenda';
-      else if(d.crm_error) msg += ' · ⚠ Agenda CRM : '+d.crm_error;
+      else if(d.crm_error) msg += ' · ⚠ Agenda : '+d.crm_error;
+      if(d.sheet_ok === false && d.sheet_error) msg += ' · ⚠ Sheet : '+d.sheet_error;
       res.innerHTML = '<span style="color:#16a34a;font-weight:700;">'+msg+'</span>';
       document.getElementById('scrInviteRecap').style.display = 'none';
     } else {

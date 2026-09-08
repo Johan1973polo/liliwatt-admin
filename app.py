@@ -1105,6 +1105,51 @@ def envoyer_contrat():
 
 PHASE1_HEADERS = ['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV', 'PRESENCE', 'LIEN_CANDIDATURE_ENVOYE', 'DRIVE_FILE_ID', 'DRIVE_MOVE_STATUS', 'DRIVE_MOVE_ERREUR']
 
+
+def _normalize_display_name(s):
+    """Normalise un prénom/nom pour l'affichage : 'JEAN-MICHEL' → 'Jean-Michel'."""
+    if not s:
+        return s
+    return '-'.join(part.capitalize() for part in s.split('-'))
+
+
+def _find_phase1_row(ws, email, session=None):
+    """Cherche une ligne par email (col C) dans PHASE 1. En cas de doublons,
+    retourne la plus récente (plus grand numéro de ligne).
+    Si session est fourni, filtre aussi sur col I.
+    Retourne (row_number, row_data) ou (None, None)."""
+    email = (email or '').strip().lower()
+    if not email:
+        return None, None
+    rows = ws.get_all_values()
+    matches = []
+    for i, row in enumerate(rows):
+        if i == 0:
+            continue
+        row_email = (row[2] if len(row) > 2 else '').strip().lower()
+        if row_email != email:
+            continue
+        if session:
+            row_session = (row[8] if len(row) > 8 else '').strip()
+            if row_session != session:
+                continue
+        matches.append((i + 1, row))
+    if not matches:
+        return None, None
+    if len(matches) > 1:
+        print(f'[PHASE1] {len(matches)} lignes trouvées pour {email}, écriture sur la ligne {matches[-1][0]}')
+    return matches[-1]
+
+
+def _normalize_date_to_iso(date_str):
+    """Accepte YYYY-MM-DD ou DD/MM/YYYY, retourne YYYY-MM-DD."""
+    import re
+    dm = re.match(r'(\d{2})/(\d{2})/(\d{4})', date_str)
+    if dm:
+        return f'{dm.group(3)}-{dm.group(2)}-{dm.group(1)}'
+    return date_str
+
+
 def _get_or_create_phase1(sh):
     """Retourne le worksheet PHASE 1, le crée si absent, et s'assure que le header va jusqu'à O1."""
     try:
@@ -1424,54 +1469,6 @@ def update_phase1_note():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/api/recrutement/phase1/inviter', methods=['POST'])
-@login_required
-def inviter_phase1():
-    try:
-        d = request.get_json()
-        email = d.get('email', '')
-        prenom = d.get('prenom', '')
-        date_session = d.get('date_session', '')
-        heure_session = d.get('heure_session', '')
-        row_num = d.get('row')
-
-        # Envoyer le mail d'invitation
-        inv_corps = '\n'.join([
-            paragraphe(f'Bonjour {accent(prenom, theme="clair")},'),
-            paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
-            bloc(tableau_infos([
-                ('Date', f'{date_session}'),
-                ('Heure', f'{heure_session}'),
-            ])),
-            bouton('Rejoindre la session Google Meet', 'https://meet.google.com/tzv-pgjc-und?authuser=0'),
-            paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
-            signature_equipe(),
-        ])
-        mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_corps)
-
-        token = get_zoho_token()
-        if token:
-            account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
-            requests.post(
-                f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
-                headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
-                json={'fromAddress': 'recrutement@liliwatt.fr', 'toAddress': email,
-                      'subject': f'Invitation session LILIWATT — {date_session} à {heure_session}',
-                      'content': mail_html, 'mailFormat': 'html'},
-                timeout=15
-            )
-            print(f"✅ Invitation envoyée à {email}")
-
-        # Mettre à jour Sheets
-        gc = get_sheets_client()
-        ws = gc.open_by_key(RECRUTEMENT_SHEET_ID).worksheet('PHASE 1')
-        ws.update_cell(row_num, 6, 'CONTACTÉ')
-        ws.update_cell(row_num, 9, f'{date_session} {heure_session}')
-
-        return jsonify({'success': True})
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/recrutement/profil/<int:row_id>', methods=['DELETE'])
 @login_required
@@ -1564,15 +1561,7 @@ def update_session_presence():
         ws = _get_or_create_phase1(sh)
         rows = ws.get_all_values()
 
-        target_row = None
-        for i, row in enumerate(rows):
-            if i == 0:
-                continue
-            row_email = (row[2] if len(row) > 2 else '').strip().lower()
-            row_session = (row[8] if len(row) > 8 else '').strip()
-            if row_email == email and row_session == session:
-                target_row = i + 1
-                break
+        target_row, _ = _find_phase1_row(ws, email, session=session)
 
         if not target_row:
             return jsonify({'success': False, 'error': 'Candidat non trouvé pour cette session'}), 404
@@ -2221,36 +2210,54 @@ def extraire_contrat():
     })
 
 
-# ===== INVITATION RECRUTEMENT (script CA) =====
+# ===== INVITATION RECRUTEMENT (route unique) =====
 
 @app.route('/api/recrutement/inviter-candidat', methods=['POST'])
 @login_required
-def inviter_candidat_script():
-    """Envoie l'invitation au candidat puis crée l'événement dans le CRM."""
+def inviter_candidat():
+    """Envoie l'invitation visio, crée l'événement CRM, et met à jour PHASE 1."""
     d = request.get_json()
     email = d.get('email', '').strip()
-    prenom = d.get('prenom', '').strip()
-    nom = d.get('nom', '').strip()
+    form_prenom = d.get('prenom', '').strip()
+    form_nom = d.get('nom', '').strip()
+    form_tel = d.get('telephone', '').strip()
+    form_exp = d.get('experience', '').strip()
     date_session = d.get('date_session', '').strip()
     heure_session = d.get('heure_session', '').strip()
-    description_crm = d.get('description_crm', '')
 
     if not email or not date_session or not heure_session:
         return jsonify({'success': False, 'error': 'Email, date et heure requis'}), 400
 
+    # Normaliser la date en YYYY-MM-DD quel que soit le format reçu
+    iso_date = _normalize_date_to_iso(date_session)
+
+    # Normaliser le prénom pour l'affichage dans le mail (repli formulaire)
+    prenom_display = _normalize_display_name(form_prenom) or 'Monsieur/Madame'
+
     # 1. Envoyer l'email d'invitation (PRIORITAIRE)
-    inv_ca_corps = '\n'.join([
-        paragraphe(f'Bonjour {accent(prenom or "Monsieur/Madame", theme="clair")},'),
+    # Date lisible : "mercredi 9 septembre 2026"
+    import locale as _locale
+    try:
+        _locale.setlocale(_locale.LC_TIME, 'fr_FR.UTF-8')
+    except _locale.Error:
+        pass  # fallback sur la locale système
+    _date_parts = iso_date.split('-')
+    _date_obj = datetime(int(_date_parts[0]), int(_date_parts[1]), int(_date_parts[2]))
+    date_lisible = _date_obj.strftime('%A %d %B %Y').replace(' 0', ' ')
+
+    inv_corps = '\n'.join([
+        paragraphe(f'Bonjour {accent(prenom_display, theme="clair")},'),
         paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
         bloc(tableau_infos([
-            ('Date', f'{date_session}'),
+            ('Date', date_lisible),
             ('Heure', f'{heure_session}'),
         ])),
         bouton('Rejoindre la session Google Meet', 'https://meet.google.com/tzv-pgjc-und?authuser=0'),
         paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
         paragraphe(f'Carole Andria<br>carole.andria@liliwatt.fr'),
+        signature_equipe(),
     ])
-    mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_ca_corps)
+    mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_corps)
 
     mail_ok = False
     try:
@@ -2258,51 +2265,97 @@ def inviter_candidat_script():
         if not token:
             return jsonify({'success': False, 'error': 'Impossible de se connecter à Zoho Mail'}), 500
         account_id = _zoho_get_account_id(token)
-        print(f'[RECRUTEMENT-CA] Envoi via account_id={account_id} to={email}')
+        print(f'[RECRUTEMENT] Envoi invitation à {email}')
         resp = requests.post(
             f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
             headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
-            json={'fromAddress': 'contact@liliwatt.fr', 'toAddress': email,
-                  'subject': f'Invitation session LILIWATT — {date_session} à {heure_session}',
+            json={'fromAddress': 'recrutement@liliwatt.fr',
+                  'replyTo': 'carole.andria@liliwatt.fr',
+                  'toAddress': email,
+                  'subject': f'Invitation session LILIWATT — {iso_date} à {heure_session}',
                   'content': mail_html, 'mailFormat': 'html'},
             timeout=15
         )
-        print(f'[RECRUTEMENT-CA] Zoho response: status={resp.status_code} body={resp.text[:500]} account_id={account_id} fromAddress=contact@liliwatt.fr')
         if resp.status_code < 300:
             mail_ok = True
-            print(f'[RECRUTEMENT-CA] Email envoyé à {email}')
+            print(f'[RECRUTEMENT] Email envoyé à {email}')
         else:
-            print(f'[RECRUTEMENT-CA] Zoho erreur {resp.status_code}: {resp.text[:200]}')
+            print(f'[RECRUTEMENT] Zoho erreur {resp.status_code}: {resp.text[:200]}')
             return jsonify({'success': False, 'error': f'Échec envoi email (Zoho {resp.status_code})'}), 500
     except Exception as e:
-        print(f'[RECRUTEMENT-CA] Erreur email: {e}')
+        print(f'[RECRUTEMENT] Erreur email: {e}')
         return jsonify({'success': False, 'error': f'Erreur envoi email : {e}'}), 500
 
-    # 2. Créer l'événement dans l'agenda CRM (API HTTP — échec non bloquant)
+    # 2. Écriture Sheet PHASE 1 (échec non bloquant)
+    sheet_ok = False
+    sheet_error = None
+    try:
+        gc = get_sheets_client()
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        target_row, row_data = _find_phase1_row(ws, email)
+        if target_row:
+            # Sheet prioritaire, formulaire en repli
+            sheet_nom = (row_data[0] if len(row_data) > 0 else '').strip()
+            sheet_prenom = (row_data[1] if len(row_data) > 1 else '').strip()
+            sheet_tel = (row_data[3] if len(row_data) > 3 else '').strip()
+            lien_cv = (row_data[9] if len(row_data) > 9 else '').strip()
+            nom_display = _normalize_display_name(sheet_nom or form_nom)
+            prenom_display_sheet = _normalize_display_name(sheet_prenom or form_prenom) or 'Monsieur/Madame'
+            tel = sheet_tel or form_tel
+            # F = CONTACTÉ
+            ws.update(f'F{target_row}', [['CONTACTÉ']], value_input_option='RAW')
+            # I = session (YYYY-MM-DD HH:MM)
+            ws.update(f'I{target_row}', [[f'{iso_date} {heure_session}']], value_input_option='RAW')
+            # K:L = ardoise propre (présence + lien candidature)
+            ws.update(f'K{target_row}:L{target_row}', [['', '']], value_input_option='RAW')
+            sheet_ok = True
+            print(f'[RECRUTEMENT] Sheet PHASE 1 row {target_row} → CONTACTÉ, session {iso_date} {heure_session}, K:L vidés')
+        else:
+            sheet_error = f'Email {email} non trouvé dans PHASE 1'
+            print(f'[RECRUTEMENT] {sheet_error}')
+            nom_display = _normalize_display_name(form_nom)
+            prenom_display_sheet = prenom_display
+            tel = form_tel
+            lien_cv = ''
+    except Exception as e:
+        sheet_error = str(e)
+        print(f'[RECRUTEMENT] Sheet erreur (non bloquant): {e}')
+        nom_display = _normalize_display_name(form_nom)
+        prenom_display_sheet = prenom_display
+        tel = form_tel
+        lien_cv = ''
+
+    # 3. Créer l'événement dans l'agenda CRM (échec non bloquant)
     crm_ok = False
     crm_error = None
     crm_api_url = os.environ.get('CRM_API_URL', '')
     crm_api_token = os.environ.get('CRM_API_TOKEN', '')
+    referent_email = os.environ.get('RECRUTEMENT_REFERENT_EMAIL', 'kevin.moreau@liliwatt.fr')
     if crm_api_url and crm_api_token:
         try:
-            import re as _re_inv
-            dm = _re_inv.match(r'(\d{2})/(\d{2})/(\d{4})', date_session)
-            if dm:
-                iso_date = f'{dm.group(3)}-{dm.group(2)}-{dm.group(1)}'
-            else:
-                iso_date = date_session
-            # Heure locale sans suffixe de fuseau — le CRM stocke tel quel
             h, m = int(heure_session.split(':')[0]), int(heure_session.split(':')[1])
             start_iso = f'{iso_date}T{heure_session}:00'
             end_iso = f'{iso_date}T{h + 1:02d}:{m:02d}:00'
+
+            # Description construite côté serveur
+            desc_lines = [
+                f'Candidat : {prenom_display_sheet} {nom_display.upper() if nom_display else ""}',
+                f'Téléphone : {tel}' if tel else None,
+                f'Email : {email}',
+                f'Dernière expérience : {form_exp}' if form_exp else None,
+                f'CV : {lien_cv}' if lien_cv else None,
+                f'Session du {iso_date} à {heure_session}',
+            ]
+            description_crm = '\n'.join(l for l in desc_lines if l)
 
             crm_resp = requests.post(
                 f'{crm_api_url}/api/external/calendar-event',
                 headers={'Authorization': f'Bearer {crm_api_token}', 'Content-Type': 'application/json'},
                 json={
-                    'referentEmail': 'kevin.moreau@liliwatt.fr',
-                    'title': f'Visio recrutement — {prenom} {nom}'.strip(),
-                    'description': description_crm or f'Candidat : {prenom} {nom}\nEmail : {email}',
+                    'referentEmail': referent_email,
+                    'title': f'Visio recrutement — {prenom_display_sheet} {nom_display.upper() if nom_display else ""}'.strip(),
+                    'description': description_crm,
                     'startTime': start_iso,
                     'endTime': end_iso,
                 },
@@ -2311,13 +2364,13 @@ def inviter_candidat_script():
             crm_data = crm_resp.json()
             if crm_data.get('success'):
                 crm_ok = True
-                print(f'[RECRUTEMENT-CA] CRM event créé: {crm_data.get("eventId")}')
+                print(f'[RECRUTEMENT] CRM event créé: {crm_data.get("eventId")}')
             else:
                 crm_error = crm_data.get('error', 'Erreur inconnue')
-                print(f'[RECRUTEMENT-CA] CRM erreur: {crm_error}')
+                print(f'[RECRUTEMENT] CRM erreur: {crm_error}')
         except Exception as e:
             crm_error = str(e)
-            print(f'[RECRUTEMENT-CA] CRM exception: {e}')
+            print(f'[RECRUTEMENT] CRM exception: {e}')
     else:
         crm_error = 'CRM_API_URL ou CRM_API_TOKEN non configuré'
 
@@ -2326,6 +2379,8 @@ def inviter_candidat_script():
         'mail_ok': mail_ok,
         'crm_ok': crm_ok,
         'crm_error': crm_error,
+        'sheet_ok': sheet_ok,
+        'sheet_error': sheet_error,
     })
 
 
