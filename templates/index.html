@@ -4016,7 +4016,8 @@ function _svRender(session) {
     + '<tr style="background:#f5f3ff;font-weight:700;color:#1e1b4b;">'
     + '<td style="padding:8px 10px;">Nom</td><td style="padding:8px 10px;">Prénom</td>'
     + '<td style="padding:8px 10px;">Téléphone</td><td style="padding:8px 10px;">Email</td>'
-    + '<td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;text-align:center;">Présence</td></tr>';
+    + '<td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;text-align:center;">Présence</td>'
+    + '<td style="padding:8px 10px;">Lien envoyé</td></tr>';
 
   _svCandidats.forEach(function(c, idx) {
     var pres = c.presence || '';
@@ -4029,15 +4030,28 @@ function _svRender(session) {
       + 'style="min-height:32px;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;'
       + (pres === 'ABSENT' ? 'background:#ef4444;color:#fff;border:2px solid #ef4444;' : 'background:#fff;color:#6b7280;border:2px solid #d1d5db;') + '">✗ Absent</button></div>';
 
-    var lienEnvoye = c.lien_candidature_envoye ? '<span style="font-size:10px;color:#16a34a;font-weight:600;" title="Lien envoyé le ' + c.lien_candidature_envoye + '">📧</span>' : '';
+    var lienCol = '';
+    if (c.lien_candidature_envoye) {
+      // Format "2026-09-08 11:53" → "08/09 à 11h53"
+      var parts = c.lien_candidature_envoye.split(' ');
+      var dParts = (parts[0] || '').split('-');
+      var tParts = (parts[1] || '').split(':');
+      var display = dParts.length === 3 && tParts.length >= 2
+        ? dParts[2] + '/' + dParts[1] + ' à ' + tParts[0] + 'h' + tParts[1]
+        : c.lien_candidature_envoye;
+      lienCol = '<span style="color:#16a34a;font-weight:600;font-size:11px;">✅ ' + display + '</span>';
+    } else {
+      lienCol = '<span style="color:#d1d5db;font-size:11px;">—</span>';
+    }
 
     html += '<tr style="border-bottom:1px solid #f3f4f6;">'
       + '<td style="padding:8px 10px;font-weight:600;">' + (c.nom || '') + '</td>'
       + '<td style="padding:8px 10px;">' + (c.prenom || '') + '</td>'
       + '<td style="padding:8px 10px;">' + (c.telephone || '—') + '</td>'
-      + '<td style="padding:8px 10px;">' + (c.email || '—') + ' ' + lienEnvoye + '</td>'
+      + '<td style="padding:8px 10px;">' + (c.email || '—') + '</td>'
       + '<td style="padding:8px 10px;">' + (c.statut || '') + '</td>'
-      + '<td style="padding:8px 10px;text-align:center;">' + presBtn + '</td></tr>';
+      + '<td style="padding:8px 10px;text-align:center;">' + presBtn + '</td>'
+      + '<td style="padding:8px 10px;">' + lienCol + '</td></tr>';
   });
   html += '</table>';
   div.innerHTML = html;
@@ -4047,20 +4061,42 @@ function _svRender(session) {
 function _svUpdateEnvoiButton(session) {
   var div = document.getElementById('sessionEnvoi');
   if (!div) return;
-  // Compter les destinataires réels : PRESENT + non encore envoyé + dédupliqué par email
-  var seen = {};
+
+  // Compter les présents, les déjà envoyés, et les destinataires réels
+  var nbPresents = 0;
+  var seenEnvoye = {};
+  var seenAEnvoyer = {};
   _svCandidats.forEach(function(c) {
-    if (c.presence === 'PRESENT' && !c.lien_candidature_envoye) {
-      var em = (c.email || '').toLowerCase();
-      if (em && em.indexOf('@') !== -1 && !seen[em]) seen[em] = c;
+    if (c.presence !== 'PRESENT') return;
+    nbPresents++;
+    var em = (c.email || '').toLowerCase();
+    if (!em || em.indexOf('@') === -1) return;
+    if (c.lien_candidature_envoye) {
+      seenEnvoye[em] = true;
+    } else if (!seenAEnvoyer[em]) {
+      seenAEnvoyer[em] = true;
     }
   });
-  var count = Object.keys(seen).length;
-  if (count === 0) {
-    div.innerHTML = '<button disabled style="padding:10px 20px;background:#e5e7eb;color:#9ca3af;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:default;">📧 Envoyer le lien de candidature aux présents (0)</button>';
-    return;
+  var nbDejaEnvoye = Object.keys(seenEnvoye).length;
+  var nbAEnvoyer = Object.keys(seenAEnvoyer).length;
+
+  var btnHtml = '';
+  var msgHtml = '';
+
+  if (nbPresents === 0) {
+    btnHtml = '<button disabled style="padding:10px 20px;background:#e5e7eb;color:#9ca3af;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:default;">📧 Envoyer le lien de candidature aux présents</button>';
+    msgHtml = '<div style="color:#9ca3af;font-size:12px;margin-top:6px;">Marquez les candidats présents pour activer l\'envoi.</div>';
+  } else if (nbAEnvoyer === 0 && nbDejaEnvoye > 0) {
+    btnHtml = '<button disabled style="padding:10px 20px;background:#e5e7eb;color:#9ca3af;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:default;">📧 Envoyer le lien de candidature aux présents</button>';
+    msgHtml = '<div style="color:#16a34a;font-size:12px;margin-top:6px;">✅ ' + (nbDejaEnvoye === 1 ? 'Le candidat présent a' : 'Les ' + nbDejaEnvoye + ' candidats présents ont') + ' déjà reçu le lien de candidature.</div>';
+  } else {
+    btnHtml = '<button id="svBtnEnvoi" onclick="_svPrepareEnvoi(\'' + session.replace(/'/g,"\\'") + '\')" style="padding:10px 20px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">📧 Envoyer le lien de candidature aux présents (' + nbAEnvoyer + ' personne' + (nbAEnvoyer > 1 ? 's' : '') + ')</button>';
+    if (nbDejaEnvoye > 0) {
+      msgHtml = '<div style="color:#6b7280;font-size:12px;margin-top:6px;">' + nbDejaEnvoye + ' candidat' + (nbDejaEnvoye > 1 ? 's ont' : ' a') + ' déjà reçu le lien, non recontacté' + (nbDejaEnvoye > 1 ? 's' : '') + '.</div>';
+    }
   }
-  div.innerHTML = '<button id="svBtnEnvoi" onclick="_svPrepareEnvoi(\'' + session.replace(/'/g,"\\'") + '\')" style="padding:10px 20px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">📧 Envoyer le lien de candidature aux présents (' + count + ' personne' + (count > 1 ? 's' : '') + ')</button>'
+
+  div.innerHTML = btnHtml + msgHtml
     + '<div id="svConfirmZone" style="display:none;margin-top:12px;"></div>'
     + '<div id="svBilan" style="margin-top:8px;font-size:13px;"></div>';
 }
