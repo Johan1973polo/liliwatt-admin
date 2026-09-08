@@ -1559,8 +1559,6 @@ def update_session_presence():
         gc = get_sheets_client()
         sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
         ws = _get_or_create_phase1(sh)
-        rows = ws.get_all_values()
-
         target_row, _ = _find_phase1_row(ws, email, session=session)
 
         if not target_row:
