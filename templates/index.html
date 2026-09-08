@@ -973,6 +973,7 @@
         <div id="sessionCandidats" style="font-size:13px;min-height:40px;">
           <div style="color:#9ca3af;">Chargement des sessions…</div>
         </div>
+        <div id="sessionEnvoi" style="margin-top:16px;"></div>
       </div>
 
       <!-- Zone CV + bouton accès direct -->
@@ -4040,6 +4041,88 @@ function _svRender(session) {
   });
   html += '</table>';
   div.innerHTML = html;
+  _svUpdateEnvoiButton(session);
+}
+
+function _svUpdateEnvoiButton(session) {
+  var div = document.getElementById('sessionEnvoi');
+  if (!div) return;
+  // Compter les destinataires réels : PRESENT + non encore envoyé + dédupliqué par email
+  var seen = {};
+  _svCandidats.forEach(function(c) {
+    if (c.presence === 'PRESENT' && !c.lien_candidature_envoye) {
+      var em = (c.email || '').toLowerCase();
+      if (em && em.indexOf('@') !== -1 && !seen[em]) seen[em] = c;
+    }
+  });
+  var count = Object.keys(seen).length;
+  if (count === 0) {
+    div.innerHTML = '<button disabled style="padding:10px 20px;background:#e5e7eb;color:#9ca3af;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:default;">📧 Envoyer le lien de candidature aux présents (0)</button>';
+    return;
+  }
+  div.innerHTML = '<button id="svBtnEnvoi" onclick="_svPrepareEnvoi(\'' + session.replace(/'/g,"\\'") + '\')" style="padding:10px 20px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">📧 Envoyer le lien de candidature aux présents (' + count + ' personne' + (count > 1 ? 's' : '') + ')</button>'
+    + '<div id="svConfirmZone" style="display:none;margin-top:12px;"></div>'
+    + '<div id="svBilan" style="margin-top:8px;font-size:13px;"></div>';
+}
+
+async function _svPrepareEnvoi(session) {
+  var zone = document.getElementById('svConfirmZone');
+  zone.innerHTML = '<div style="color:#9ca3af;">Chargement…</div>';
+  zone.style.display = 'block';
+  try {
+    var r = await fetch('/api/recrutement/session/destinataires?session=' + encodeURIComponent(session));
+    var d = await r.json();
+    if (!d.success) { zone.innerHTML = '<div style="color:#ef4444;">Erreur : ' + d.error + '</div>'; return; }
+    var dests = d.destinataires || [];
+    if (!dests.length) { zone.innerHTML = '<div style="color:#9ca3af;">Aucun destinataire éligible.</div>'; return; }
+    var sessionLabel = _svFormatSession(session);
+    var listHtml = '';
+    var shown = dests.slice(0, 8);
+    shown.forEach(function(p) { listHtml += '<div style="padding:2px 0;">• ' + (p.prenom || '') + ' ' + (p.nom || '') + '</div>'; });
+    if (dests.length > 8) listHtml += '<div style="padding:2px 0;color:#6b7280;">… et ' + (dests.length - 8) + ' autre' + (dests.length - 8 > 1 ? 's' : '') + '</div>';
+    zone.innerHTML = '<div style="padding:16px;background:#fff;border:2px solid #7c3aed;border-radius:10px;">'
+      + '<div style="font-weight:700;color:#1e1b4b;margin-bottom:8px;">Envoyer le lien de candidature pour la session du ' + sessionLabel + ' aux ' + dests.length + ' personne' + (dests.length > 1 ? 's' : '') + ' suivante' + (dests.length > 1 ? 's' : '') + ' ?</div>'
+      + '<div style="font-size:12px;color:#374151;margin-bottom:12px;">' + listHtml + '</div>'
+      + '<div style="display:flex;gap:8px;">'
+      + '<button id="svBtnConfirm" onclick="_svConfirmEnvoi(\'' + session.replace(/'/g,"\\'") + '\')" style="padding:10px 20px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">✓ Confirmer l\'envoi</button>'
+      + '<button onclick="document.getElementById(\'svConfirmZone\').style.display=\'none\'" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Annuler</button>'
+      + '</div></div>';
+  } catch(e) {
+    zone.innerHTML = '<div style="color:#ef4444;">Erreur réseau : ' + e.message + '</div>';
+  }
+}
+
+async function _svConfirmEnvoi(session) {
+  var btn = document.getElementById('svBtnConfirm');
+  var btnEnvoi = document.getElementById('svBtnEnvoi');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Envoi en cours…'; }
+  if (btnEnvoi) { btnEnvoi.disabled = true; }
+  var bilan = document.getElementById('svBilan');
+  try {
+    var r = await fetch('/api/recrutement/session/envoyer-lien', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ session: session })
+    });
+    var d = await r.json();
+    document.getElementById('svConfirmZone').style.display = 'none';
+    if (d.success) {
+      var msg = '✅ ' + d.envoyes + ' envoyé' + (d.envoyes > 1 ? 's' : '');
+      if (d.ignores > 0) msg += ' · ' + d.ignores + ' déjà destinataire' + (d.ignores > 1 ? 's' : '');
+      if (d.erreurs && d.erreurs.length) {
+        msg += ' · ' + d.erreurs.length + ' en erreur';
+        d.erreurs.forEach(function(e) { msg += '<br><span style="color:#ef4444;font-size:12px;">• ' + e.email + ' : ' + e.erreur + '</span>'; });
+      }
+      bilan.innerHTML = '<div style="padding:12px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">' + msg + '</div>';
+      // Rafraîchir les données pour mettre à jour la colonne L
+      loadSessionCandidats();
+    } else {
+      bilan.innerHTML = '<div style="padding:12px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca;color:#ef4444;">❌ ' + d.error + '</div>';
+    }
+  } catch(e) {
+    document.getElementById('svConfirmZone').style.display = 'none';
+    bilan.innerHTML = '<div style="padding:12px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca;color:#ef4444;">❌ Erreur réseau : ' + e.message + '</div>';
+  }
+  if (btnEnvoi) { btnEnvoi.disabled = false; }
 }
 
 async function _svSetPresence(idx, presence, session) {

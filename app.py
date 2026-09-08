@@ -1572,6 +1572,192 @@ def update_session_presence():
         return jsonify({'success': False, 'error': str(e)})
 
 
+RECRUTEMENT_LANDING_URL = os.environ.get('RECRUTEMENT_LANDING_URL', 'https://liliwatt-recrutement.onrender.com')
+
+
+@app.route('/api/recrutement/session/envoyer-lien', methods=['POST'])
+@login_required
+def envoyer_lien_candidature():
+    """Envoie le lien de la page de candidature aux candidats PRESENT d'une session."""
+    try:
+        d = request.get_json()
+        session_val = (d.get('session', '') or '').strip()
+        if not session_val:
+            return jsonify({'success': False, 'error': 'Session requise'}), 400
+
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        rows = ws.get_all_values()
+
+        # Collecter les lignes éligibles : session match + PRESENT
+        candidates = []  # list of {row, email, prenom, lien_envoye}
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            row_session = (row[8] if len(row) > 8 else '').strip()
+            row_presence = (row[10] if len(row) > 10 else '').strip()
+            if row_session != session_val or row_presence != 'PRESENT':
+                continue
+            email = (row[2] if len(row) > 2 else '').strip().lower()
+            prenom = row[1] if len(row) > 1 else ''
+            nom = row[0] if len(row) > 0 else ''
+            lien_envoye = (row[11] if len(row) > 11 else '').strip()
+            candidates.append({
+                'row': i + 1,
+                'email': email,
+                'prenom': prenom,
+                'nom': nom,
+                'lien_envoye': lien_envoye,
+            })
+
+        # Séparer déjà envoyés
+        already_sent = [c for c in candidates if c['lien_envoye']]
+        to_process = [c for c in candidates if not c['lien_envoye']]
+
+        # Dédupliquer par email : garder la ligne la plus récente (plus grand row)
+        seen_emails = {}
+        for c in to_process:
+            em = c['email']
+            if not em or '@' not in em:
+                continue
+            if em not in seen_emails or c['row'] > seen_emails[em]['row']:
+                seen_emails[em] = c
+        unique_recipients = list(seen_emails.values())
+
+        # Candidats PRESENT sans email valide
+        erreurs = []
+        for c in to_process:
+            em = c['email']
+            if not em or '@' not in em:
+                label = f"{c['prenom']} {c['nom']}".strip() or f"ligne {c['row']}"
+                erreurs.append({'email': label, 'erreur': 'Adresse email manquante ou invalide'})
+
+        # Heure locale de Paris
+        from zoneinfo import ZoneInfo
+        now_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
+
+        envoyes = 0
+        for c in unique_recipients:
+            prenom_display = _normalize_display_name(c['prenom']) or 'Monsieur/Madame'
+            corps = '\n'.join([
+                paragraphe(f'Bonjour {accent(prenom_display, theme="clair")},'),
+                paragraphe(
+                    'Suite &agrave; notre session de pr&eacute;sentation, '
+                    'nous vous invitons &agrave; d&eacute;poser vos documents '
+                    'pour finaliser votre int&eacute;gration.'
+                ),
+                paragraphe(
+                    'Documents attendus&nbsp;: '
+                    '<strong>pi&egrave;ce d\'identit&eacute;</strong> (recto/verso), '
+                    '<strong>RIB</strong>, et si vous en disposez votre '
+                    '<strong>KBIS</strong> ou attestation URSSAF.'
+                ),
+                bouton('D&eacute;poser mes documents', RECRUTEMENT_LANDING_URL),
+                paragraphe(
+                    'Pour toute question, r&eacute;pondez directement '
+                    '&agrave; cet email.'
+                ),
+                signature_equipe(),
+            ])
+            mail_html = mail_liliwatt('BIENVENUE', 'LILIWATT', corps)
+
+            try:
+                token = get_zoho_token()
+                if not token:
+                    erreurs.append({'email': c['email'], 'erreur': 'Token Zoho indisponible'})
+                    continue
+                account_id = _zoho_get_account_id(token)
+                resp = requests.post(
+                    f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+                    headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+                    json={
+                        'fromAddress': 'recrutement@liliwatt.fr',
+                        'replyTo': 'carole.andria@liliwatt.fr',
+                        'toAddress': c['email'],
+                        'subject': 'LILIWATT — vos documents d\'intégration',
+                        'content': mail_html,
+                        'mailFormat': 'html',
+                    },
+                    timeout=15
+                )
+                if resp.status_code < 300:
+                    ws.update(f'L{c["row"]}', [[now_paris]], value_input_option='RAW')
+                    envoyes += 1
+                    print(f'[LOT-B] Lien envoyé à {c["email"]} (row {c["row"]})')
+                else:
+                    erreurs.append({'email': c['email'], 'erreur': f'Zoho {resp.status_code}'})
+                    print(f'[LOT-B] Zoho erreur {resp.status_code} pour {c["email"]}')
+            except Exception as e:
+                erreurs.append({'email': c['email'], 'erreur': str(e)})
+                print(f'[LOT-B] Exception pour {c["email"]}: {e}')
+
+        # Dédupliquer les ignores aussi par email
+        ignore_emails = set()
+        ignores_count = 0
+        for c in already_sent:
+            if c['email'] not in ignore_emails:
+                ignore_emails.add(c['email'])
+                ignores_count += 1
+
+        return jsonify({
+            'success': True,
+            'envoyes': envoyes,
+            'ignores': ignores_count,
+            'erreurs': erreurs,
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/recrutement/session/destinataires')
+@login_required
+def session_destinataires():
+    """Retourne la liste des destinataires réels (présents, dédupliqués, non encore envoyés)."""
+    try:
+        session_val = (request.args.get('session', '') or '').strip()
+        if not session_val:
+            return jsonify({'success': False, 'error': 'Session requise'}), 400
+
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        rows = ws.get_all_values()
+
+        # Même logique que envoyer-lien : PRESENT + col L vide + dédupliqué
+        seen = {}
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            row_session = (row[8] if len(row) > 8 else '').strip()
+            row_presence = (row[10] if len(row) > 10 else '').strip()
+            lien_envoye = (row[11] if len(row) > 11 else '').strip()
+            if row_session != session_val or row_presence != 'PRESENT' or lien_envoye:
+                continue
+            email = (row[2] if len(row) > 2 else '').strip().lower()
+            if not email or '@' not in email:
+                continue
+            prenom = row[1] if len(row) > 1 else ''
+            nom = row[0] if len(row) > 0 else ''
+            if email not in seen or (i + 1) > seen[email]['row']:
+                seen[email] = {
+                    'row': i + 1,
+                    'nom': _normalize_display_name(nom).upper() if nom else '',
+                    'prenom': _normalize_display_name(prenom) if prenom else '',
+                }
+
+        destinataires = [{'prenom': v['prenom'], 'nom': v['nom']} for v in seen.values()]
+        return jsonify({'success': True, 'destinataires': destinataires})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
 # ===== DEROGATION OHM =====
 SUIVI_VENTES_SHEET_ID = os.environ.get('SUIVI_VENTES_SHEET_ID', '1Ld1Zl3qVzdVZsyksdfxYfL1LiVcFd5BEbrPV6NYLfcA')
 
