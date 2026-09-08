@@ -1103,7 +1103,35 @@ def envoyer_contrat():
         print(f"⚠️ Erreur contrat: {e}")
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
 
-PHASE1_HEADERS = ['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV', 'PRESENCE', 'LIEN_CANDIDATURE_ENVOYE', 'DRIVE_FILE_ID', 'DRIVE_MOVE_STATUS', 'DRIVE_MOVE_ERREUR']
+PHASE1_HEADERS = ['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV', 'PRESENCE', 'LIEN_CANDIDATURE_ENVOYE', 'DRIVE_FILE_ID', 'DRIVE_MOVE_STATUS', 'DRIVE_MOVE_ERREUR', 'CRM_EVENT_ID']
+
+# ===== PIPELINE CV — dossiers Drive =====
+_CV_FOLDER_IDS = {
+    'CV_SOURCE_FOLDER_ID':  os.environ.get('CV_SOURCE_FOLDER_ID', ''),
+    'CV_ATTENTE_FOLDER_ID': os.environ.get('CV_ATTENTE_FOLDER_ID', ''),
+    'CV_TRAITE_FOLDER_ID':  os.environ.get('CV_TRAITE_FOLDER_ID', ''),
+    'CV_REFUSE_FOLDER_ID':  os.environ.get('CV_REFUSE_FOLDER_ID', ''),
+}
+_CV_DRIVE_CONFIGURED = all(_CV_FOLDER_IDS.values())
+_CV_MISSING_VARS = [k for k, v in _CV_FOLDER_IDS.items() if not v]
+
+
+def _get_drive_client():
+    """Retourne un client Drive v3 authentifié."""
+    from googleapiclient.discovery import build
+    from google.oauth2.service_account import Credentials as SACredentials
+    import base64
+    creds_b64 = os.environ.get('GOOGLE_DRIVE_CREDS_BASE64', '')
+    creds_json_env = os.environ.get('GOOGLE_CREDS_JSON', '')
+    if creds_b64:
+        creds_dict = json.loads(base64.b64decode(creds_b64).decode())
+    elif creds_json_env:
+        creds_dict = json.loads(creds_json_env)
+    else:
+        with open(os.path.join(os.path.dirname(__file__), 'liliwatt-eddcc0bc9e18.json')) as f:
+            creds_dict = json.load(f)
+    creds = SACredentials.from_service_account_info(creds_dict, scopes=['https://www.googleapis.com/auth/drive'])
+    return build('drive', 'v3', credentials=creds)
 
 
 def _normalize_display_name(s):
@@ -1150,16 +1178,29 @@ def _normalize_date_to_iso(date_str):
     return date_str
 
 
+def _build_session_iso(iso_date, heure):
+    """Construit startTime et endTime ISO (durée 1h) à partir de YYYY-MM-DD et HH:MM.
+    Unique point de construction — utilisé par la création ET le PATCH."""
+    from datetime import timedelta
+    start = datetime.strptime(f'{iso_date} {heure}', '%Y-%m-%d %H:%M')
+    end = start + timedelta(hours=1)
+    return start.strftime('%Y-%m-%dT%H:%M:00'), end.strftime('%Y-%m-%dT%H:%M:00')
+
+
 def _get_or_create_phase1(sh):
-    """Retourne le worksheet PHASE 1, le crée si absent, et s'assure que le header va jusqu'à O1."""
+    """Retourne le worksheet PHASE 1, le crée si absent, et s'assure que le header va jusqu'à P1."""
     try:
         ws = sh.worksheet('PHASE 1')
         hdr = ws.row_values(1)
         if len(hdr) < len(PHASE1_HEADERS):
-            ws.update(f'A1:O1', [PHASE1_HEADERS], value_input_option='RAW')
+            # N'écrire que les colonnes manquantes
+            if len(hdr) == 15:
+                ws.update('P1', [['CRM_EVENT_ID']], value_input_option='RAW')
+            else:
+                ws.update('A1:P1', [PHASE1_HEADERS], value_input_option='RAW')
     except Exception:
         ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=len(PHASE1_HEADERS))
-        ws.update(f'A1:O1', [PHASE1_HEADERS], value_input_option='RAW')
+        ws.update('A1:P1', [PHASE1_HEADERS], value_input_option='RAW')
     return ws
 
 # ===== PHASE 1 — Import CV + Profils =====
@@ -1199,6 +1240,8 @@ def list_candidats_phase1():
                 'lien_cv': lien_cv,
                 'presence': row[10] if len(row) > 10 else '',
                 'lien_candidature_envoye': row[11] if len(row) > 11 else '',
+                'drive_file_id': row[12] if len(row) > 12 else '',
+                'crm_event_id': row[15] if len(row) > 15 else '',
             })
             if lien_cv:
                 print(f"  📄 CV trouvé pour {row[1]} {row[0]}: {lien_cv[:60]}...")
@@ -1292,7 +1335,7 @@ def extract_cv_with_gpt(text):
         model='gpt-4o-mini',
         messages=[
             {'role': 'system', 'content': 'Extrais ces informations du CV en JSON : nom, prenom, email, telephone, adresse, poste (dernier poste ou titre professionnel). Réponds UNIQUEMENT en JSON valide.'},
-            {'role': 'user', 'content': text[:4000]}
+            {'role': 'user', 'content': text[:8000]}
         ],
         temperature=0
     )
@@ -1753,6 +1796,408 @@ def session_destinataires():
 
         destinataires = [{'prenom': v['prenom'], 'nom': v['nom']} for v in seen.values()]
         return jsonify({'success': True, 'destinataires': destinataires})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+# ===== PIPELINE CV — Lot 1 =====
+
+@app.route('/api/recrutement/cv-inbox')
+@login_required
+def cv_inbox():
+    """Liste les fichiers du dossier CV (inbox Drive)."""
+    if not _CV_DRIVE_CONFIGURED:
+        return jsonify({'success': False, 'error': 'Configuration Drive incomplète', 'missing': _CV_MISSING_VARS}), 503
+    try:
+        drive = _get_drive_client()
+        source_id = _CV_FOLDER_IDS['CV_SOURCE_FOLDER_ID']
+        results = []
+        page_token = None
+        while True:
+            resp = drive.files().list(
+                q=f"'{source_id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'",
+                fields='nextPageToken,files(id,name,size,mimeType,modifiedTime,webViewLink)',
+                pageSize=100,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+                orderBy='modifiedTime desc',
+                pageToken=page_token,
+            ).execute()
+            results.extend(resp.get('files', []))
+            page_token = resp.get('nextPageToken')
+            if not page_token:
+                break
+        # Cross-référence : quels fileId sont déjà dans PHASE 1 col M ?
+        validated_fids = set()
+        try:
+            gc = get_sheets_client()
+            if gc:
+                sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+                ws = _get_or_create_phase1(sh)
+                rows = ws.get_all_values()
+                for i, row in enumerate(rows):
+                    if i == 0:
+                        continue
+                    fid = (row[12] if len(row) > 12 else '').strip()
+                    if fid:
+                        validated_fids.add(fid)
+        except Exception as e:
+            print(f'[CV-PIPELINE] Erreur cross-ref Sheet: {e}')
+
+        files_out = []
+        for f in results:
+            files_out.append({
+                'fileId': f['id'],
+                'name': f.get('name', ''),
+                'size': int(f.get('size', 0)),
+                'mimeType': f.get('mimeType', ''),
+                'modifiedTime': f.get('modifiedTime', ''),
+                'webViewLink': f.get('webViewLink', ''),
+                'profilCree': f['id'] in validated_fids,
+            })
+        return jsonify({'success': True, 'files': files_out})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/recrutement/cv-extraire', methods=['POST'])
+@login_required
+def cv_extraire():
+    """Télécharge un fichier du dossier CV, extrait le texte et appelle GPT."""
+    if not _CV_DRIVE_CONFIGURED:
+        return jsonify({'success': False, 'error': 'Configuration Drive incomplète', 'missing': _CV_MISSING_VARS}), 503
+    try:
+        d = request.get_json()
+        file_id = (d.get('fileId', '') or '').strip()
+        if not file_id:
+            return jsonify({'success': False, 'error': 'fileId requis'}), 400
+
+        drive = _get_drive_client()
+
+        # Métadonnées du fichier
+        meta = drive.files().get(
+            fileId=file_id,
+            fields='id,name,mimeType,size',
+            supportsAllDrives=True,
+        ).execute()
+        filename = meta.get('name', '')
+        print(f'[CV-PIPELINE] Extraction de {filename} (fileId={file_id})')
+
+        # Télécharger le contenu
+        from googleapiclient.http import MediaIoBaseDownload
+        import io
+        request_dl = drive.files().get_media(fileId=file_id)
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, request_dl)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        file_bytes = buf.getvalue()
+
+        # Extraire le texte
+        text = extract_text_from_file(file_bytes, filename)
+        illisible = not text.strip()
+
+        # Appeler GPT si on a du texte
+        champs = {}
+        if not illisible:
+            try:
+                champs = extract_cv_with_gpt(text[:8000])
+            except Exception as e:
+                print(f'[CV-PIPELINE] GPT erreur: {e}')
+                champs = {}
+
+        # Contrôles de doublon dans PHASE 1
+        doublon_fileid = False
+        doublon_email = False
+        doublon_fileid_row = None
+        doublon_email_row = None
+        try:
+            gc = get_sheets_client()
+            if gc:
+                sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+                ws = _get_or_create_phase1(sh)
+                rows = ws.get_all_values()
+                extracted_email = (champs.get('email', '') or '').strip().lower()
+                for i, row in enumerate(rows):
+                    if i == 0:
+                        continue
+                    # Col M = DRIVE_FILE_ID (index 12)
+                    row_fid = (row[12] if len(row) > 12 else '').strip()
+                    if row_fid == file_id:
+                        doublon_fileid = True
+                        doublon_fileid_row = i + 1
+                    # Col C = EMAIL (index 2)
+                    if extracted_email:
+                        row_email = (row[2] if len(row) > 2 else '').strip().lower()
+                        if row_email == extracted_email and not doublon_email:
+                            doublon_email = True
+                            doublon_email_row = i + 1
+        except Exception as e:
+            print(f'[CV-PIPELINE] Doublon check erreur: {e}')
+
+        return jsonify({
+            'success': True,
+            'fileId': file_id,
+            'filename': filename,
+            'illisible': illisible,
+            'champs': champs,
+            'doublon_fileid': doublon_fileid,
+            'doublon_fileid_row': doublon_fileid_row,
+            'doublon_email': doublon_email,
+            'doublon_email_row': doublon_email_row,
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/recrutement/cv-decision', methods=['POST'])
+@login_required
+def cv_decision():
+    """Crée ou met à jour la fiche candidat dans PHASE 1 selon l'issue de l'appel."""
+    try:
+        d = request.get_json()
+        file_id = (d.get('fileId', '') or '').strip()
+        action = (d.get('action', '') or '').strip()
+        if not file_id or action not in ('CONTACTE', 'REFUSE', 'SANS_REPONSE'):
+            return jsonify({'success': False, 'error': 'fileId et action (CONTACTE/REFUSE/SANS_REPONSE) requis'}), 400
+
+        nom = (d.get('nom', '') or '').upper()
+        prenom = d.get('prenom', '') or ''
+        email = (d.get('email', '') or '').strip()
+        telephone = d.get('telephone', '') or ''
+        adresse = d.get('adresse', '') or ''
+        poste = d.get('poste', '') or ''
+        if isinstance(telephone, list):
+            telephone = ' / '.join(str(t) for t in telephone)
+
+        statut_map = {'CONTACTE': 'CONTACTÉ', 'REFUSE': 'REFUSÉ', 'SANS_REPONSE': 'SANS RÉPONSE'}
+        statut = statut_map[action]
+
+        # Si CONTACTE, envoyer l'invitation via la fonction interne unique
+        if action == 'CONTACTE':
+            date_session = (d.get('date_session', '') or '').strip()
+            heure_session = (d.get('heure_session', '') or '').strip()
+            if not email or not date_session or not heure_session:
+                return jsonify({'success': False, 'error': 'Email, date et heure requis pour programmer la visio'}), 400
+            try:
+                result = _send_invitation_visio(
+                    email=email, prenom=prenom, nom=nom, telephone=telephone,
+                    experience=poste, date_session=date_session, heure_session=heure_session,
+                    file_id=file_id,
+                )
+                return jsonify(result)
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        # REFUSE ou SANS_REPONSE : upsert Sheet, pas de mail
+        lien_cv = ''
+        try:
+            drive = _get_drive_client()
+            meta = drive.files().get(fileId=file_id, fields='webViewLink', supportsAllDrives=True).execute()
+            lien_cv = meta.get('webViewLink', '')
+        except Exception as e:
+            print(f'[CV-PIPELINE] Erreur récupération lien CV: {e}')
+
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+
+        # Chercher une ligne existante par fileId (col M)
+        target_row = None
+        rows = ws.get_all_values()
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            if (row[12] if len(row) > 12 else '').strip() == file_id:
+                target_row = i + 1
+                break
+
+        if target_row:
+            # Update champ par champ
+            ws.update(f'A{target_row}', [[nom]], value_input_option='RAW')
+            ws.update(f'B{target_row}', [[prenom]], value_input_option='RAW')
+            ws.update(f'C{target_row}', [[email]], value_input_option='RAW')
+            ws.update(f'D{target_row}', [[telephone]], value_input_option='RAW')
+            ws.update(f'E{target_row}', [[adresse]], value_input_option='RAW')
+            ws.update(f'F{target_row}', [[statut]], value_input_option='RAW')
+            ws.update(f'G{target_row}', [[poste]], value_input_option='RAW')
+            print(f'[CV-PIPELINE] Ligne {target_row} mise à jour → {statut}')
+        else:
+            # Nouvelle ligne
+            date_str = datetime.now().strftime('%d/%m/%Y')
+            row_data = [
+                nom, prenom, email, telephone, adresse,
+                statut, poste, date_str, '', lien_cv,
+                '', '', file_id, '', '', '',
+            ]
+            ws.append_row(row_data, value_input_option='RAW')
+            print(f'[CV-PIPELINE] Ligne créée : {prenom} {nom} → {statut}')
+
+        return jsonify({'success': True, 'sheet_ok': True})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+
+@app.route('/api/recrutement/phase1/modifier-contact', methods=['POST'])
+@login_required
+def modifier_contact_phase1():
+    """Modifie l'email (col C) ou le téléphone (col D) d'un candidat dans PHASE 1."""
+    try:
+        d = request.get_json()
+        file_id = (d.get('fileId', '') or '').strip()
+        current_email = (d.get('currentEmail', '') or '').strip().lower()
+        new_email = d.get('newEmail')  # None si pas modifié
+        new_tel = d.get('newTel')  # None si pas modifié
+
+        if not file_id and not current_email:
+            return jsonify({'success': False, 'error': 'fileId ou currentEmail requis'}), 400
+
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        rows = ws.get_all_values()
+
+        # Trouver la ligne par fileId (col M, index 12) ou par email (col C, index 2)
+        target_row = None
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            if file_id:
+                row_fid = (row[12] if len(row) > 12 else '').strip()
+                if row_fid == file_id:
+                    target_row = i + 1
+                    break
+            elif current_email:
+                row_email = (row[2] if len(row) > 2 else '').strip().lower()
+                if row_email == current_email:
+                    target_row = i + 1
+                    # Ne pas break : on veut la dernière ligne (plus récente)
+
+        if not target_row:
+            return jsonify({'success': False, 'error': 'Candidat non trouvé'}), 404
+
+        if new_email is not None:
+            ws.update(f'C{target_row}', [[new_email.strip()]], value_input_option='RAW')
+            print(f'[PHASE1] Email modifié row {target_row} → {new_email.strip()}')
+        if new_tel is not None:
+            ws.update(f'D{target_row}', [[new_tel.strip()]], value_input_option='RAW')
+            print(f'[PHASE1] Téléphone modifié row {target_row} → {new_tel.strip()}')
+
+        return jsonify({'success': True, 'row': target_row})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+def _find_phase1_row_by_fileid_or_email(ws, file_id=None, email=None):
+    """Cherche une ligne par fileId (col M) puis par email (col C). Retourne (row_num, row_data) ou (None, None)."""
+    rows = ws.get_all_values()
+    if file_id:
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            if (row[12] if len(row) > 12 else '').strip() == file_id:
+                return i + 1, row
+    if email:
+        return _find_phase1_row(ws, email)
+    return None, None
+
+
+@app.route('/api/recrutement/decaler-visio', methods=['POST'])
+@login_required
+def decaler_visio():
+    """Décale la session d'un candidat : DELETE ancien CRM → _send_invitation_visio (mail + nouveau CRM + Sheet)."""
+    try:
+        d = request.get_json()
+        email = (d.get('email', '') or '').strip()
+        file_id = (d.get('fileId', '') or '').strip()
+        new_date = (d.get('newDate', '') or '').strip()
+        new_heure = (d.get('newHeure', '') or '').strip()
+
+        if not email or not new_date or not new_heure:
+            return jsonify({'success': False, 'error': 'Email, newDate et newHeure requis'}), 400
+
+        # 1. Validation stricte
+        try:
+            dt = datetime.strptime(f'{new_date} {new_heure}', '%Y-%m-%d %H:%M')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Format de date ou heure invalide (YYYY-MM-DD HH:MM)'}), 400
+        if dt < datetime.now():
+            return jsonify({'success': False, 'error': 'La date et l\'heure sont dans le passé'}), 400
+
+        # 2. Trouver la ligne
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        target_row, row_data = _find_phase1_row_by_fileid_or_email(ws, file_id, email)
+        if not target_row:
+            return jsonify({'success': False, 'error': 'Candidat non trouvé'}), 404
+
+        # 3. Lire col P
+        event_id = (row_data[15] if len(row_data) > 15 else '').strip()
+        prenom = (row_data[1] if len(row_data) > 1 else '').strip()
+        nom = (row_data[0] if len(row_data) > 0 else '').strip()
+        tel = (row_data[3] if len(row_data) > 3 else '').strip()
+        warning = None
+        crm_deleted = False
+
+        # 4. DELETE ancien événement CRM
+        crm_api_url = os.environ.get('CRM_API_URL', '')
+        crm_api_token = os.environ.get('CRM_API_TOKEN', '')
+        if event_id and crm_api_url and crm_api_token:
+            try:
+                crm_resp = requests.delete(
+                    f'{crm_api_url}/api/external/calendar-event/{event_id}',
+                    headers={'Authorization': f'Bearer {crm_api_token}'},
+                    timeout=15
+                )
+                crm_data = crm_resp.json()
+                if crm_data.get('alreadyDeleted'):
+                    crm_deleted = True
+                    print(f'[RECRUTEMENT] CRM DELETE {event_id}: déjà supprimé')
+                elif crm_data.get('success'):
+                    crm_deleted = True
+                    print(f'[RECRUTEMENT] CRM DELETE {event_id}: OK')
+                else:
+                    return jsonify({'success': False, 'error': f'Erreur DELETE CRM : {crm_data.get("error", "inconnue")}'}), 502
+            except Exception as e:
+                return jsonify({'success': False, 'error': f'Erreur CRM : {e}'}), 502
+        elif not event_id:
+            warning = 'Un ancien RDV peut subsister dans l\'agenda, à retirer manuellement.'
+
+        # 5. _send_invitation_visio → nouveau CRM + mail + Sheet (I, K, L, P)
+        try:
+            result = _send_invitation_visio(
+                email=email, prenom=prenom, nom=nom, telephone=tel, experience='',
+                date_session=new_date, heure_session=new_heure,
+                file_id=file_id or None, reprogrammation=True, ecrire_statut=False,
+            )
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+        # 6. Retour
+        return jsonify({
+            'success': True,
+            'crm_ok': result.get('crm_ok', False),
+            'crm_deleted': crm_deleted,
+            'crm_created': result.get('crm_ok', False),
+            'mail_ok': result.get('mail_ok', False),
+            'sheet_ok': result.get('sheet_ok', False),
+            'sheet_error': result.get('sheet_error'),
+            'warning': warning,
+        })
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
@@ -2394,44 +2839,35 @@ def extraire_contrat():
     })
 
 
-# ===== INVITATION RECRUTEMENT (route unique) =====
+# ===== INVITATION RECRUTEMENT =====
 
-@app.route('/api/recrutement/inviter-candidat', methods=['POST'])
-@login_required
-def inviter_candidat():
-    """Envoie l'invitation visio, crée l'événement CRM, et met à jour PHASE 1."""
-    d = request.get_json()
-    email = d.get('email', '').strip()
-    form_prenom = d.get('prenom', '').strip()
-    form_nom = d.get('nom', '').strip()
-    form_tel = d.get('telephone', '').strip()
-    form_exp = d.get('experience', '').strip()
-    date_session = d.get('date_session', '').strip()
-    heure_session = d.get('heure_session', '').strip()
-
-    if not email or not date_session or not heure_session:
-        return jsonify({'success': False, 'error': 'Email, date et heure requis'}), 400
-
-    # Normaliser la date en YYYY-MM-DD quel que soit le format reçu
+def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_session, heure_session,
+                           file_id=None, reprogrammation=False, ecrire_statut=True):
+    """Fonction interne unique : mail + Sheet + CRM.
+    - reprogrammation=True  → accroche « reprogrammée » dans le mail
+    - ecrire_statut=False    → ne pas écrire F=CONTACTÉ (chemin reprogrammation)
+    Retourne un dict ou lève une exception si le mail échoue."""
     iso_date = _normalize_date_to_iso(date_session)
+    prenom_display = _normalize_display_name(prenom) or 'Monsieur/Madame'
 
-    # Normaliser le prénom pour l'affichage dans le mail (repli formulaire)
-    prenom_display = _normalize_display_name(form_prenom) or 'Monsieur/Madame'
-
-    # 1. Envoyer l'email d'invitation (PRIORITAIRE)
-    # Date lisible : "mercredi 9 septembre 2026"
+    # 1. Mail d'invitation (PRIORITAIRE)
     import locale as _locale
     try:
         _locale.setlocale(_locale.LC_TIME, 'fr_FR.UTF-8')
     except _locale.Error:
-        pass  # fallback sur la locale système
-    _date_parts = iso_date.split('-')
-    _date_obj = datetime(int(_date_parts[0]), int(_date_parts[1]), int(_date_parts[2]))
-    date_lisible = _date_obj.strftime('%A %d %B %Y').replace(' 0', ' ')
+        pass
+    _dp = iso_date.split('-')
+    _dt = datetime(int(_dp[0]), int(_dp[1]), int(_dp[2]))
+    date_lisible = _dt.strftime('%A %d %B %Y').replace(' 0', ' ')
+
+    if reprogrammation:
+        accroche = 'Votre session a &eacute;t&eacute; reprogramm&eacute;e. Voici vos nouvelles informations&nbsp;:'
+    else:
+        accroche = 'Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'
 
     inv_corps = '\n'.join([
         paragraphe(f'Bonjour {accent(prenom_display, theme="clair")},'),
-        paragraphe('Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'),
+        paragraphe(accroche),
         bloc(tableau_infos([
             ('Date', date_lisible),
             ('Heure', f'{heure_session}'),
@@ -2443,74 +2879,73 @@ def inviter_candidat():
     ])
     mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_corps)
 
-    mail_ok = False
-    try:
-        token = get_zoho_token()
-        if not token:
-            return jsonify({'success': False, 'error': 'Impossible de se connecter à Zoho Mail'}), 500
-        account_id = _zoho_get_account_id(token)
-        print(f'[RECRUTEMENT] Envoi invitation à {email}')
-        resp = requests.post(
-            f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
-            headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
-            json={'fromAddress': 'recrutement@liliwatt.fr',
-                  'replyTo': 'carole.andria@liliwatt.fr',
-                  'toAddress': email,
-                  'subject': f'Invitation session LILIWATT — {iso_date} à {heure_session}',
-                  'content': mail_html, 'mailFormat': 'html'},
-            timeout=15
-        )
-        if resp.status_code < 300:
-            mail_ok = True
-            print(f'[RECRUTEMENT] Email envoyé à {email}')
-        else:
-            print(f'[RECRUTEMENT] Zoho erreur {resp.status_code}: {resp.text[:200]}')
-            return jsonify({'success': False, 'error': f'Échec envoi email (Zoho {resp.status_code})'}), 500
-    except Exception as e:
-        print(f'[RECRUTEMENT] Erreur email: {e}')
-        return jsonify({'success': False, 'error': f'Erreur envoi email : {e}'}), 500
+    token = get_zoho_token()
+    if not token:
+        raise Exception('Impossible de se connecter à Zoho Mail')
+    account_id = _zoho_get_account_id(token)
+    print(f'[RECRUTEMENT] Envoi invitation à {email}')
+    resp = requests.post(
+        f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+        headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+        json={'fromAddress': 'recrutement@liliwatt.fr',
+              'replyTo': 'carole.andria@liliwatt.fr',
+              'toAddress': email,
+              'subject': f'Invitation session LILIWATT — {iso_date} à {heure_session}',
+              'content': mail_html, 'mailFormat': 'html'},
+        timeout=15
+    )
+    if resp.status_code >= 300:
+        raise Exception(f'Échec envoi email (Zoho {resp.status_code})')
+    print(f'[RECRUTEMENT] Email envoyé à {email}')
 
     # 2. Écriture Sheet PHASE 1 (échec non bloquant)
     sheet_ok = False
     sheet_error = None
+    tel = telephone
+    lien_cv = ''
+    nom_display = _normalize_display_name(nom)
+    prenom_display_sheet = prenom_display
+    target_row = None
     try:
         gc = get_sheets_client()
         sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
         ws = _get_or_create_phase1(sh)
-        target_row, row_data = _find_phase1_row(ws, email)
+        row_data = None
+        if file_id:
+            rows = ws.get_all_values()
+            for i, row in enumerate(rows):
+                if i == 0:
+                    continue
+                if (row[12] if len(row) > 12 else '').strip() == file_id:
+                    target_row = i + 1
+                    row_data = row
+                    break
+        if not target_row:
+            target_row, row_data = _find_phase1_row(ws, email)
         if target_row:
-            # Sheet prioritaire, formulaire en repli
             sheet_nom = (row_data[0] if len(row_data) > 0 else '').strip()
             sheet_prenom = (row_data[1] if len(row_data) > 1 else '').strip()
             sheet_tel = (row_data[3] if len(row_data) > 3 else '').strip()
             lien_cv = (row_data[9] if len(row_data) > 9 else '').strip()
-            nom_display = _normalize_display_name(sheet_nom or form_nom)
-            prenom_display_sheet = _normalize_display_name(sheet_prenom or form_prenom) or 'Monsieur/Madame'
-            tel = sheet_tel or form_tel
-            # F = CONTACTÉ
-            ws.update(f'F{target_row}', [['CONTACTÉ']], value_input_option='RAW')
-            # I = session (YYYY-MM-DD HH:MM)
+            nom_display = _normalize_display_name(sheet_nom or nom)
+            prenom_display_sheet = _normalize_display_name(sheet_prenom or prenom) or 'Monsieur/Madame'
+            tel = sheet_tel or telephone
+            if ecrire_statut:
+                ws.update(f'F{target_row}', [['CONTACTÉ']], value_input_option='RAW')
             ws.update(f'I{target_row}', [[f'{iso_date} {heure_session}']], value_input_option='RAW')
-            # K:L = ardoise propre (présence + lien candidature)
             ws.update(f'K{target_row}:L{target_row}', [['', '']], value_input_option='RAW')
+            if file_id:
+                ws.update(f'M{target_row}', [[file_id]], value_input_option='RAW')
             sheet_ok = True
-            print(f'[RECRUTEMENT] Sheet PHASE 1 row {target_row} → CONTACTÉ, session {iso_date} {heure_session}, K:L vidés')
+            print(f'[RECRUTEMENT] Sheet row {target_row} mis à jour')
         else:
             sheet_error = f'Email {email} non trouvé dans PHASE 1'
             print(f'[RECRUTEMENT] {sheet_error}')
-            nom_display = _normalize_display_name(form_nom)
-            prenom_display_sheet = prenom_display
-            tel = form_tel
-            lien_cv = ''
     except Exception as e:
         sheet_error = str(e)
-        print(f'[RECRUTEMENT] Sheet erreur (non bloquant): {e}')
-        nom_display = _normalize_display_name(form_nom)
-        prenom_display_sheet = prenom_display
-        tel = form_tel
-        lien_cv = ''
+        print(f'[RECRUTEMENT] Sheet erreur: {e}')
 
-    # 3. Créer l'événement dans l'agenda CRM (échec non bloquant)
+    # 3. Créer l'événement CRM
     crm_ok = False
     crm_error = None
     crm_api_url = os.environ.get('CRM_API_URL', '')
@@ -2518,21 +2953,16 @@ def inviter_candidat():
     referent_email = os.environ.get('RECRUTEMENT_REFERENT_EMAIL', 'kevin.moreau@liliwatt.fr')
     if crm_api_url and crm_api_token:
         try:
-            h, m = int(heure_session.split(':')[0]), int(heure_session.split(':')[1])
-            start_iso = f'{iso_date}T{heure_session}:00'
-            end_iso = f'{iso_date}T{h + 1:02d}:{m:02d}:00'
-
-            # Description construite côté serveur
+            start_iso, end_iso = _build_session_iso(iso_date, heure_session)
             desc_lines = [
                 f'Candidat : {prenom_display_sheet} {nom_display.upper() if nom_display else ""}',
                 f'Téléphone : {tel}' if tel else None,
                 f'Email : {email}',
-                f'Dernière expérience : {form_exp}' if form_exp else None,
+                f'Dernière expérience : {experience}' if experience else None,
                 f'CV : {lien_cv}' if lien_cv else None,
                 f'Session du {iso_date} à {heure_session}',
             ]
             description_crm = '\n'.join(l for l in desc_lines if l)
-
             crm_resp = requests.post(
                 f'{crm_api_url}/api/external/calendar-event',
                 headers={'Authorization': f'Bearer {crm_api_token}', 'Content-Type': 'application/json'},
@@ -2548,24 +2978,50 @@ def inviter_candidat():
             crm_data = crm_resp.json()
             if crm_data.get('success'):
                 crm_ok = True
+                if target_row and crm_data.get('eventId'):
+                    try:
+                        ws.update(f'P{target_row}', [[crm_data['eventId']]], value_input_option='RAW')
+                    except Exception:
+                        pass
                 print(f'[RECRUTEMENT] CRM event créé: {crm_data.get("eventId")}')
             else:
                 crm_error = crm_data.get('error', 'Erreur inconnue')
-                print(f'[RECRUTEMENT] CRM erreur: {crm_error}')
         except Exception as e:
             crm_error = str(e)
-            print(f'[RECRUTEMENT] CRM exception: {e}')
     else:
         crm_error = 'CRM_API_URL ou CRM_API_TOKEN non configuré'
 
-    return jsonify({
+    return {
         'success': True,
-        'mail_ok': mail_ok,
+        'mail_ok': True,
         'crm_ok': crm_ok,
         'crm_error': crm_error,
         'sheet_ok': sheet_ok,
         'sheet_error': sheet_error,
-    })
+    }
+
+
+@app.route('/api/recrutement/inviter-candidat', methods=['POST'])
+@login_required
+def inviter_candidat():
+    """Point d'entrée depuis le bouton Inviter de PHASE 1 ou le script CA."""
+    d = request.get_json()
+    email = d.get('email', '').strip()
+    if not email or not d.get('date_session') or not d.get('heure_session'):
+        return jsonify({'success': False, 'error': 'Email, date et heure requis'}), 400
+    try:
+        result = _send_invitation_visio(
+            email=email,
+            prenom=d.get('prenom', '').strip(),
+            nom=d.get('nom', '').strip(),
+            telephone=d.get('telephone', '').strip(),
+            experience=d.get('experience', '').strip(),
+            date_session=d.get('date_session', '').strip(),
+            heure_session=d.get('heure_session', '').strip(),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ===== RECHERCHE MEC =====

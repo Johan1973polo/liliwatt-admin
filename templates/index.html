@@ -252,6 +252,8 @@
         <button onclick="filterP1('NON CONTACTÉ')" style="padding:6px 14px;border-radius:20px;border:2px solid #9ca3af;background:#fff;color:#9ca3af;font-size:12px;font-weight:600;cursor:pointer;">NON CONTACTÉ</button>
         <button onclick="filterP1('CONTACTÉ')" style="padding:6px 14px;border-radius:20px;border:2px solid #22c55e;background:#fff;color:#22c55e;font-size:12px;font-weight:600;cursor:pointer;">CONTACTÉ</button>
         <button onclick="filterP1('RELANCÉ')" style="padding:6px 14px;border-radius:20px;border:2px solid #f59e0b;background:#fff;color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">RELANCÉ</button>
+        <button onclick="filterP1('SANS RÉPONSE')" style="padding:6px 14px;border-radius:20px;border:2px solid #6366f1;background:#fff;color:#6366f1;font-size:12px;font-weight:600;cursor:pointer;">SANS RÉPONSE</button>
+        <button onclick="filterP1('REFUSÉ')" style="padding:6px 14px;border-radius:20px;border:2px solid #ef4444;background:#fff;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer;">REFUSÉ</button>
       </div>
       <div id="phase1-list" style="font-size:13px;"><div class="loading">Cliquez sur 🔄</div></div>
     </div>
@@ -960,61 +962,93 @@
   <div class="panel" id="tab-scriptrecrutement">
     <div style="max-width:1200px;margin:0 auto;padding:24px 0;">
 
-      <!-- ===== SESSION VISIO ===== -->
-      <div id="sectionSessionVisio" style="margin-bottom:24px;padding:20px;border:1px solid #e9d5ff;border-radius:12px;background:#faf5ff;">
-        <h2 style="color:#1e1b4b;font-size:20px;font-weight:800;margin:0 0 16px;">📅 Session visio — Présence &amp; envoi</h2>
-        <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
-          <label style="font-size:13px;font-weight:700;color:#374151;white-space:nowrap;">Session :</label>
-          <select id="sessionSelect" onchange="loadSessionCandidats()" style="flex:1;max-width:400px;padding:8px 12px;border:1.5px solid #d8b4fe;border-radius:8px;font-size:14px;background:#fff;">
-            <option value="">— Sélectionnez —</option>
-          </select>
-          <button onclick="loadSessions()" style="padding:8px 14px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Charger</button>
+      <!-- ===== ACCORDÉON 1 — CV À TRAITER ===== -->
+      <div style="margin-bottom:12px;border:1px solid #e9d5ff;border-radius:12px;overflow:hidden;">
+        <div onclick="toggleAccordion('acc-cv')" style="padding:16px 20px;background:#faf5ff;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+          <h2 style="color:#1e1b4b;font-size:18px;font-weight:800;margin:0;">📄 CV à traiter <span id="accCvCount" style="font-size:13px;font-weight:600;color:#7c3aed;"></span></h2>
+          <span id="acc-cv-arrow" style="font-size:18px;color:#7c3aed;transition:transform 0.2s;">▼</span>
         </div>
-        <div id="sessionCandidats" style="font-size:13px;min-height:40px;">
-          <div style="color:#9ca3af;">Chargement des sessions…</div>
-        </div>
-        <div id="sessionEnvoi" style="margin-top:16px;"></div>
-      </div>
-
-      <!-- Zone CV + bouton accès direct -->
-      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
-        <input type="file" id="scrCvInput" accept=".pdf,.docx,.doc" style="display:none" onchange="scrUploadCv(this.files)">
-        <div id="scrCvDrop" style="flex:1;border:2px dashed #d8b4fe;border-radius:10px;padding:12px 16px;text-align:center;cursor:pointer;background:#faf5ff;font-size:12px;color:#6b7280;" onclick="var el=document.getElementById('scrCvInput');if(el)el.click();">
-          📄 Glissez un CV ici ou cliquez
-        </div>
-        <button onclick="_scrPhase=5;scrRender()" style="padding:10px 16px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📧 Aller à l'envoi</button>
-      </div>
-      <!-- Bandeau candidat -->
-      <div id="scrBandeau" style="display:none;margin-bottom:16px;padding:10px 16px;background:#ede9fe;border-radius:10px;font-size:13px;font-weight:600;color:#1e1b4b;"></div>
-      <!-- Alerte Indeed -->
-      <div id="scrIndeedAlert" style="display:none;margin-bottom:12px;padding:10px 16px;background:#fef2f2;border:2px solid #ef4444;border-radius:10px;font-size:13px;color:#991b1b;font-weight:700;">
-        ⚠ Adresse relais Indeed — demandez son adresse personnelle au candidat
-        <input type="email" id="scrEmailOverride" placeholder="Adresse personnelle du candidat" style="display:block;margin-top:8px;width:100%;padding:8px;border:1.5px solid #ef4444;border-radius:8px;font-size:13px;box-sizing:border-box;" oninput="scrCheckEmailOverride()">
-      </div>
-
-      <div style="display:flex;gap:20px;flex-wrap:wrap;">
-        <!-- Colonne gauche : script -->
-        <div style="flex:7 1 600px;min-width:0;position:relative;">
-          <h2 style="color:#1e1b4b;font-size:20px;font-weight:800;margin:0 0 16px;">📞 Script d'appel — Recrutement</h2>
-          <div id="scrPhaseIndicator" style="font-size:12px;color:#6b7280;margin-bottom:12px;"></div>
-          <div id="scrContent" style="font-size:18px;line-height:1.8;color:#1e1b4b;min-height:300px;"></div>
-          <div style="display:flex;gap:12px;margin-top:20px;">
-            <button onclick="scrNav(-1)" id="scrBtnPrev" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">← Précédent</button>
-            <button onclick="scrNav(1)" id="scrBtnNext" style="padding:10px 20px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">Suivant →</button>
+        <div id="acc-cv" style="padding:20px;display:block;">
+          <div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:12px;">
+            <button onclick="loadCvInbox()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Actualiser</button>
           </div>
-          <!-- Overlay objection -->
-          <div id="scrObjOverlay" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.85);z-index:10;border-radius:12px;padding:24px;overflow-y:auto;">
-            <button onclick="scrCloseObj()" style="position:absolute;top:10px;right:14px;background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;">✕</button>
-            <div id="scrObjTitle" style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;"></div>
-            <div id="scrObjText" style="font-size:17px;line-height:1.8;color:#1e1b4b;"></div>
+          <div id="cvInboxList" style="font-size:13px;min-height:40px;">
+            <div style="color:#9ca3af;">Chargement…</div>
           </div>
         </div>
-        <!-- Colonne droite : objections -->
-        <div style="flex:3 1 180px;min-width:0;">
-          <h3 style="color:#1e1b4b;font-size:14px;font-weight:800;margin:0 0 12px;">💬 Objections <span style="font-size:10px;color:#9ca3af;font-weight:400;">(1-9 / Échap)</span></h3>
-          <div id="scrObjections" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+
+      <!-- ===== ACCORDÉON 2 — APPEL CANDIDAT ===== -->
+      <div style="margin-bottom:12px;border:1px solid #e9d5ff;border-radius:12px;overflow:hidden;">
+        <div onclick="toggleAccordion('acc-appel')" style="padding:16px 20px;background:#faf5ff;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+          <h2 style="color:#1e1b4b;font-size:18px;font-weight:800;margin:0;">📞 Appel candidat</h2>
+          <span id="acc-appel-arrow" style="font-size:18px;color:#7c3aed;transition:transform 0.2s;">▼</span>
+        </div>
+        <div id="acc-appel" style="padding:20px;display:block;">
+          <!-- Zone CV + bouton accès direct -->
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
+            <input type="file" id="scrCvInput" accept=".pdf,.docx,.doc" style="display:none" onchange="scrUploadCv(this.files)">
+            <div id="scrCvDrop" style="flex:1;border:2px dashed #d8b4fe;border-radius:10px;padding:12px 16px;text-align:center;cursor:pointer;background:#fff;font-size:12px;color:#6b7280;" onclick="var el=document.getElementById('scrCvInput');if(el)el.click();">
+              📄 Glissez un CV ici ou cliquez
+            </div>
+            <button onclick="_scrPhase=5;scrRender()" style="padding:10px 16px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📧 Aller à l'envoi</button>
+          </div>
+          <!-- Aperçu du CV (iframe Drive) -->
+          <div id="scrCvPreview" style="display:none;margin-bottom:16px;"></div>
+          <!-- Bandeau candidat -->
+          <div id="scrBandeau" style="display:none;margin-bottom:16px;padding:10px 16px;background:#ede9fe;border-radius:10px;font-size:13px;font-weight:600;color:#1e1b4b;"></div>
+          <!-- Alerte Indeed -->
+          <div id="scrIndeedAlert" style="display:none;margin-bottom:12px;padding:10px 16px;background:#fef2f2;border:2px solid #ef4444;border-radius:10px;font-size:13px;color:#991b1b;font-weight:700;">
+            ⚠ Adresse relais Indeed — demandez son adresse personnelle au candidat
+            <input type="email" id="scrEmailOverride" placeholder="Adresse personnelle du candidat" style="display:block;margin-top:8px;width:100%;padding:8px;border:1.5px solid #ef4444;border-radius:8px;font-size:13px;box-sizing:border-box;" oninput="scrCheckEmailOverride()">
+          </div>
+
+          <div style="display:flex;gap:20px;flex-wrap:wrap;">
+            <!-- Colonne gauche : script -->
+            <div style="flex:7 1 600px;min-width:0;position:relative;">
+              <div id="scrPhaseIndicator" style="font-size:12px;color:#6b7280;margin-bottom:12px;"></div>
+              <div id="scrContent" style="font-size:18px;line-height:1.8;color:#1e1b4b;min-height:300px;"></div>
+              <div style="display:flex;gap:12px;margin-top:20px;">
+                <button onclick="scrNav(-1)" id="scrBtnPrev" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">← Précédent</button>
+                <button onclick="scrNav(1)" id="scrBtnNext" style="padding:10px 20px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">Suivant →</button>
+              </div>
+              <!-- Overlay objection -->
+              <div id="scrObjOverlay" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.85);z-index:10;border-radius:12px;padding:24px;overflow-y:auto;">
+                <button onclick="scrCloseObj()" style="position:absolute;top:10px;right:14px;background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;">✕</button>
+                <div id="scrObjTitle" style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;"></div>
+                <div id="scrObjText" style="font-size:17px;line-height:1.8;color:#1e1b4b;"></div>
+              </div>
+            </div>
+            <!-- Colonne droite : objections -->
+            <div style="flex:3 1 180px;min-width:0;">
+              <h3 style="color:#1e1b4b;font-size:14px;font-weight:800;margin:0 0 12px;">💬 Objections <span style="font-size:10px;color:#9ca3af;font-weight:400;">(1-9 / Échap)</span></h3>
+              <div id="scrObjections" style="display:flex;flex-direction:column;gap:6px;"></div>
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- ===== ACCORDÉON 3 — SESSION VISIO ===== -->
+      <div style="margin-bottom:12px;border:1px solid #e9d5ff;border-radius:12px;overflow:hidden;">
+        <div onclick="toggleAccordion('acc-session')" style="padding:16px 20px;background:#faf5ff;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+          <h2 style="color:#1e1b4b;font-size:18px;font-weight:800;margin:0;">📅 Session visio <span id="accSessionCount" style="font-size:13px;font-weight:600;color:#7c3aed;"></span></h2>
+          <span id="acc-session-arrow" style="font-size:18px;color:#7c3aed;transition:transform 0.2s;">▶</span>
+        </div>
+        <div id="acc-session" style="padding:20px;display:none;">
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
+            <label style="font-size:13px;font-weight:700;color:#374151;white-space:nowrap;">Session :</label>
+            <select id="sessionSelect" onchange="loadSessionCandidats()" style="flex:1;max-width:400px;padding:8px 12px;border:1.5px solid #d8b4fe;border-radius:8px;font-size:14px;background:#fff;">
+              <option value="">— Sélectionnez —</option>
+            </select>
+            <button onclick="loadSessions()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">🔄</button>
+          </div>
+          <div id="sessionCandidats" style="font-size:13px;min-height:40px;">
+            <div style="color:#9ca3af;">Chargement des sessions…</div>
+          </div>
+          <div id="sessionEnvoi" style="margin-top:16px;"></div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -1049,7 +1083,7 @@ function showTab(name) {
   if (name === 'newsletter') { nlCount(); nlSetFormat(_nlFormat); nlLoadClients(); }
   if (name === 'bienvenue') { bvInit(); }
   if (name === 'echeancier') { echLoad(); }
-  if (name === 'scriptrecrutement' && typeof loadSessions === 'function') { loadSessions(); }
+  if (name === 'scriptrecrutement') { if (typeof loadSessions === 'function') loadSessions(); if (typeof loadCvInbox === 'function') loadCvInbox(); }
 }
 
 function normalize(s) {
@@ -1481,7 +1515,7 @@ function renderP1() {
   const div = document.getElementById('phase1-list');
   const list = p1Filter === 'TOUS' ? allP1 : allP1.filter(c => c.statut === p1Filter);
   if (!list.length) { div.innerHTML = '<div class="loading">Aucun profil</div>'; return; }
-  const sc = {'NON CONTACTÉ':'#9ca3af','CONTACTÉ':'#22c55e','RELANCÉ':'#f59e0b'};
+  const sc = {'NON CONTACTÉ':'#9ca3af','CONTACTÉ':'#22c55e','RELANCÉ':'#f59e0b','SANS RÉPONSE':'#6366f1','REFUSÉ':'#ef4444'};
   div.innerHTML = list.map(c => {
     const col = sc[c.statut] || '#9ca3af';
     const driveFileId = c.lien_cv ? extractDriveId(c.lien_cv) : '';
@@ -1489,14 +1523,18 @@ function renderP1() {
       '<button onclick="supprimerProfil('+c.row+',\''+driveFileId+'\')" style="background:#dc2626;color:white;border:none;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:14px;font-weight:700;position:absolute;top:8px;right:8px;line-height:1;" title="Supprimer">✕</button>' +
       '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding-right:28px;">' +
       '<div style="flex:1;min-width:200px;"><strong style="color:#1e1b4b;">' + c.prenom + ' ' + c.nom + '</strong> ' +
-      '<span style="font-size:11px;color:#9ca3af;">' + c.email + ' | ' + c.telephone + '</span>' +
+      '<span style="font-size:11px;">' +
+      '<input type="text" value="' + (c.email||'').replace(/"/g,'&quot;') + '" onblur="_p1SaveContact(this,\'email\',\'' + (c.email||'').replace(/'/g,"\\'") + '\')" style="padding:2px 6px;border:1px solid ' + ((c.email||'').indexOf('@indeedemail.com') !== -1 ? '#ef4444' : '#e9d5ff') + ';border-radius:4px;font-size:11px;width:180px;' + ((c.email||'').indexOf('@indeedemail.com') !== -1 ? 'background:#fef2f2;color:#991b1b;' : '') + '">' +
+      ' <input type="text" value="' + (c.telephone||'').replace(/"/g,'&quot;') + '" onblur="_p1SaveContact(this,\'tel\',\'' + (c.email||'').replace(/'/g,"\\'") + '\')" style="padding:2px 6px;border:1px solid #e9d5ff;border-radius:4px;font-size:11px;width:110px;">' +
+      ((c.email||'').indexOf('@indeedemail.com') !== -1 ? ' <span style="color:#ef4444;font-weight:700;font-size:10px;">⚠ Indeed</span>' : '') +
+      '</span>' +
       (c.adresse ? '<br><span style="font-size:11px;color:#6b7280;">' + c.adresse + '</span>' : '') +
       ' <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:'+col+'18;color:'+col+';font-weight:600;">' + c.statut + '</span>' +
       (c.session ? ' <span style="font-size:11px;color:#7c3aed;">📅 ' + c.session + '</span>' : '') + '</div>' +
       '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">' +
       '<input type="text" value="' + (c.note||'').replace(/"/g,'&quot;') + '" placeholder="Note..." onblur="saveP1Note('+c.row+',this.value)" style="padding:4px 8px;border:1.5px solid #e9d5ff;border-radius:6px;font-size:11px;width:120px;">' +
       '<select onchange="changeP1Statut('+c.row+',this.value)" style="padding:3px 6px;border:1.5px solid #e9d5ff;border-radius:6px;font-size:11px;">' +
-      ['NON CONTACTÉ','CONTACTÉ','RELANCÉ'].map(s => '<option value="'+s+'"'+(c.statut===s?' selected':'')+'>'+s+'</option>').join('') + '</select>' +
+      ['NON CONTACTÉ','CONTACTÉ','RELANCÉ','SANS RÉPONSE','REFUSÉ'].map(s => '<option value="'+s+'"'+(c.statut===s?' selected':'')+'>'+s+'</option>').join('') + '</select>' +
       '<button onclick="openInvite('+c.row+',\''+c.email.replace(/'/g,"\\'")+'\',\''+c.prenom.replace(/'/g,"\\'")+'\',\''+c.nom.replace(/'/g,"\\'")+'\',\''+(c.telephone||'').replace(/'/g,"\\'")+'\''+')" style="padding:4px 8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📧 Inviter</button>' +
       (c.lien_cv ? '<a href="'+c.lien_cv+'" target="_blank" style="padding:4px 8px;background:#ede9fe;color:#7c3aed;border:none;border-radius:6px;font-size:11px;text-decoration:none;font-weight:600;">📄 CV</a>' : '<span style="padding:4px 8px;background:#f3f4f6;color:#9ca3af;border-radius:6px;font-size:11px;">📄 CV —</span>') +
       '<button onclick="openSendRef('+JSON.stringify(c).replace(/"/g,'&quot;')+')" style="padding:4px 8px;background:#e0e7ff;color:#2563eb;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📤 Réf.</button>' +
@@ -1512,6 +1550,33 @@ async function changeP1Statut(row, statut) {
 async function saveP1Note(row, note) {
   await fetch('/api/recrutement/phase1/note', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({row,note}) });
 }
+
+async function _p1SaveContact(input, field, currentEmail) {
+  var val = input.value.trim();
+  var body = { currentEmail: currentEmail };
+  var candidat = allP1.find(function(c) { return (c.email||'').toLowerCase() === currentEmail.toLowerCase(); });
+  if (candidat && candidat.drive_file_id) body.fileId = candidat.drive_file_id;
+  if (field === 'email') body.newEmail = val;
+  if (field === 'tel') body.newTel = val;
+  try {
+    var r = await fetch('/api/recrutement/phase1/modifier-contact', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    var d = await r.json();
+    if (d.success) {
+      input.style.borderColor = '#16a34a';
+      setTimeout(function() { input.style.borderColor = '#e9d5ff'; }, 1500);
+      if (field === 'email') setTimeout(loadPhase1, 500);
+    } else {
+      input.style.borderColor = '#ef4444';
+      alert('Erreur : ' + (d.error || 'inconnue'));
+    }
+  } catch(e) {
+    input.style.borderColor = '#ef4444';
+  }
+}
+
 
 function extractDriveId(url) {
   if (!url) return '';
@@ -3714,7 +3779,11 @@ var _scrPhases = [
     +'<div><label style="font-size:11px;font-weight:700;color:#374151;">Heure</label><input type="time" id="scrHeure" value="14:00" style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;box-sizing:border-box;"></div>'
     +'</div>'
     +'<div style="margin-top:6px;"><label style="font-size:11px;font-weight:700;color:#374151;">Dernière expérience</label><input type="text" id="scrExp" placeholder="Ex: Commercial B2B 5 ans" style="width:100%;padding:8px;border:1.5px solid #e9d5ff;border-radius:8px;font-size:14px;box-sizing:border-box;"></div>'
-    +'<button onclick="scrPrepareInvite()" id="scrBtnInvite" style="margin-top:12px;padding:10px 24px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;width:100%;">📧 Programmer la visio</button>'
+    +'<div style="display:flex;gap:8px;margin-top:12px;">'
+    +'<button onclick="scrPrepareInvite()" id="scrBtnInvite" style="flex:1;padding:10px 16px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">📧 Programmer la visio</button>'
+    +'<button onclick="_cvDecision(\'SANS_REPONSE\')" style="padding:10px 16px;background:#6366f1;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">📵 Sans réponse</button>'
+    +'<button onclick="_cvDecision(\'REFUSE\')" style="padding:10px 16px;background:#ef4444;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">✗ Non retenu</button>'
+    +'</div>'
     +'<div id="scrInviteRecap" style="display:none;margin-top:12px;padding:14px;background:#fff;border-radius:10px;border:2px solid #7c3aed;font-size:14px;"></div>'
     +'<div id="scrInviteResult" style="margin-top:8px;font-size:13px;"></div>'
     +'</div>'},
@@ -3919,9 +3988,17 @@ async function scrConfirmInvite(){
   var tel = document.getElementById('scrTel')?.value?.trim() || '';
   var exp = document.getElementById('scrExp')?.value?.trim() || '';
   try {
-    var r = await fetch('/api/recrutement/inviter-candidat', {
+    var url, body;
+    if (_scrCv && _scrCv.fileId) {
+      url = '/api/recrutement/cv-decision';
+      body = {fileId:_scrCv.fileId, action:'CONTACTE', email:email, prenom:prenom, nom:nom, telephone:tel, adresse:_scrCv.adresse||'', poste:exp, date_session:dateEl.value, heure_session:heureEl.value};
+    } else {
+      url = '/api/recrutement/inviter-candidat';
+      body = {email:email, prenom:prenom, nom:nom, telephone:tel, experience:exp, date_session:dateEl.value, heure_session:heureEl.value};
+    }
+    var r = await fetch(url, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({email:email, prenom:prenom, nom:nom, telephone:tel, experience:exp, date_session:dateEl.value, heure_session:heureEl.value})
+      body: JSON.stringify(body)
     });
     var d = await r.json();
     var res = document.getElementById('scrInviteResult');
@@ -3932,6 +4009,7 @@ async function scrConfirmInvite(){
       if(d.sheet_ok === false && d.sheet_error) msg += ' · ⚠ Sheet : '+d.sheet_error;
       res.innerHTML = '<span style="color:#16a34a;font-weight:700;">'+msg+'</span>';
       document.getElementById('scrInviteRecap').style.display = 'none';
+      if (typeof loadCvInbox === 'function') loadCvInbox();
     } else {
       res.innerHTML = '<span style="color:#ef4444;font-weight:700;">❌ '+d.error+'</span>';
     }
@@ -3942,9 +4020,54 @@ async function scrConfirmInvite(){
   }
 }
 
+async function _cvDecision(action) {
+  if (!_scrCv || !_scrCv.fileId) { alert('Aucun CV chargé depuis le dossier Drive.'); return; }
+  var label = action === 'REFUSE' ? 'non retenu' : 'sans réponse';
+  if (!confirm('Marquer ce candidat comme ' + label + ' ?')) return;
+  var res = document.getElementById('scrInviteResult');
+  res.innerHTML = '<span style="color:#9ca3af;">⏳ Enregistrement…</span>';
+  try {
+    var r = await fetch('/api/recrutement/cv-decision', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        fileId: _scrCv.fileId, action: action,
+        nom: document.getElementById('scrNom')?.value?.trim() || _scrCv.nom || '',
+        prenom: document.getElementById('scrPrenom')?.value?.trim() || _scrCv.prenom || '',
+        email: document.getElementById('scrEmail')?.value?.trim() || _scrCv.email || '',
+        telephone: document.getElementById('scrTel')?.value?.trim() || _scrCv.telephone || '',
+        adresse: _scrCv.adresse || '',
+        poste: document.getElementById('scrExp')?.value?.trim() || _scrCv.poste || '',
+      })
+    });
+    var d = await r.json();
+    if (d.success) {
+      res.innerHTML = '<span style="color:#16a34a;font-weight:700;">✅ Candidat marqué ' + label + '.</span>';
+      if (typeof loadCvInbox === 'function') loadCvInbox();
+    } else {
+      res.innerHTML = '<span style="color:#ef4444;">❌ ' + d.error + '</span>';
+    }
+  } catch(e) {
+    res.innerHTML = '<span style="color:#ef4444;">❌ Erreur réseau : ' + e.message + '</span>';
+  }
+}
+
 // Init au chargement
 if(document.getElementById('scrContent')) scrRender();
-if(document.getElementById('tab-scriptrecrutement')?.classList.contains('active')) loadSessions();
+if(document.getElementById('tab-scriptrecrutement')?.classList.contains('active')) { loadSessions(); if (typeof loadCvInbox === 'function') loadCvInbox(); }
+
+// ===== ACCORDÉON (toggle indépendant) =====
+function toggleAccordion(id) {
+  var el = document.getElementById(id);
+  var arrow = document.getElementById(id + '-arrow');
+  if (!el) return;
+  var open = el.style.display === 'none';
+  el.style.display = open ? 'block' : 'none';
+  if (arrow) arrow.textContent = open ? '▼' : '▶';
+  if (open) {
+    if (id === 'acc-cv' && typeof loadCvInbox === 'function') loadCvInbox();
+    if (id === 'acc-session' && typeof loadSessions === 'function') loadSessions();
+  }
+}
 
 // ===== SESSION VISIO =====
 
@@ -4017,7 +4140,7 @@ function _svRender(session) {
     + '<td style="padding:8px 10px;">Nom</td><td style="padding:8px 10px;">Prénom</td>'
     + '<td style="padding:8px 10px;">Téléphone</td><td style="padding:8px 10px;">Email</td>'
     + '<td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;text-align:center;">Présence</td>'
-    + '<td style="padding:8px 10px;">Lien envoyé</td></tr>';
+    + '<td style="padding:8px 10px;">Lien envoyé</td><td style="padding:8px 10px;"></td></tr>';
 
   _svCandidats.forEach(function(c, idx) {
     var pres = c.presence || '';
@@ -4051,7 +4174,8 @@ function _svRender(session) {
       + '<td style="padding:8px 10px;">' + (c.email || '—') + '</td>'
       + '<td style="padding:8px 10px;">' + (c.statut || '') + '</td>'
       + '<td style="padding:8px 10px;text-align:center;">' + presBtn + '</td>'
-      + '<td style="padding:8px 10px;">' + lienCol + '</td></tr>';
+      + '<td style="padding:8px 10px;">' + lienCol + '</td>'
+      + '<td style="padding:8px 10px;"><button onclick="_svDecaler(\'' + (c.email||'').replace(/'/g,"\\'") + '\',\'' + (c.drive_file_id||'').replace(/'/g,"\\'") + '\',\'' + (c.prenom||'').replace(/'/g,"\\'") + ' ' + (c.nom||'').replace(/'/g,"\\'") + '\')" style="padding:4px 10px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">📅 Décaler</button></td></tr>';
   });
   html += '</table>';
   div.innerHTML = html;
@@ -4180,6 +4304,199 @@ async function _svSetPresence(idx, presence, session) {
     alert('Erreur réseau : ' + e.message);
   }
 }
+
+// ===== DÉCALER VISIO =====
+
+function _svDecaler(email, fileId, displayName) {
+  var html = '<div style="font-weight:700;color:#1e1b4b;margin-bottom:8px;">Décaler la session de ' + displayName + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'
+    + '<div><label style="font-size:11px;font-weight:700;">Nouvelle date</label><input type="date" id="svDecDate" style="width:100%;padding:6px;border:1.5px solid #e9d5ff;border-radius:6px;box-sizing:border-box;"></div>'
+    + '<div><label style="font-size:11px;font-weight:700;">Nouvelle heure</label><input type="time" id="svDecHeure" value="14:00" style="width:100%;padding:6px;border:1.5px solid #e9d5ff;border-radius:6px;box-sizing:border-box;"></div></div>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<button id="svDecBtn" onclick="_svDoDecaler(\'' + email.replace(/'/g,"\\'") + '\',\'' + (fileId||'').replace(/'/g,"\\'") + '\')" style="flex:1;padding:8px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">📅 Confirmer</button>'
+    + '<button onclick="document.getElementById(\'svDecModal\').style.display=\'none\'" style="flex:1;padding:8px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Annuler</button></div>'
+    + '<div id="svDecResult" style="margin-top:8px;font-size:13px;"></div>';
+  var modal = document.getElementById('svDecModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'svDecModal';
+    modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;';
+    modal.innerHTML = '<div style="background:white;border-radius:14px;padding:24px;max-width:440px;width:90%;"></div>';
+    document.body.appendChild(modal);
+  }
+  modal.querySelector('div').innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+async function _svDoDecaler(email, fileId) {
+  var btn = document.getElementById('svDecBtn');
+  var res = document.getElementById('svDecResult');
+  var newDate = document.getElementById('svDecDate').value;
+  var newHeure = document.getElementById('svDecHeure').value;
+  if (!newDate || !newHeure) { alert('Date et heure requises'); return; }
+  btn.disabled = true; btn.textContent = '⏳…';
+  try {
+    var r = await fetch('/api/recrutement/decaler-visio', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email: email, fileId: fileId, newDate: newDate, newHeure: newHeure })
+    });
+    var d = await r.json();
+    if (d.success) {
+      var msg = '✅ Session décalée';
+      if (d.mail_ok) msg += ' · Mail envoyé';
+      if (d.crm_created) msg += ' · Nouvel événement créé';
+      if (d.crm_deleted) msg += ' · Ancien supprimé';
+      if (d.warning) msg += '<br><span style="color:#92400e;font-size:11px;">⚠️ ' + d.warning + '</span>';
+      res.innerHTML = '<div style="color:#16a34a;font-weight:700;">' + msg + '</div>';
+      setTimeout(function() { document.getElementById('svDecModal').style.display = 'none'; loadSessions(); loadSessionCandidats(); }, 2000);
+    } else {
+      res.innerHTML = '<div style="color:#ef4444;">❌ ' + d.error + '</div>';
+      btn.disabled = false; btn.textContent = '📅 Confirmer';
+    }
+  } catch(e) {
+    res.innerHTML = '<div style="color:#ef4444;">❌ Erreur réseau</div>';
+    btn.disabled = false; btn.textContent = '📅 Confirmer';
+  }
+}
+
+// ===== CV À TRAITER =====
+
+async function loadCvInbox() {
+  var div = document.getElementById('cvInboxList');
+  if (!div) return;
+  div.innerHTML = '<div style="color:#9ca3af;">⏳ Chargement…</div>';
+  try {
+    var r = await fetch('/api/recrutement/cv-inbox');
+    var d = await r.json();
+    if (!d.success) {
+      div.innerHTML = '<div style="color:#ef4444;">' + (d.error || 'Erreur') + (d.missing ? '<br>Variables manquantes : ' + d.missing.join(', ') : '') + '</div>';
+      return;
+    }
+    var files = d.files || [];
+    var nbNew = files.filter(function(f) { return !f.profilCree; }).length;
+    var countEl = document.getElementById('accCvCount');
+    if (countEl) countEl.textContent = nbNew > 0 ? '(' + nbNew + ' nouveau' + (nbNew > 1 ? 'x' : '') + ')' : '';
+    if (!files.length) {
+      div.innerHTML = '<div style="color:#9ca3af;">Le dossier CV est vide. Déposez un CV dans le dossier Drive pour le voir apparaître ici.</div>';
+      return;
+    }
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+      + '<tr style="background:#f5f3ff;font-weight:700;color:#1e1b4b;">'
+      + '<td style="padding:8px 10px;">Fichier</td><td style="padding:8px 10px;">Taille</td>'
+      + '<td style="padding:8px 10px;">Date dépôt</td><td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;">Actions</td></tr>';
+    files.forEach(function(f) {
+      var size = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' Mo' : Math.round(f.size / 1024) + ' Ko';
+      var date = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'}) : '—';
+      var statut = f.profilCree
+        ? '<span style="color:#16a34a;font-weight:600;font-size:11px;">✅ Profil créé</span>'
+        : '<span style="color:#f59e0b;font-weight:600;font-size:11px;">⏳ À extraire</span>';
+      html += '<tr style="border-bottom:1px solid #f3f4f6;">'
+        + '<td style="padding:8px 10px;"><a href="' + f.webViewLink + '" target="_blank" style="color:#7c3aed;text-decoration:none;font-weight:600;">' + f.name + '</a></td>'
+        + '<td style="padding:8px 10px;">' + size + '</td>'
+        + '<td style="padding:8px 10px;">' + date + '</td>'
+        + '<td style="padding:8px 10px;">' + statut + '</td>'
+        + '<td style="padding:8px 10px;"><button onclick="_cvLoadCandidat(\'' + f.fileId + '\',\'' + f.name.replace(/'/g,"\\'") + '\',\'' + (f.webViewLink||'').replace(/'/g,"\\'") + '\')" style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">' + (f.profilCree ? '🔄 Recharger' : '📋 Charger') + '</button></td></tr>';
+    });
+    html += '</table>';
+    div.innerHTML = html;
+  } catch(e) {
+    div.innerHTML = '<div style="color:#ef4444;">Erreur réseau : ' + e.message + '</div>';
+  }
+}
+
+async function _cvLoadCandidat(fileId, filename, webViewLink) {
+  // Afficher le bandeau de chargement
+  var bandeau = document.getElementById('scrBandeau');
+  bandeau.style.display = 'block';
+  bandeau.innerHTML = '⏳ Extraction de ' + filename + '…';
+
+  // Ouvrir l'aperçu du CV dans un iframe à côté du script
+  var previewDiv = document.getElementById('scrCvPreview');
+  if (previewDiv) {
+    var previewUrl = 'https://drive.google.com/file/d/' + fileId + '/preview';
+    previewDiv.innerHTML = '<iframe src="' + previewUrl + '" style="width:100%;height:500px;border:1px solid #e9d5ff;border-radius:10px;" allow="autoplay"></iframe>'
+      + '<div style="margin-top:4px;font-size:11px;"><a href="' + (webViewLink||previewUrl) + '" target="_blank" style="color:#7c3aed;">Ouvrir dans Drive ↗</a></div>';
+    previewDiv.style.display = 'block';
+  }
+
+  // Ouvrir le bloc Appel candidat s'il est fermé
+  var accAppel = document.getElementById('acc-appel');
+  if (accAppel && accAppel.style.display === 'none') toggleAccordion('acc-appel');
+
+  try {
+    var r = await fetch('/api/recrutement/cv-extraire', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({fileId: fileId})
+    });
+    var d = await r.json();
+    if (!d.success) { bandeau.innerHTML = '❌ ' + d.error; return; }
+
+    var c = d.champs || {};
+    // Stocker dans _scrCv (utilisé par le script d'appel)
+    _scrCv = {
+      fileId: fileId,
+      nom: c.nom || '',
+      prenom: c.prenom || '',
+      email: c.email || '',
+      telephone: c.telephone || '',
+      adresse: c.adresse || '',
+      poste: c.poste || '',
+    };
+
+    // Mettre à jour le bandeau
+    var displayName = (_scrCv.prenom || '') + ' ' + (_scrCv.nom || '').toUpperCase();
+    bandeau.innerHTML = '📋 Candidat chargé : <strong>' + displayName.trim() + '</strong>'
+      + ' <button onclick="_cvClearCandidat()" style="margin-left:12px;padding:2px 8px;background:#e5e7eb;border:none;border-radius:4px;font-size:11px;cursor:pointer;">✕ Changer</button>';
+
+    // Pré-remplir le formulaire du script phase 5
+    var emailInput = document.getElementById('scrEmail');
+    if (emailInput) emailInput.value = _scrCv.email || '';
+    var prenomInput = document.getElementById('scrPrenom');
+    if (prenomInput) prenomInput.value = _scrCv.prenom || '';
+    var nomInput = document.getElementById('scrNom');
+    if (nomInput) nomInput.value = _scrCv.nom || '';
+    var telInput = document.getElementById('scrTel');
+    if (telInput) telInput.value = _scrCv.telephone || '';
+    var expInput = document.getElementById('scrExp');
+    if (expInput) expInput.value = _scrCv.poste || '';
+
+    // Déclencher l'alerte Indeed si nécessaire
+    var indeedAlert = document.getElementById('scrIndeedAlert');
+    if (indeedAlert && _scrCv.email && _scrCv.email.indexOf('@indeedemail.com') !== -1) {
+      indeedAlert.style.display = 'block';
+    }
+
+    // Avertissements doublons
+    if (d.doublon_fileid || d.doublon_email || d.illisible) {
+      var warn = '';
+      if (d.illisible) warn += '⚠️ PDF illisible — saisie manuelle requise. ';
+      if (d.doublon_fileid) warn += '⚠️ Déjà extrait (ligne ' + d.doublon_fileid_row + '). ';
+      if (d.doublon_email) warn += '⚠️ Email déjà connu (ligne ' + d.doublon_email_row + '). ';
+      bandeau.innerHTML += '<div style="color:#92400e;font-size:11px;margin-top:4px;">' + warn + '</div>';
+    }
+
+    // Re-render le script pour que les noms soient mis à jour
+    scrRender();
+  } catch(e) {
+    bandeau.innerHTML = '❌ Erreur réseau : ' + e.message;
+  }
+}
+
+function _cvClearCandidat() {
+  _scrCv = {};
+  document.getElementById('scrBandeau').style.display = 'none';
+  var preview = document.getElementById('scrCvPreview');
+  if (preview) { preview.innerHTML = ''; preview.style.display = 'none'; }
+  var indeedAlert = document.getElementById('scrIndeedAlert');
+  if (indeedAlert) indeedAlert.style.display = 'none';
+  ['scrEmail','scrPrenom','scrNom','scrTel','scrExp'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  scrRender();
+}
+
+// Charger la inbox CV à l'ouverture de l'onglet (hook déjà en place dans showTab)
 
 // ===== RATTACHEMENT MEC =====
 
