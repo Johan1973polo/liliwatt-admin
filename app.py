@@ -1806,12 +1806,14 @@ def session_destinataires():
 @app.route('/api/recrutement/cv-inbox')
 @login_required
 def cv_inbox():
-    """Liste les fichiers du dossier CV (inbox Drive)."""
+    """Liste les fichiers d'un dossier CV Drive. ?folder=source (défaut) ou attente."""
     if not _CV_DRIVE_CONFIGURED:
         return jsonify({'success': False, 'error': 'Configuration Drive incomplète', 'missing': _CV_MISSING_VARS}), 503
     try:
+        folder_param = request.args.get('folder', 'source').strip()
+        folder_key = 'CV_ATTENTE_FOLDER_ID' if folder_param == 'attente' else 'CV_SOURCE_FOLDER_ID'
         drive = _get_drive_client()
-        source_id = _CV_FOLDER_IDS['CV_SOURCE_FOLDER_ID']
+        source_id = _CV_FOLDER_IDS[folder_key]
         results = []
         page_token = None
         while True:
@@ -1989,6 +1991,24 @@ def cv_decision():
                     experience=poste, date_session=date_session, heure_session=heure_session,
                     file_id=file_id,
                 )
+                # Move Drive → TRAITÉ (best effort)
+                traite_folder = _CV_FOLDER_IDS.get('CV_TRAITE_FOLDER_ID', '')
+                if traite_folder and _CV_DRIVE_CONFIGURED:
+                    try:
+                        drive = _get_drive_client()
+                        meta = drive.files().get(fileId=file_id, fields='parents', supportsAllDrives=True).execute()
+                        current_parents = meta.get('parents', [])
+                        drive.files().update(
+                            fileId=file_id,
+                            addParents=traite_folder,
+                            removeParents=','.join(current_parents),
+                            supportsAllDrives=True,
+                        ).execute()
+                        result['move_ok'] = True
+                        print(f'[CV-PIPELINE] Move Drive OK : {file_id} → TRAITÉ')
+                    except Exception as me:
+                        result['move_ok'] = False
+                        print(f'[CV-PIPELINE] Move Drive ECHEC : {me}')
                 return jsonify(result)
             except Exception as e:
                 return jsonify({'success': False, 'error': str(e)}), 500
@@ -2019,15 +2039,9 @@ def cv_decision():
                 break
 
         if target_row:
-            # Update champ par champ
-            ws.update(f'A{target_row}', [[nom]], value_input_option='RAW')
-            ws.update(f'B{target_row}', [[prenom]], value_input_option='RAW')
-            ws.update(f'C{target_row}', [[email]], value_input_option='RAW')
-            ws.update(f'D{target_row}', [[telephone]], value_input_option='RAW')
-            ws.update(f'E{target_row}', [[adresse]], value_input_option='RAW')
+            # Ligne existante : n'écrire que F (statut). A-E restent intacts.
             ws.update(f'F{target_row}', [[statut]], value_input_option='RAW')
-            ws.update(f'G{target_row}', [[poste]], value_input_option='RAW')
-            print(f'[CV-PIPELINE] Ligne {target_row} mise à jour → {statut}')
+            print(f'[CV-PIPELINE] Ligne {target_row} → F={statut}')
         else:
             # Nouvelle ligne
             date_str = datetime.now().strftime('%d/%m/%Y')
@@ -2037,9 +2051,51 @@ def cv_decision():
                 '', '', file_id, '', '', '',
             ]
             ws.append_row(row_data, value_input_option='RAW')
+            target_row = len(rows) + 1
             print(f'[CV-PIPELINE] Ligne créée : {prenom} {nom} → {statut}')
 
-        return jsonify({'success': True, 'sheet_ok': True})
+        # Move Drive : déplacer le fichier vers le dossier cible
+        move_ok = False
+        move_error = ''
+        dest_map = {
+            'SANS_REPONSE': _CV_FOLDER_IDS.get('CV_ATTENTE_FOLDER_ID', ''),
+            'REFUSE': _CV_FOLDER_IDS.get('CV_REFUSE_FOLDER_ID', ''),
+        }
+        dest_folder = dest_map.get(action, '')
+        if dest_folder and _CV_DRIVE_CONFIGURED:
+            try:
+                drive = _get_drive_client()
+                # Lire les parents actuels pour savoir d'où retirer
+                meta = drive.files().get(fileId=file_id, fields='parents', supportsAllDrives=True).execute()
+                current_parents = meta.get('parents', [])
+                # Déplacer : ajouter le dossier cible, retirer les parents actuels
+                remove_parents = ','.join(current_parents) if current_parents else ''
+                drive.files().update(
+                    fileId=file_id,
+                    addParents=dest_folder,
+                    removeParents=remove_parents,
+                    supportsAllDrives=True,
+                ).execute()
+                move_ok = True
+                print(f'[CV-PIPELINE] Move Drive OK : {file_id} → {dest_folder}')
+            except Exception as e:
+                err_str = str(e)
+                # Idempotent : si le fichier est déjà dans le dossier cible, c'est OK
+                if 'not found' in err_str.lower() or '404' in err_str:
+                    move_ok = True
+                    move_error = 'Fichier introuvable (peut-être déjà déplacé)'
+                    print(f'[CV-PIPELINE] Move Drive : fichier déjà absent de la source')
+                else:
+                    from zoneinfo import ZoneInfo
+                    now_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
+                    move_error = f'{now_paris} — {err_str}'
+                    print(f'[CV-PIPELINE] Move Drive ECHEC : {err_str}')
+
+            # Écrire N et O
+            ws.update(f'N{target_row}', [['OK' if move_ok else 'ECHEC']], value_input_option='RAW')
+            ws.update(f'O{target_row}', [[move_error]], value_input_option='RAW')
+
+        return jsonify({'success': True, 'sheet_ok': True, 'move_ok': move_ok})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
