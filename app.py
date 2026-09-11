@@ -1141,6 +1141,15 @@ def _normalize_display_name(s):
     return '-'.join(part.capitalize() for part in s.split('-'))
 
 
+_JOURS_FR = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
+_MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+
+
+def _date_fr(d):
+    """Formate un datetime en français : 'lundi 14 septembre 2026'. Ne dépend pas de la locale système."""
+    return f'{_JOURS_FR[d.weekday()]} {d.day} {_MOIS_FR[d.month - 1]} {d.year}'
+
+
 def _find_phase1_row(ws, email, session=None):
     """Cherche une ligne par email (col C) dans PHASE 1. En cas de doublons,
     retourne la plus récente (plus grand numéro de ligne).
@@ -1184,7 +1193,7 @@ def _build_session_iso(iso_date, heure):
     from datetime import timedelta
     start = datetime.strptime(f'{iso_date} {heure}', '%Y-%m-%d %H:%M')
     end = start + timedelta(hours=1)
-    return start.strftime('%Y-%m-%dT%H:%M:00'), end.strftime('%Y-%m-%dT%H:%M:00')
+    return start.strftime('%Y-%m-%dT%H:%M:00Z'), end.strftime('%Y-%m-%dT%H:%M:00Z')
 
 
 def _get_or_create_phase1(sh):
@@ -2907,14 +2916,9 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
     prenom_display = _normalize_display_name(prenom) or 'Monsieur/Madame'
 
     # 1. Mail d'invitation (PRIORITAIRE)
-    import locale as _locale
-    try:
-        _locale.setlocale(_locale.LC_TIME, 'fr_FR.UTF-8')
-    except _locale.Error:
-        pass
     _dp = iso_date.split('-')
     _dt = datetime(int(_dp[0]), int(_dp[1]), int(_dp[2]))
-    date_lisible = _dt.strftime('%A %d %B %Y').replace(' 0', ' ')
+    date_lisible = _date_fr(_dt)
 
     if reprogrammation:
         accroche = 'Votre session a &eacute;t&eacute; reprogramm&eacute;e. Voici vos nouvelles informations&nbsp;:'
@@ -2946,7 +2950,7 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
         json={'fromAddress': 'recrutement@liliwatt.fr',
               'replyTo': 'carole.andria@liliwatt.fr',
               'toAddress': email,
-              'subject': f'Invitation session LILIWATT — {iso_date} à {heure_session}',
+              'subject': f'Invitation session LILIWATT — {date_lisible} à {heure_session}',
               'content': mail_html, 'mailFormat': 'html'},
         timeout=15
     )
