@@ -11,9 +11,16 @@
   header h1 { color: white; font-size: 20px; font-weight: 800; letter-spacing: 2px; }
   header a { color: rgba(255,255,255,0.7); font-size: 13px; text-decoration: none; }
   .container { max-width: 900px; margin: 40px auto; padding: 0 20px; }
-  .tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 28px; padding: 0 16px; max-width: 1100px; margin-left: auto; margin-right: auto; }
-  .tab { flex: 0 0 auto; white-space: nowrap; padding: 10px 16px; border-radius: 50px; font-size: 13px; font-weight: 700; cursor: pointer; border: 2px solid #7c3aed; color: #7c3aed; background: white; transition: all 0.2s; }
-  .tab.active { background: #7c3aed; color: white; }
+  .tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 28px; padding: 0 16px; max-width: 1100px; margin-left: auto; margin-right: auto; }
+  .menu-group { position: relative; }
+  .menu-trigger { padding: 10px 18px; border-radius: 50px; font-size: 13px; font-weight: 700; cursor: pointer; border: 2px solid #7c3aed; color: #7c3aed; background: white; transition: all 0.2s; white-space: nowrap; user-select: none; }
+  .menu-trigger:hover { background: #f5f3ff; }
+  .menu-trigger.has-active { background: #7c3aed; color: white; }
+  .menu-dropdown { display: none; position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: white; border-radius: 12px; box-shadow: 0 8px 30px rgba(124,58,237,0.18); border: 1.5px solid #e9d5ff; min-width: 200px; z-index: 100; overflow: hidden; }
+  .menu-group.open .menu-dropdown { display: block; }
+  .tab { display: block; padding: 11px 18px; font-size: 13px; font-weight: 600; cursor: pointer; color: #1e1b4b; transition: background 0.1s; white-space: nowrap; border: none; background: none; }
+  .tab:hover { background: #f5f3ff; }
+  .tab.active { background: #ede9fe; color: #7c3aed; font-weight: 700; }
   .panel { display: none; }
   .panel.active { display: block; }
   .card { background: white; border-radius: 16px; padding: 32px; box-shadow: 0 4px 20px rgba(124,58,237,0.08); }
@@ -95,21 +102,45 @@
 <div id="test-mails-result" style="display:none;max-width:900px;margin:10px auto;padding:12px 20px;border-radius:10px;font-size:13px;"></div>
 
 <div class="tabs">
-
-    <div class="tab active" onclick="showTab('creer')">+ Créer un commercial</div>
-    <div class="tab" onclick="showTab('gerer')">Gérer les commerciaux</div>
-    <div class="tab" onclick="showTab('recrutement')">👥 Recrutement</div>
-    <div class="tab" onclick="showTab('ventes')">💰 Suivi ventes</div>
-    <div class="tab" onclick="showTab('premium')">💎 Base Premium</div>
-    <div class="tab" onclick="showTab('derogation')">🔍 Dérogation</div>
-    <div class="tab" onclick="showTab('contrats')">📄 Contrats</div>
-    <div class="tab" onclick="showTab('newsletter')">📩 Newsletter</div>
-    <div class="tab" onclick="showTab('bienvenue')">👋 Bienvenue</div>
-    <div class="tab" onclick="showTab('echeancier')">📊 Échéancier</div>
-    <div class="tab" onclick="showTab('aaf')">🔍 Vérif. AAF</div>
-    <div class="tab" onclick="showTab('reprise')">🔄 Reprise</div>
-    <div class="tab" onclick="showTab('scriptrecrutement')">📞 Recrutement CA</div>
-    <div class="tab" id="tab-btn-recruteurs" onclick="showTab('gerer-recruteurs')" style="display:none;">👥 Recruteurs</div>
+  <div class="menu-group" id="menu-commerciaux">
+    <div class="menu-trigger has-active" onclick="toggleMenu('commerciaux')">👤 Commerciaux ▾</div>
+    <div class="menu-dropdown">
+      <div class="tab active" data-tab="creer" onclick="showTab('creer')">+ Cr&eacute;er un commercial</div>
+      <div class="tab" data-tab="gerer" onclick="showTab('gerer')">G&eacute;rer les commerciaux</div>
+    </div>
+  </div>
+  <div class="menu-group" id="menu-recrutement">
+    <div class="menu-trigger" onclick="toggleMenu('recrutement')">📋 Recrutement ▾</div>
+    <div class="menu-dropdown">
+      <div class="tab" data-tab="recrutement" onclick="showTab('recrutement')">👥 Recrutement</div>
+      <div class="tab" data-tab="scriptrecrutement" onclick="showTab('scriptrecrutement')">📞 Recrutement CA</div>
+      <div class="tab" data-tab="gerer-recruteurs" id="tab-btn-recruteurs" onclick="showTab('gerer-recruteurs')" style="display:none;">👥 Recruteurs</div>
+    </div>
+  </div>
+  <div class="menu-group" id="menu-ventes">
+    <div class="menu-trigger" onclick="toggleMenu('ventes')">💰 Ventes & Suivi ▾</div>
+    <div class="menu-dropdown">
+      <div class="tab" data-tab="ventes" onclick="showTab('ventes')">💰 Suivi ventes</div>
+      <div class="tab" data-tab="echeancier" onclick="showTab('echeancier')">📊 &Eacute;ch&eacute;ancier</div>
+      <div class="tab" data-tab="premium" onclick="showTab('premium')">💎 Base Premium</div>
+    </div>
+  </div>
+  <div class="menu-group" id="menu-contrats">
+    <div class="menu-trigger" onclick="toggleMenu('contrats')">📄 Contrats & Outils ▾</div>
+    <div class="menu-dropdown">
+      <div class="tab" data-tab="contrats" onclick="showTab('contrats')">📄 Contrats</div>
+      <div class="tab" data-tab="derogation" onclick="showTab('derogation')">🔍 D&eacute;rogation</div>
+      <div class="tab" data-tab="aaf" onclick="showTab('aaf')">🔍 V&eacute;rif. AAF</div>
+      <div class="tab" data-tab="reprise" onclick="showTab('reprise')">🔄 Reprise</div>
+    </div>
+  </div>
+  <div class="menu-group" id="menu-communication">
+    <div class="menu-trigger" onclick="toggleMenu('communication')">📩 Communication ▾</div>
+    <div class="menu-dropdown">
+      <div class="tab" data-tab="newsletter" onclick="showTab('newsletter')">📩 Newsletter</div>
+      <div class="tab" data-tab="bienvenue" onclick="showTab('bienvenue')">👋 Bienvenue</div>
+    </div>
+  </div>
 </div>
 
 <div class="container">
@@ -1110,13 +1141,41 @@
 <script>
 if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } else { console.log('✅ JSZip OK', JSZip.version); }
 
+// ── Menus déroulants ──────────────────────────────────────────────
+function toggleMenu(menuName) {
+  var group = document.getElementById('menu-' + menuName);
+  var wasOpen = group.classList.contains('open');
+  // Fermer tous les menus
+  document.querySelectorAll('.menu-group').forEach(function(g) { g.classList.remove('open'); });
+  // Ouvrir celui-ci s'il était fermé
+  if (!wasOpen) group.classList.add('open');
+}
+// Fermer les menus au clic extérieur
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.menu-group')) {
+    document.querySelectorAll('.menu-group').forEach(function(g) { g.classList.remove('open'); });
+  }
+});
+
 function showTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier','aaf','reprise','scriptrecrutement','gerer-recruteurs'];
-    t.classList.toggle('active', tabs[i] === name);
+  // Activer le bon onglet (basé sur data-tab, pas sur l'index DOM)
+  document.querySelectorAll('.tab[data-tab]').forEach(function(t) {
+    t.classList.toggle('active', t.getAttribute('data-tab') === name);
   });
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
+  // Activer le bon panel
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  var panel = document.getElementById('tab-' + name);
+  if (panel) panel.classList.add('active');
+  // Surligner le menu-trigger parent
+  document.querySelectorAll('.menu-trigger').forEach(function(mt) { mt.classList.remove('has-active'); });
+  var activeTab = document.querySelector('.tab[data-tab="' + name + '"]');
+  if (activeTab) {
+    var parentGroup = activeTab.closest('.menu-group');
+    if (parentGroup) parentGroup.querySelector('.menu-trigger').classList.add('has-active');
+  }
+  // Fermer le dropdown
+  document.querySelectorAll('.menu-group').forEach(function(g) { g.classList.remove('open'); });
+  // Chargements conditionnels
   if (name === 'recrutement') loadCandidats();
   if (name === 'ventes') { loadVenteVendeurs(); loadVentes(); }
   if (name === 'premium') { loadBPStats(); loadBPVendeurs(); }
