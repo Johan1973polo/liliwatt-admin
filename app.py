@@ -437,7 +437,7 @@ def logout():
 _RECRUTEURS_CACHE = {'data': None, 'ts': 0}
 _RECRUTEURS_CACHE_TTL = 300  # 5 min
 # Filet de sécurité : ces emails sont TOUJOURS admin, même si le Sheet déconne
-_ADMIN_EMAILS_HARDCODED = {'johan.mallet@liliwatt.fr'}
+_ADMIN_EMAILS_HARDCODED = {'johan.mallet@liliwatt.fr', 'kevin.moreau@liliwatt.fr'}
 _RECRUTEURS_FALLBACK = [
     {'nom': 'Johan', 'email': 'johan.mallet@liliwatt.fr', 'role': 'admin'},
 ]
