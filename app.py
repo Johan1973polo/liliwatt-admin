@@ -1828,11 +1828,11 @@ def cv_inbox():
         while True:
             resp = drive.files().list(
                 q=f"'{source_id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'",
-                fields='nextPageToken,files(id,name,size,mimeType,modifiedTime,webViewLink)',
+                fields='nextPageToken,files(id,name,size,mimeType,createdTime,modifiedTime,webViewLink)',
                 pageSize=100,
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,
-                orderBy='modifiedTime desc',
+                orderBy='createdTime',
                 pageToken=page_token,
             ).execute()
             results.extend(resp.get('files', []))
@@ -1863,6 +1863,7 @@ def cv_inbox():
                 'name': f.get('name', ''),
                 'size': int(f.get('size', 0)),
                 'mimeType': f.get('mimeType', ''),
+                'createdTime': f.get('createdTime', ''),
                 'modifiedTime': f.get('modifiedTime', ''),
                 'webViewLink': f.get('webViewLink', ''),
                 'profilCree': f['id'] in validated_fids,

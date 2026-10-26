@@ -4363,7 +4363,7 @@ async function loadCvInbox() {
       + '<td style="padding:8px 10px;">Date dépôt</td><td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;">Actions</td></tr>';
     files.forEach(function(f) {
       var size = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' Mo' : Math.round(f.size / 1024) + ' Ko';
-      var date = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'}) : '—';
+      var date = (f.createdTime || f.modifiedTime) ? new Date(f.createdTime || f.modifiedTime).toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'}) : '—';
       var statut = f.profilCree
         ? '<span style="color:#16a34a;font-weight:600;font-size:11px;">✅ Déjà extrait</span>'
         : '<span style="color:#f59e0b;font-weight:600;font-size:11px;">⏳ À extraire</span>';
