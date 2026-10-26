@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LILIWATT Admin — Qui &ecirc;tes-vous ?</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #1e1b4b, #7c3aed); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: white; border-radius: 16px; padding: 48px 40px; width: 100%; max-width: 440px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+  .bar { height: 4px; background: linear-gradient(135deg, #7c3aed, #d946ef); border-radius: 2px; margin-bottom: 28px; }
+  h1 { font-size: 28px; color: #1e1b4b; font-weight: 800; letter-spacing: 2px; }
+  p { color: #7c3aed; font-size: 12px; font-weight: 600; letter-spacing: 1px; margin-bottom: 24px; text-transform: uppercase; }
+  .recruiter-list { display: flex; flex-direction: column; gap: 10px; }
+  .recruiter-btn {
+    display: block; width: 100%; padding: 16px 20px; border: 2px solid #e5e7eb; border-radius: 12px;
+    background: white; cursor: pointer; text-align: left; transition: all 0.15s; font-size: 15px;
+  }
+  .recruiter-btn:hover { border-color: #7c3aed; background: #f5f3ff; }
+  .recruiter-btn:active { transform: scale(0.98); }
+  .recruiter-name { font-weight: 700; color: #1e1b4b; display: flex; align-items: center; gap: 8px; }
+  .recruiter-email { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+  .role-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; text-transform: uppercase; }
+  .role-admin { background: #ede9fe; color: #7c3aed; }
+  .role-recruteur { background: #dbeafe; color: #2563eb; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="bar"></div>
+  <h1>LILIWATT</h1>
+  <p>Qui &ecirc;tes-vous ?</p>
+  <div class="recruiter-list">
+    {% for r in recruteurs %}
+    <form method="POST" style="margin:0;">
+      <input type="hidden" name="recruiter_name" value="{{ r.nom }}">
+      <input type="hidden" name="recruiter_email" value="{{ r.email }}">
+      <input type="hidden" name="recruiter_role" value="{{ r.role }}">
+      <button type="submit" class="recruiter-btn">
+        <div class="recruiter-name">
+          {{ r.nom }}
+          <span class="role-badge role-{{ r.role }}">{{ r.role }}</span>
+        </div>
+        {% if r.email %}<div class="recruiter-email">{{ r.email }}</div>{% endif %}
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+</body>
+</html>

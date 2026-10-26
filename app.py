@@ -253,6 +253,8 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if not session.get('logged_in'):
             return redirect(url_for('login'))
+        if not session.get('recruiter_name') and request.path != '/select-recruiter':
+            return redirect(url_for('select_recruiter'))
         return f(*args, **kwargs)
     return decorated
 
@@ -419,6 +421,9 @@ def login():
     if request.method == 'POST':
         if request.form.get('password') == ADMIN_PASSWORD:
             session['logged_in'] = True
+            # Si pas encore identifié → écran de sélection du recruteur
+            if not session.get('recruiter_name'):
+                return redirect(url_for('select_recruiter'))
             return redirect(url_for('index'))
         error = 'Mot de passe incorrect'
     return render_template('login.html', error=error)
@@ -427,6 +432,156 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+# ── Identification recruteur ───────────────────────────────────────────
+_RECRUTEURS_CACHE = {'data': None, 'ts': 0}
+_RECRUTEURS_CACHE_TTL = 300  # 5 min
+# Filet de sécurité : ces emails sont TOUJOURS admin, même si le Sheet déconne
+_ADMIN_EMAILS_HARDCODED = {'johan.mallet@liliwatt.fr'}
+_RECRUTEURS_FALLBACK = [
+    {'nom': 'Johan', 'email': 'johan.mallet@liliwatt.fr', 'role': 'admin'},
+]
+
+def _get_recruteurs(force_refresh=False):
+    """Lit l'onglet RECRUTEURS du Sheet recrutement. Cache 5 min. Fallback en dur."""
+    import time as _time
+    now = _time.time()
+    if not force_refresh and _RECRUTEURS_CACHE['data'] is not None and (now - _RECRUTEURS_CACHE['ts']) < _RECRUTEURS_CACHE_TTL:
+        return _RECRUTEURS_CACHE['data']
+    try:
+        gc = get_sheets_client()
+        if gc:
+            sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+            ws = sh.worksheet('RECRUTEURS')
+            rows = ws.get_all_values()
+            result = []
+            for i, row in enumerate(rows):
+                if i == 0:
+                    continue  # header A=PRENOM_NOM, B=EMAIL, C=ROLE
+                nom = (row[0] if len(row) > 0 else '').strip()
+                email = (row[1] if len(row) > 1 else '').strip().lower()
+                role = (row[2] if len(row) > 2 else '').strip().lower() or 'recruteur'
+                if nom:
+                    # Filet de sécurité : email hardcodé → toujours admin
+                    if email in _ADMIN_EMAILS_HARDCODED:
+                        role = 'admin'
+                    result.append({'nom': nom, 'email': email, 'role': role})
+            if result:
+                _RECRUTEURS_CACHE['data'] = result
+                _RECRUTEURS_CACHE['ts'] = now
+                return result
+    except Exception as e:
+        print(f'[RECRUTEURS] Erreur lecture Sheet: {e}')
+    # Fallback
+    _RECRUTEURS_CACHE['data'] = _RECRUTEURS_FALLBACK
+    _RECRUTEURS_CACHE['ts'] = now
+    return _RECRUTEURS_FALLBACK
+
+def _get_recruteurs_ws():
+    """Retourne le worksheet RECRUTEURS (pour écriture). Crée l'onglet si absent."""
+    gc = get_sheets_client()
+    sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+    try:
+        return sh.worksheet('RECRUTEURS')
+    except Exception:
+        ws = sh.add_worksheet(title='RECRUTEURS', rows=50, cols=3)
+        ws.update('A1:C1', [['PRENOM_NOM', 'EMAIL', 'ROLE']], value_input_option='RAW')
+        return ws
+
+@app.route('/select-recruiter', methods=['GET', 'POST'])
+def select_recruiter():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        nom = request.form.get('recruiter_name', '').strip()
+        email = request.form.get('recruiter_email', '').strip().lower()
+        role = request.form.get('recruiter_role', 'recruteur').strip().lower()
+        if nom:
+            # Filet de sécurité
+            if email in _ADMIN_EMAILS_HARDCODED:
+                role = 'admin'
+            session['recruiter_name'] = nom
+            session['recruiter_email'] = email
+            session['recruiter_role'] = role
+            return redirect(url_for('index'))
+    recruteurs = _get_recruteurs()
+    return render_template('select_recruiter.html', recruteurs=recruteurs)
+
+@app.route('/api/recruiter-info')
+@login_required
+def recruiter_info():
+    return jsonify({
+        'name': session.get('recruiter_name', ''),
+        'email': session.get('recruiter_email', ''),
+        'role': session.get('recruiter_role', ''),
+    })
+
+# ── Gestion des recruteurs (admin seulement) ──────────────────────────
+
+@app.route('/api/recruteurs', methods=['GET'])
+@login_required
+def list_recruteurs():
+    if session.get('recruiter_role') != 'admin':
+        return jsonify({'error': 'Accès réservé admin'}), 403
+    recruteurs = _get_recruteurs(force_refresh=True)
+    return jsonify({'success': True, 'recruteurs': recruteurs})
+
+@app.route('/api/recruteurs/ajouter', methods=['POST'])
+@login_required
+def ajouter_recruteur():
+    if session.get('recruiter_role') != 'admin':
+        return jsonify({'error': 'Accès réservé admin'}), 403
+    d = request.get_json()
+    nom = (d.get('nom') or '').strip()
+    email = (d.get('email') or '').strip().lower()
+    role = (d.get('role') or 'recruteur').strip().lower()
+    if not nom or not email:
+        return jsonify({'error': 'Prénom et email requis'}), 400
+    if role not in ('admin', 'recruteur'):
+        return jsonify({'error': 'Rôle invalide (admin ou recruteur)'}), 400
+    # Doublon ?
+    existants = _get_recruteurs(force_refresh=True)
+    if any(r['email'] == email for r in existants):
+        return jsonify({'error': 'Cet email existe déjà'}), 409
+    try:
+        ws = _get_recruteurs_ws()
+        ws.append_row([nom, email, role], value_input_option='RAW')
+        _RECRUTEURS_CACHE['data'] = None  # invalider le cache
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recruteurs/retirer', methods=['POST'])
+@login_required
+def retirer_recruteur():
+    if session.get('recruiter_role') != 'admin':
+        return jsonify({'error': 'Accès réservé admin'}), 403
+    d = request.get_json()
+    email = (d.get('email') or '').strip().lower()
+    if not email:
+        return jsonify({'error': 'Email requis'}), 400
+    # Empêcher de supprimer le dernier admin
+    existants = _get_recruteurs(force_refresh=True)
+    admins = [r for r in existants if r['role'] == 'admin']
+    target = next((r for r in existants if r['email'] == email), None)
+    if not target:
+        return jsonify({'error': 'Recruteur non trouvé'}), 404
+    if target['role'] == 'admin' and len(admins) <= 1:
+        return jsonify({'error': 'Impossible de supprimer le dernier admin'}), 400
+    try:
+        ws = _get_recruteurs_ws()
+        rows = ws.get_all_values()
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            row_email = (row[1] if len(row) > 1 else '').strip().lower()
+            if row_email == email:
+                ws.delete_rows(i + 1)  # gspread : 1-indexed
+                break
+        _RECRUTEURS_CACHE['data'] = None  # invalider le cache
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/create-drive-folder', methods=['POST'])
 @login_required

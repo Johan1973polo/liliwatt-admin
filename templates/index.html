@@ -84,7 +84,12 @@
     <button onclick="envoyerTestMails()" id="btn-test-mails" style="padding:7px 14px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap;">📧 Test Admin (8)</button>
     <button onclick="envoyerTestMailsProxy('crm', 6)" id="btn-test-crm" style="padding:7px 14px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap;">📧 Test CRM (6)</button>
     <button onclick="envoyerTestMailsProxy('courtier', 6)" id="btn-test-courtier" style="padding:7px 14px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap;">📧 Test Courtier (6)</button>
-    <a href="/logout">Déconnexion</a>
+    <span id="recruiter-badge" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:8px;font-size:12px;color:#fff;font-weight:600;">
+      <span id="recruiter-name-display"></span>
+      <span id="recruiter-role-display" style="font-size:10px;padding:2px 6px;border-radius:8px;text-transform:uppercase;"></span>
+      <a href="/select-recruiter" style="color:#d8b4fe;font-size:11px;text-decoration:none;margin-left:4px;" title="Changer de recruteur">changer</a>
+    </span>
+    <a href="/logout">D&eacute;connexion</a>
   </div>
 </header>
 <div id="test-mails-result" style="display:none;max-width:900px;margin:10px auto;padding:12px 20px;border-radius:10px;font-size:13px;"></div>
@@ -104,6 +109,7 @@
     <div class="tab" onclick="showTab('aaf')">🔍 Vérif. AAF</div>
     <div class="tab" onclick="showTab('reprise')">🔄 Reprise</div>
     <div class="tab" onclick="showTab('scriptrecrutement')">📞 Recrutement CA</div>
+    <div class="tab" id="tab-btn-recruteurs" onclick="showTab('gerer-recruteurs')" style="display:none;">👥 Recruteurs</div>
 </div>
 
 <div class="container">
@@ -1059,6 +1065,33 @@
     </div>
   </div>
 
+  <!-- Gérer les recruteurs (admin seulement) -->
+  <div class="panel" id="tab-gerer-recruteurs">
+    <div style="max-width:700px;margin:0 auto;">
+      <div class="card">
+        <h2>👥 G&eacute;rer les recruteurs</h2>
+        <div id="recruteurs-list" style="margin-bottom:24px;"></div>
+        <h3 style="font-size:15px;color:#1e1b4b;margin-bottom:12px;">Ajouter un recruteur</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:140px;">
+            <label>Pr&eacute;nom / Nom</label>
+            <input type="text" id="addRecNom" placeholder="Ex: Carole">
+          </div>
+          <div style="flex:1;min-width:200px;">
+            <label>Email</label>
+            <input type="email" id="addRecEmail" placeholder="prenom@liliwatt.fr">
+          </div>
+          <div style="min-width:130px;">
+            <label>R&ocirc;le</label>
+            <select id="addRecRole"><option value="recruteur">Recruteur</option><option value="admin">Admin</option></select>
+          </div>
+          <button class="btn" onclick="ajouterRecruteur()" style="white-space:nowrap;">+ Ajouter</button>
+        </div>
+        <div id="recruteurs-msg" style="margin-top:10px;font-size:13px;min-height:18px;"></div>
+      </div>
+    </div>
+  </div>
+
 <!-- Modal Référent -->
 
 
@@ -1079,7 +1112,7 @@ if (typeof JSZip === 'undefined') { console.error('❌ JSZip non chargé !'); } 
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier','aaf','reprise','scriptrecrutement'];
+    const tabs = ['creer','gerer','recrutement','ventes','premium','derogation','contrats','newsletter','bienvenue','echeancier','aaf','reprise','scriptrecrutement','gerer-recruteurs'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -1091,6 +1124,7 @@ function showTab(name) {
   if (name === 'bienvenue') { bvInit(); }
   if (name === 'echeancier') { echLoad(); }
   if (name === 'scriptrecrutement') { if (typeof loadSessions === 'function') loadSessions(); if (typeof loadCvInbox === 'function') loadCvInbox(); }
+  if (name === 'gerer-recruteurs') { loadRecruteurs(); }
 }
 
 function normalize(s) {
@@ -5290,6 +5324,100 @@ async function envoyerTestMailsProxy(app, total) {
   }
   btn.disabled = false;
   btn.textContent = '📧 Test ' + app.charAt(0).toUpperCase() + app.slice(1) + ' (' + total + ')';
+}
+
+// ── Recruteur connecté + gestion ──────────────────────────────────
+var _recruiterRole = '';
+(function() {
+  fetch('/api/recruiter-info')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) {
+      if (d && d.name) {
+        document.getElementById('recruiter-name-display').textContent = d.name;
+        var roleEl = document.getElementById('recruiter-role-display');
+        _recruiterRole = d.role || '';
+        if (_recruiterRole === 'admin') {
+          roleEl.textContent = 'admin';
+          roleEl.style.background = 'rgba(124,58,237,0.3)';
+          roleEl.style.color = '#e9d5ff';
+          // Afficher l'onglet Recruteurs
+          document.getElementById('tab-btn-recruteurs').style.display = '';
+        } else if (_recruiterRole) {
+          roleEl.textContent = _recruiterRole;
+          roleEl.style.background = 'rgba(59,130,246,0.3)';
+          roleEl.style.color = '#bfdbfe';
+        }
+      } else {
+        document.getElementById('recruiter-badge').style.display = 'none';
+      }
+    })
+    .catch(function() { document.getElementById('recruiter-badge').style.display = 'none'; });
+})();
+
+function _escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function loadRecruteurs() {
+  var div = document.getElementById('recruteurs-list');
+  if (!div) return;
+  div.innerHTML = '<span style="color:#9ca3af;">Chargement…</span>';
+  try {
+    var r = await fetch('/api/recruteurs');
+    var d = await r.json();
+    if (!d.success) { div.innerHTML = '<span style="color:#ef4444;">' + _escH(d.error) + '</span>'; return; }
+    var list = d.recruteurs || [];
+    if (!list.length) { div.innerHTML = '<span style="color:#9ca3af;">Aucun recruteur.</span>'; return; }
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:14px;">';
+    html += '<tr style="border-bottom:2px solid #e5e7eb;"><td style="padding:8px;font-weight:700;color:#6b7280;">Nom</td><td style="padding:8px;font-weight:700;color:#6b7280;">Email</td><td style="padding:8px;font-weight:700;color:#6b7280;">R\u00f4le</td><td></td></tr>';
+    list.forEach(function(rec) {
+      var roleBg = rec.role === 'admin' ? '#ede9fe' : '#dbeafe';
+      var roleColor = rec.role === 'admin' ? '#7c3aed' : '#2563eb';
+      html += '<tr style="border-bottom:1px solid #f3f4f6;">'
+        + '<td style="padding:8px;">' + _escH(rec.nom) + '</td>'
+        + '<td style="padding:8px;color:#6b7280;font-size:13px;">' + _escH(rec.email) + '</td>'
+        + '<td style="padding:8px;"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:' + roleBg + ';color:' + roleColor + ';text-transform:uppercase;">' + _escH(rec.role) + '</span></td>'
+        + '<td style="padding:8px;text-align:right;"><button onclick="retirerRecruteur(\'' + _escH(rec.email).replace(/'/g,"\\'") + '\',\'' + _escH(rec.nom).replace(/'/g,"\\'") + '\')" style="padding:4px 10px;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Retirer</button></td>'
+        + '</tr>';
+    });
+    div.innerHTML = html + '</table>';
+  } catch(e) { div.innerHTML = '<span style="color:#ef4444;">Erreur r\u00e9seau</span>'; }
+}
+
+async function ajouterRecruteur() {
+  var nom = document.getElementById('addRecNom').value.trim();
+  var email = document.getElementById('addRecEmail').value.trim();
+  var role = document.getElementById('addRecRole').value;
+  var msg = document.getElementById('recruteurs-msg');
+  msg.textContent = ''; msg.style.color = '#6b7280';
+  if (!nom || !email) { msg.textContent = 'Pr\u00e9nom et email requis'; msg.style.color = '#ef4444'; return; }
+  msg.textContent = 'Ajout…';
+  try {
+    var r = await fetch('/api/recruteurs/ajouter', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nom:nom,email:email,role:role}) });
+    var d = await r.json();
+    if (d.success) {
+      msg.textContent = _escH(nom) + ' ajout\u00e9'; msg.style.color = '#16a34a';
+      document.getElementById('addRecNom').value = '';
+      document.getElementById('addRecEmail').value = '';
+      loadRecruteurs();
+    } else {
+      msg.textContent = d.error || 'Erreur'; msg.style.color = '#ef4444';
+    }
+  } catch(e) { msg.textContent = 'Erreur r\u00e9seau'; msg.style.color = '#ef4444'; }
+}
+
+async function retirerRecruteur(email, nom) {
+  if (!confirm('Retirer ' + nom + ' (' + email + ') de la liste des recruteurs ?')) return;
+  var msg = document.getElementById('recruteurs-msg');
+  msg.textContent = 'Suppression…'; msg.style.color = '#6b7280';
+  try {
+    var r = await fetch('/api/recruteurs/retirer', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:email}) });
+    var d = await r.json();
+    if (d.success) {
+      msg.textContent = nom + ' retir\u00e9'; msg.style.color = '#16a34a';
+      loadRecruteurs();
+    } else {
+      msg.textContent = d.error || 'Erreur'; msg.style.color = '#ef4444';
+    }
+  } catch(e) { msg.textContent = 'Erreur r\u00e9seau'; msg.style.color = '#ef4444'; }
 }
 </script>
 </body>
