@@ -4492,7 +4492,8 @@ async function loadCvInbox() {
       return;
     }
     var isTous = _cvCurrentFolder === 'tous';
-    var showAttrib = isTous || _recruiterRole === 'admin';
+    var showAttrib = isTous || d.is_admin === true;
+    console.log('[CV] folder=' + _cvCurrentFolder + ' d.is_admin=' + d.is_admin + ' _recruiterRole=' + JSON.stringify(_recruiterRole) + ' showAttrib=' + showAttrib);
     var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
       + '<tr style="background:#f5f3ff;font-weight:700;color:#1e1b4b;">'
       + '<td style="padding:8px 10px;">Fichier</td><td style="padding:8px 10px;">Taille</td>'

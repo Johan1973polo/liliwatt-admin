@@ -2086,7 +2086,7 @@ def cv_inbox():
                 'attribue_a': attribue_a,
                 'dossier': f.get('_dossier', ''),
             })
-        return jsonify({'success': True, 'files': files_out})
+        return jsonify({'success': True, 'files': files_out, 'is_admin': recruiter_role == 'admin'})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
