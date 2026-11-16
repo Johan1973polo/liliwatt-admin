@@ -2372,7 +2372,8 @@ def _find_phase1_row_by_fileid_or_email(ws, file_id=None, email=None):
 @app.route('/api/recrutement/decaler-visio', methods=['POST'])
 @login_required
 def decaler_visio():
-    """Décale la session d'un candidat : DELETE ancien CRM → _send_invitation_visio (mail + nouveau CRM + Sheet)."""
+    """Décale la session d'un candidat.
+    Délègue tout le cycle (CRM create → DELETE old → Sheet → mail) à _send_invitation_visio."""
     try:
         d = request.get_json()
         email = (d.get('email', '') or '').strip()
@@ -2391,7 +2392,7 @@ def decaler_visio():
         if dt < datetime.now():
             return jsonify({'success': False, 'error': 'La date et l\'heure sont dans le passé'}), 400
 
-        # 2. Trouver la ligne
+        # 2. Trouver la ligne pour récupérer prenom / nom / tel
         gc = get_sheets_client()
         if not gc:
             return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
@@ -2401,39 +2402,11 @@ def decaler_visio():
         if not target_row:
             return jsonify({'success': False, 'error': 'Candidat non trouvé'}), 404
 
-        # 3. Lire col P
-        event_id = (row_data[15] if len(row_data) > 15 else '').strip()
         prenom = (row_data[1] if len(row_data) > 1 else '').strip()
         nom = (row_data[0] if len(row_data) > 0 else '').strip()
         tel = (row_data[3] if len(row_data) > 3 else '').strip()
-        warning = None
-        crm_deleted = False
 
-        # 4. DELETE ancien événement CRM
-        crm_api_url = os.environ.get('CRM_API_URL', '')
-        crm_api_token = os.environ.get('CRM_API_TOKEN', '')
-        if event_id and crm_api_url and crm_api_token:
-            try:
-                crm_resp = requests.delete(
-                    f'{crm_api_url}/api/external/calendar-event/{event_id}',
-                    headers={'Authorization': f'Bearer {crm_api_token}'},
-                    timeout=15
-                )
-                crm_data = crm_resp.json()
-                if crm_data.get('alreadyDeleted'):
-                    crm_deleted = True
-                    print(f'[RECRUTEMENT] CRM DELETE {event_id}: déjà supprimé')
-                elif crm_data.get('success'):
-                    crm_deleted = True
-                    print(f'[RECRUTEMENT] CRM DELETE {event_id}: OK')
-                else:
-                    return jsonify({'success': False, 'error': f'Erreur DELETE CRM : {crm_data.get("error", "inconnue")}'}), 502
-            except Exception as e:
-                return jsonify({'success': False, 'error': f'Erreur CRM : {e}'}), 502
-        elif not event_id:
-            warning = 'Un ancien RDV peut subsister dans l\'agenda, à retirer manuellement.'
-
-        # 5. _send_invitation_visio → nouveau CRM + mail + Sheet (I, K, L, P)
+        # 3. Délégation complète à _send_invitation_visio
         try:
             result = _send_invitation_visio(
                 email=email, prenom=prenom, nom=nom, telephone=tel, experience='',
@@ -2443,16 +2416,20 @@ def decaler_visio():
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
-        # 6. Retour
+        # 4. Retour
+        # Si P était vide au moment du décalage, l'ancien RDV (antérieur au suivi P)
+        # peut subsister dans l'agenda de Kevin sans qu'on puisse le retrouver.
+        legacy_warning = None
+        if not result.get('reprogramme'):
+            legacy_warning = "Un ancien RDV peut subsister dans l'agenda, à retirer manuellement."
         return jsonify({
             'success': True,
-            'crm_ok': result.get('crm_ok', False),
-            'crm_deleted': crm_deleted,
-            'crm_created': result.get('crm_ok', False),
+            'crm_ok': True,
+            'crm_created': True,
             'mail_ok': result.get('mail_ok', False),
             'sheet_ok': result.get('sheet_ok', False),
             'sheet_error': result.get('sheet_error'),
-            'warning': warning,
+            'warning': result.get('delete_warning') or legacy_warning,
         })
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -3104,18 +3081,158 @@ def extraire_contrat():
 def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_session, heure_session,
                            file_id=None, reprogrammation=False, ecrire_statut=True):
     """Fonction interne unique : mail + Sheet + CRM.
-    - reprogrammation=True  → accroche « reprogrammée » dans le mail
-    - ecrire_statut=False    → ne pas écrire F=CONTACTÉ (chemin reprogrammation)
-    Retourne un dict ou lève une exception si le mail échoue."""
+    Ordre (l'irréversible en dernier) :
+      0. Lire col P (garde-fou anti-doublon) + données candidat
+      1. Créer le nouvel event CRM      → si échec : STOP, rien n'est modifié
+      2. DELETE l'ancien event si P≠''  → non bloquant, warning si échec
+      3. Écrire P avec le nouvel eventId
+      4. Écrire Sheet (F, I, K, L, M)
+      5. Envoyer le mail                → si échec : erreur Carole
+    - reprogrammation=True → accroche « reprogrammée » dans le mail
+    - ecrire_statut=False  → ne pas écrire F=CONTACTÉ (chemin décalage)
+    Retourne un dict ou lève une exception si CRM ou mail échouent."""
     iso_date = _normalize_date_to_iso(date_session)
     prenom_display = _normalize_display_name(prenom) or 'Monsieur/Madame'
-
-    # 1. Mail d'invitation (PRIORITAIRE)
     _dp = iso_date.split('-')
     _dt = datetime(int(_dp[0]), int(_dp[1]), int(_dp[2]))
     date_lisible = _date_fr(_dt)
 
-    if reprogrammation:
+    crm_api_url = os.environ.get('CRM_API_URL', '')
+    crm_api_token = os.environ.get('CRM_API_TOKEN', '')
+    referent_email = os.environ.get('RECRUTEMENT_REFERENT_EMAIL', 'kevin.moreau@liliwatt.fr')
+
+    # ── 0. Lecture Sheet — col P + données candidat ───────────────────────────
+    # Distinction : exception → Sheets inaccessible → STOP (le garde-fou ne peut
+    # pas vérifier l'agenda). Retour (None, None) → candidat absent de PHASE 1,
+    # cas normal pour une première invitation ; on continue avec existing_event_id=''.
+    _ws = None
+    _target_row = None
+    _row_data = None
+    existing_event_id = ''
+    try:
+        _gc = get_sheets_client()
+        _sh = _gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        _ws = _get_or_create_phase1(_sh)
+        _target_row, _row_data = _find_phase1_row_by_fileid_or_email(_ws, file_id, email)
+        if _row_data:
+            existing_event_id = (_row_data[15] if len(_row_data) > 15 else '').strip()
+    except Exception as _e:
+        print(f'[RECRUTEMENT] Pré-lecture Sheet échouée : {_e}')
+        raise Exception(
+            "Impossible de vérifier l'agenda du candidat (Sheets indisponible). "
+            "Réessayez dans un instant."
+        )
+
+    # Données d'affichage pour le CRM — depuis la Sheet si disponible
+    nom_display = _normalize_display_name(nom)
+    prenom_display_sheet = prenom_display
+    tel = telephone
+    lien_cv = ''
+    if _row_data:
+        _snom = (_row_data[0] if len(_row_data) > 0 else '').strip()
+        _sprn = (_row_data[1] if len(_row_data) > 1 else '').strip()
+        _stel = (_row_data[3] if len(_row_data) > 3 else '').strip()
+        lien_cv = (_row_data[9] if len(_row_data) > 9 else '').strip()
+        nom_display = _normalize_display_name(_snom or nom)
+        prenom_display_sheet = _normalize_display_name(_sprn or prenom) or 'Monsieur/Madame'
+        tel = _stel or telephone
+
+    # ── 1. Créer le nouvel événement CRM ──────────────────────────────────────
+    # Bloquant : tout échec ici laisse la situation inchangée.
+    if not crm_api_url or not crm_api_token:
+        raise Exception("L'agenda n'est pas configuré sur ce serveur. Contactez l'administrateur.")
+    try:
+        start_iso, end_iso = _build_session_iso(iso_date, heure_session)
+        desc_lines = [
+            f'Candidat : {prenom_display_sheet} {nom_display.upper() if nom_display else ""}',
+            f'Téléphone : {tel}' if tel else None,
+            f'Email : {email}',
+            f'Dernière expérience : {experience}' if experience else None,
+            f'CV : {lien_cv}' if lien_cv else None,
+            f'Session du {iso_date} à {heure_session}',
+        ]
+        description_crm = '\n'.join(l for l in desc_lines if l)
+        crm_resp = requests.post(
+            f'{crm_api_url}/api/external/calendar-event',
+            headers={'Authorization': f'Bearer {crm_api_token}', 'Content-Type': 'application/json'},
+            json={
+                'referentEmail': referent_email,
+                'title': f'Visio recrutement — {prenom_display_sheet} {nom_display.upper() if nom_display else ""}'.strip(),
+                'description': description_crm,
+                'startTime': start_iso,
+                'endTime': end_iso,
+            },
+            timeout=15
+        )
+        crm_data = crm_resp.json()
+    except Exception as _crm_exc:
+        raise Exception(
+            "L'agenda de Kevin est temporairement inaccessible. Réessayez dans un instant."
+        )
+    if not crm_data.get('success'):
+        raise Exception(
+            f"Impossible de créer le rendez-vous dans l'agenda "
+            f"({crm_data.get('error', 'erreur inconnue')}). Réessayez."
+        )
+    new_event_id = crm_data.get('eventId', '')
+    print(f'[RECRUTEMENT] CRM event créé : {new_event_id}')
+
+    # ── 2. DELETE ancien event si P non vide — non bloquant ───────────────────
+    delete_warning = None
+    if existing_event_id:
+        try:
+            del_resp = requests.delete(
+                f'{crm_api_url}/api/external/calendar-event/{existing_event_id}',
+                headers={'Authorization': f'Bearer {crm_api_token}'},
+                timeout=15
+            )
+            del_data = del_resp.json()
+            if del_data.get('success') or del_data.get('alreadyDeleted'):
+                print(f'[RECRUTEMENT] Ancien event {existing_event_id} supprimé')
+            else:
+                delete_warning = "Ancien rendez-vous non supprimé, à retirer manuellement dans l'agenda"
+                print(f'[RECRUTEMENT] DELETE {existing_event_id} non-fatal : {del_data.get("error")}')
+        except Exception as _del_exc:
+            delete_warning = "Ancien rendez-vous non supprimé, à retirer manuellement dans l'agenda"
+            print(f'[RECRUTEMENT] DELETE {existing_event_id} réseau non-fatal : {_del_exc}')
+
+    # ── 3. Écriture P avec le nouvel eventId ──────────────────────────────────
+    target_row = _target_row
+    ws = _ws
+    try:
+        if ws is None:
+            gc = get_sheets_client()
+            sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+            ws = _get_or_create_phase1(sh)
+            target_row, _ = _find_phase1_row_by_fileid_or_email(ws, file_id, email)
+        if target_row and new_event_id:
+            ws.update(f'P{target_row}', [[new_event_id]], value_input_option='RAW')
+            print(f'[RECRUTEMENT] P{target_row} ← {new_event_id}')
+    except Exception as _pe:
+        print(f'[RECRUTEMENT] Écriture P ignorée : {_pe}')
+
+    # ── 4. Écriture Sheet (F, I, K, L, M) — non bloquant ─────────────────────
+    sheet_ok = False
+    sheet_error = None
+    try:
+        if target_row:
+            if ecrire_statut:
+                ws.update(f'F{target_row}', [['CONTACTÉ']], value_input_option='RAW')
+            ws.update(f'I{target_row}', [[f'{iso_date} {heure_session}']], value_input_option='RAW')
+            ws.update(f'K{target_row}:L{target_row}', [['', '']], value_input_option='RAW')
+            if file_id:
+                ws.update(f'M{target_row}', [[file_id]], value_input_option='RAW')
+            sheet_ok = True
+            print(f'[RECRUTEMENT] Sheet row {target_row} mis à jour')
+        else:
+            sheet_error = f'Email {email} non trouvé dans PHASE 1'
+            print(f'[RECRUTEMENT] {sheet_error}')
+    except Exception as e:
+        sheet_error = str(e)
+        print(f'[RECRUTEMENT] Sheet erreur: {e}')
+
+    # ── 5. Mail d'invitation ───────────────────────────────────────────────────
+    if reprogrammation or existing_event_id:
         accroche = 'Votre session a &eacute;t&eacute; reprogramm&eacute;e. Voici vos nouvelles informations&nbsp;:'
     else:
         accroche = 'Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'
@@ -3151,106 +3268,17 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
         raise Exception(f'Échec envoi email (Zoho {resp.status_code})')
     print(f'[RECRUTEMENT] Email envoyé à {email}')
 
-    # 2. Écriture Sheet PHASE 1 (échec non bloquant)
-    sheet_ok = False
-    sheet_error = None
-    tel = telephone
-    lien_cv = ''
-    nom_display = _normalize_display_name(nom)
-    prenom_display_sheet = prenom_display
-    target_row = None
-    try:
-        gc = get_sheets_client()
-        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
-        ws = _get_or_create_phase1(sh)
-        row_data = None
-        if file_id:
-            rows = ws.get_all_values()
-            for i, row in enumerate(rows):
-                if i == 0:
-                    continue
-                if (row[12] if len(row) > 12 else '').strip() == file_id:
-                    target_row = i + 1
-                    row_data = row
-                    break
-        if not target_row:
-            target_row, row_data = _find_phase1_row(ws, email)
-        if target_row:
-            sheet_nom = (row_data[0] if len(row_data) > 0 else '').strip()
-            sheet_prenom = (row_data[1] if len(row_data) > 1 else '').strip()
-            sheet_tel = (row_data[3] if len(row_data) > 3 else '').strip()
-            lien_cv = (row_data[9] if len(row_data) > 9 else '').strip()
-            nom_display = _normalize_display_name(sheet_nom or nom)
-            prenom_display_sheet = _normalize_display_name(sheet_prenom or prenom) or 'Monsieur/Madame'
-            tel = sheet_tel or telephone
-            if ecrire_statut:
-                ws.update(f'F{target_row}', [['CONTACTÉ']], value_input_option='RAW')
-            ws.update(f'I{target_row}', [[f'{iso_date} {heure_session}']], value_input_option='RAW')
-            ws.update(f'K{target_row}:L{target_row}', [['', '']], value_input_option='RAW')
-            if file_id:
-                ws.update(f'M{target_row}', [[file_id]], value_input_option='RAW')
-            sheet_ok = True
-            print(f'[RECRUTEMENT] Sheet row {target_row} mis à jour')
-        else:
-            sheet_error = f'Email {email} non trouvé dans PHASE 1'
-            print(f'[RECRUTEMENT] {sheet_error}')
-    except Exception as e:
-        sheet_error = str(e)
-        print(f'[RECRUTEMENT] Sheet erreur: {e}')
-
-    # 3. Créer l'événement CRM
-    crm_ok = False
-    crm_error = None
-    crm_api_url = os.environ.get('CRM_API_URL', '')
-    crm_api_token = os.environ.get('CRM_API_TOKEN', '')
-    referent_email = os.environ.get('RECRUTEMENT_REFERENT_EMAIL', 'kevin.moreau@liliwatt.fr')
-    if crm_api_url and crm_api_token:
-        try:
-            start_iso, end_iso = _build_session_iso(iso_date, heure_session)
-            desc_lines = [
-                f'Candidat : {prenom_display_sheet} {nom_display.upper() if nom_display else ""}',
-                f'Téléphone : {tel}' if tel else None,
-                f'Email : {email}',
-                f'Dernière expérience : {experience}' if experience else None,
-                f'CV : {lien_cv}' if lien_cv else None,
-                f'Session du {iso_date} à {heure_session}',
-            ]
-            description_crm = '\n'.join(l for l in desc_lines if l)
-            crm_resp = requests.post(
-                f'{crm_api_url}/api/external/calendar-event',
-                headers={'Authorization': f'Bearer {crm_api_token}', 'Content-Type': 'application/json'},
-                json={
-                    'referentEmail': referent_email,
-                    'title': f'Visio recrutement — {prenom_display_sheet} {nom_display.upper() if nom_display else ""}'.strip(),
-                    'description': description_crm,
-                    'startTime': start_iso,
-                    'endTime': end_iso,
-                },
-                timeout=15
-            )
-            crm_data = crm_resp.json()
-            if crm_data.get('success'):
-                crm_ok = True
-                if target_row and crm_data.get('eventId'):
-                    try:
-                        ws.update(f'P{target_row}', [[crm_data['eventId']]], value_input_option='RAW')
-                    except Exception:
-                        pass
-                print(f'[RECRUTEMENT] CRM event créé: {crm_data.get("eventId")}')
-            else:
-                crm_error = crm_data.get('error', 'Erreur inconnue')
-        except Exception as e:
-            crm_error = str(e)
-    else:
-        crm_error = 'CRM_API_URL ou CRM_API_TOKEN non configuré'
-
     return {
         'success': True,
         'mail_ok': True,
-        'crm_ok': crm_ok,
-        'crm_error': crm_error,
+        'crm_ok': True,
+        'crm_error': None,
         'sheet_ok': sheet_ok,
         'sheet_error': sheet_error,
+        'delete_warning': delete_warning,
+        'reprogramme': bool(existing_event_id),
+        'date_lisible': date_lisible,
+        'heure': heure_session,
     }
 
 

@@ -1051,8 +1051,8 @@
               <!-- Boutons de décision — toujours visibles -->
               <div style="display:flex;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid #e9d5ff;">
                 <button onclick="scrPrepareInvite()" id="scrBtnInvite2" style="flex:1;padding:10px 16px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">📧 Programmer la visio</button>
-                <button onclick="_cvDecision('SANS_REPONSE')" style="padding:10px 16px;background:#6366f1;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">📵 Sans réponse</button>
-                <button onclick="_cvDecision('REFUSE')" style="padding:10px 16px;background:#ef4444;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">✗ Non retenu</button>
+                <button onclick="_cvDecision('SANS_REPONSE', this)" style="padding:10px 16px;background:#6366f1;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">📵 Sans réponse</button>
+                <button onclick="_cvDecision('REFUSE', this)" style="padding:10px 16px;background:#ef4444;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">✗ Non retenu</button>
               </div>
               <div id="scrInviteRecap" style="display:none;margin-top:12px;padding:14px;background:#fff;border-radius:10px;border:2px solid #7c3aed;font-size:14px;"></div>
               <div id="scrInviteResult" style="margin-top:8px;font-size:13px;"></div>
@@ -4030,7 +4030,7 @@ function scrPrepareInvite(){
 
 async function scrConfirmInvite(){
   var btn = document.getElementById('scrBtnConfirm');
-  if(btn){ btn.disabled = true; btn.textContent = '⏳ Envoi...'; }
+  if(btn){ btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; btn.textContent = '⏳ Envoi...'; }
   var email = document.getElementById('scrEmail').value.trim();
   var prenom = document.getElementById('scrPrenom')?.value?.trim() || '';
   var nom = document.getElementById('scrNom')?.value?.trim() || '';
@@ -4054,9 +4054,13 @@ async function scrConfirmInvite(){
     var d = await r.json();
     var res = document.getElementById('scrInviteResult');
     if(d.success){
-      var msg = '✅ Invitation envoyée à '+email;
-      if(d.crm_ok) msg += ' · RDV créé dans l\'agenda';
-      else if(d.crm_error) msg += ' · ⚠ Agenda : '+d.crm_error;
+      var msg;
+      if(d.reprogramme){
+        msg = '✅ Entretien reprogrammé au '+d.date_lisible+' à '+d.heure+' — l\'ancien a été supprimé de l\'agenda';
+      } else {
+        msg = '✅ Invitation envoyée à '+email;
+      }
+      if(d.delete_warning) msg += ' · ⚠ ' + d.delete_warning;
       if(d.sheet_ok === false && d.sheet_error) msg += ' · ⚠ Sheet : '+d.sheet_error;
       res.innerHTML = '<span style="color:#16a34a;font-weight:700;">'+msg+'</span>';
       document.getElementById('scrInviteRecap').style.display = 'none';
@@ -4067,14 +4071,15 @@ async function scrConfirmInvite(){
   } catch(e){
     document.getElementById('scrInviteResult').innerHTML = '<span style="color:#ef4444;">❌ Erreur réseau : '+e.message+'</span>';
   } finally {
-    if(btn){ btn.disabled = false; btn.textContent = '✓ Confirmer l\'envoi'; }
+    if(btn){ btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = ''; btn.textContent = '✓ Confirmer l\'envoi'; }
   }
 }
 
-async function _cvDecision(action) {
+async function _cvDecision(action, btn) {
   if (!_scrCv || !_scrCv.fileId) { alert('Aucun CV chargé depuis le dossier Drive.'); return; }
   var label = action === 'REFUSE' ? 'non retenu' : 'sans réponse';
   if (action === 'REFUSE' && !confirm('Marquer ce candidat comme non retenu ?')) return;
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; }
   var res = document.getElementById('scrInviteResult');
   res.innerHTML = '<span style="color:#9ca3af;">⏳ Enregistrement…</span>';
   try {
@@ -4102,6 +4107,8 @@ async function _cvDecision(action) {
     }
   } catch(e) {
     res.innerHTML = '<span style="color:#ef4444;">❌ Erreur réseau : ' + e.message + '</span>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = ''; }
   }
 }
 
