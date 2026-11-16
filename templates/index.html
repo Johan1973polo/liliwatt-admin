@@ -4438,6 +4438,7 @@ function _cvSwitchFolder(folder) {
 }
 
 async function loadCvInbox() {
+  await _recruiterInfoReady;  // garantit que _recruiterRole est connu avant de dessiner
   var div = document.getElementById('cvInboxList');
   if (!div) return;
   div.innerHTML = '<div style="color:#9ca3af;">⏳ Chargement…</div>';
@@ -4500,6 +4501,17 @@ async function loadCvInbox() {
     });
     html += '</table>';
     div.innerHTML = html;
+    // Pré-charger les compteurs des onglets non actifs (fire-and-forget, une seule fois par compteur vide)
+    var _cvCountIdMap = {source:'cvCountSource', attente:'cvCountAttente', tous:'cvCountTous'};
+    ['source', 'attente', 'tous'].forEach(function(f) {
+      if (f === _cvCurrentFolder) return;
+      var el = document.getElementById(_cvCountIdMap[f]);
+      if (!el || el.textContent) return; // déjà rempli
+      fetch('/api/recrutement/cv-inbox?folder=' + f)
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(d) { if (d && d.success && el) el.textContent = '(' + d.files.length + ')'; })
+        .catch(function() {});
+    });
   } catch(e) {
     div.innerHTML = '<div style="color:#ef4444;">Erreur réseau : ' + e.message + '</div>';
   }
@@ -5449,8 +5461,10 @@ async function envoyerTestMailsProxy(app, total) {
 // ── Recruteur connecté + gestion ──────────────────────────────────
 var _recruiterRole = '';
 var _recruiterName = '';
-(function() {
-  fetch('/api/recruiter-info')
+// Promesse résolue dès que /api/recruiter-info répond.
+// loadCvInbox l'attend avant de dessiner, pour que showAttrib soit correct.
+var _recruiterInfoReady = (function() {
+  return fetch('/api/recruiter-info')
     .then(function(r) { return r.ok ? r.json() : null; })
     .then(function(d) {
       if (d && d.name) {
