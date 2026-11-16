@@ -4113,6 +4113,37 @@ async function _cvDecision(action, btn) {
   }
 }
 
+// ── Recruteur connecté + gestion ─────────────────────────────────────────────
+// Doit être initialisé AVANT le premier appel à loadCvInbox (ligne suivante),
+// sinon await _recruiterInfoReady reçoit undefined et résout immédiatement.
+var _recruiterRole = '';
+var _recruiterName = '';
+var _recruiterInfoReady = (function() {
+  return fetch('/api/recruiter-info')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) {
+      if (d && d.name) {
+        _recruiterName = d.name;
+        document.getElementById('recruiter-name-display').textContent = d.name;
+        var roleEl = document.getElementById('recruiter-role-display');
+        _recruiterRole = d.role || '';
+        if (_recruiterRole === 'admin') {
+          roleEl.textContent = 'admin';
+          roleEl.style.background = 'rgba(124,58,237,0.3)';
+          roleEl.style.color = '#e9d5ff';
+          document.getElementById('tab-btn-recruteurs').style.display = '';
+        } else if (_recruiterRole) {
+          roleEl.textContent = _recruiterRole;
+          roleEl.style.background = 'rgba(59,130,246,0.3)';
+          roleEl.style.color = '#bfdbfe';
+        }
+      } else {
+        document.getElementById('recruiter-badge').style.display = 'none';
+      }
+    })
+    .catch(function() { document.getElementById('recruiter-badge').style.display = 'none'; });
+})();
+
 // Init au chargement
 if(document.getElementById('scrContent')) scrRender();
 if(document.getElementById('tab-scriptrecrutement')?.classList.contains('active')) { loadSessions(); if (typeof loadCvInbox === 'function') loadCvInbox(); }
@@ -4455,7 +4486,7 @@ async function loadCvInbox() {
     var countEl = document.getElementById(countIdMap[_cvCurrentFolder] || 'cvCountSource');
     if (countEl) countEl.textContent = '(' + files.length + ')';
     var accEl = document.getElementById('accCvCount');
-    if (accEl) accEl.textContent = nbNew > 0 ? '(' + nbNew + ')' : '';
+    if (accEl && _cvCurrentFolder === 'source') accEl.textContent = '(' + files.length + ')';
     if (!files.length) {
       div.innerHTML = '<div style="color:#9ca3af;">Le dossier CV est vide. Déposez un CV dans le dossier Drive pour le voir apparaître ici.</div>';
       return;
@@ -5458,37 +5489,7 @@ async function envoyerTestMailsProxy(app, total) {
   btn.textContent = '📧 Test ' + app.charAt(0).toUpperCase() + app.slice(1) + ' (' + total + ')';
 }
 
-// ── Recruteur connecté + gestion ──────────────────────────────────
-var _recruiterRole = '';
-var _recruiterName = '';
-// Promesse résolue dès que /api/recruiter-info répond.
-// loadCvInbox l'attend avant de dessiner, pour que showAttrib soit correct.
-var _recruiterInfoReady = (function() {
-  return fetch('/api/recruiter-info')
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .then(function(d) {
-      if (d && d.name) {
-        _recruiterName = d.name;
-        document.getElementById('recruiter-name-display').textContent = d.name;
-        var roleEl = document.getElementById('recruiter-role-display');
-        _recruiterRole = d.role || '';
-        if (_recruiterRole === 'admin') {
-          roleEl.textContent = 'admin';
-          roleEl.style.background = 'rgba(124,58,237,0.3)';
-          roleEl.style.color = '#e9d5ff';
-          // Afficher l'onglet Recruteurs
-          document.getElementById('tab-btn-recruteurs').style.display = '';
-        } else if (_recruiterRole) {
-          roleEl.textContent = _recruiterRole;
-          roleEl.style.background = 'rgba(59,130,246,0.3)';
-          roleEl.style.color = '#bfdbfe';
-        }
-      } else {
-        document.getElementById('recruiter-badge').style.display = 'none';
-      }
-    })
-    .catch(function() { document.getElementById('recruiter-badge').style.display = 'none'; });
-})();
+// (bloc déplacé avant la section CV — voir ci-dessus)
 
 function _escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
