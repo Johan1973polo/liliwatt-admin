@@ -4460,11 +4460,13 @@ async function loadCvInbox() {
       return;
     }
     var isTous = _cvCurrentFolder === 'tous';
+    var showAttrib = isTous || _recruiterRole === 'admin';
     var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
       + '<tr style="background:#f5f3ff;font-weight:700;color:#1e1b4b;">'
       + '<td style="padding:8px 10px;">Fichier</td><td style="padding:8px 10px;">Taille</td>'
       + '<td style="padding:8px 10px;">Date dépôt</td>';
-    if (isTous) html += '<td style="padding:8px 10px;">Dossier</td><td style="padding:8px 10px;">Attribué à</td>';
+    if (isTous) html += '<td style="padding:8px 10px;">Dossier</td>';
+    if (showAttrib) html += '<td style="padding:8px 10px;">Attribué à</td>';
     html += '<td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;">Actions</td></tr>';
     files.forEach(function(f) {
       var size = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' Mo' : Math.round(f.size / 1024) + ' Ko';
@@ -4486,6 +4488,8 @@ async function loadCvInbox() {
       if (isTous) {
         var dossierColor = f.dossier === 'En attente' ? '#f59e0b' : '#7c3aed';
         html += '<td style="padding:8px 10px;"><span style="color:' + dossierColor + ';font-weight:600;font-size:11px;">' + _escH(f.dossier||'') + '</span></td>';
+      }
+      if (showAttrib) {
         var attrDisplay = f.attribue_a
           ? '<span style="color:#059669;font-weight:600;font-size:11px;">' + _escH(f.attribue_a) + '</span>'
           : '<span style="color:#9ca3af;font-size:11px;">(libre)</span>';

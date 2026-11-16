@@ -2064,13 +2064,15 @@ def cv_inbox():
         except Exception as e:
             print(f'[CV-PIPELINE] Erreur cross-ref Sheet: {e}')
 
+        recruiter_role = session.get('recruiter_role', '')
         files_out = []
         for f in results:
             fid = f['id']
             attribue_a = sheet_data.get(fid, '')
             profil_cree = fid in sheet_data
             # Filtre d'attribution : pour source et attente, masquer les fiches des autres
-            if folder_param != 'tous' and attribue_a and attribue_a != recruiter_name:
+            # Les admins voient toute la pile sans filtre
+            if folder_param != 'tous' and recruiter_role != 'admin' and attribue_a and attribue_a != recruiter_name:
                 continue
             files_out.append({
                 'fileId': fid,
