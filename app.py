@@ -1296,7 +1296,7 @@ def envoyer_contrat():
         print(f"⚠️ Erreur contrat: {e}")
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
 
-PHASE1_HEADERS = ['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV', 'PRESENCE', 'LIEN_CANDIDATURE_ENVOYE', 'DRIVE_FILE_ID', 'DRIVE_MOVE_STATUS', 'DRIVE_MOVE_ERREUR', 'CRM_EVENT_ID']
+PHASE1_HEADERS = ['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV', 'PRESENCE', 'LIEN_CANDIDATURE_ENVOYE', 'DRIVE_FILE_ID', 'DRIVE_MOVE_STATUS', 'DRIVE_MOVE_ERREUR', 'CRM_EVENT_ID', 'TENTATIVES', 'DERNIERE_TENTATIVE', 'SMS_ENVOYE', 'ATTRIBUE_A']
 
 # ===== PIPELINE CV — dossiers Drive =====
 _CV_FOLDER_IDS = {
@@ -1390,19 +1390,18 @@ def _build_session_iso(iso_date, heure):
 
 
 def _get_or_create_phase1(sh):
-    """Retourne le worksheet PHASE 1, le crée si absent, et s'assure que le header va jusqu'à P1."""
+    """Retourne le worksheet PHASE 1, le crée si absent, et s'assure que le header va jusqu'à T1.
+    N'écrit que les colonnes manquantes, une par une — jamais les colonnes existantes."""
+    _COLS = 'ABCDEFGHIJKLMNOPQRST'
     try:
         ws = sh.worksheet('PHASE 1')
         hdr = ws.row_values(1)
         if len(hdr) < len(PHASE1_HEADERS):
-            # N'écrire que les colonnes manquantes
-            if len(hdr) == 15:
-                ws.update('P1', [['CRM_EVENT_ID']], value_input_option='RAW')
-            else:
-                ws.update('A1:P1', [PHASE1_HEADERS], value_input_option='RAW')
+            for idx in range(len(hdr), len(PHASE1_HEADERS)):
+                ws.update(f'{_COLS[idx]}1', [[PHASE1_HEADERS[idx]]], value_input_option='RAW')
     except Exception:
         ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=len(PHASE1_HEADERS))
-        ws.update('A1:P1', [PHASE1_HEADERS], value_input_option='RAW')
+        ws.update('A1:T1', [PHASE1_HEADERS], value_input_option='RAW')
     return ws
 
 # ===== PHASE 1 — Import CV + Profils =====
@@ -1444,6 +1443,7 @@ def list_candidats_phase1():
                 'lien_candidature_envoye': row[11] if len(row) > 11 else '',
                 'drive_file_id': row[12] if len(row) > 12 else '',
                 'crm_event_id': row[15] if len(row) > 15 else '',
+                'attribue_a': row[19] if len(row) > 19 else '',
             })
             if lien_cv:
                 print(f"  📄 CV trouvé pour {row[1]} {row[0]}: {lien_cv[:60]}...")
@@ -2005,32 +2005,49 @@ def session_destinataires():
 @app.route('/api/recrutement/cv-inbox')
 @login_required
 def cv_inbox():
-    """Liste les fichiers d'un dossier CV Drive. ?folder=source (défaut) ou attente."""
+    """Liste les fichiers d'un dossier CV Drive.
+    ?folder=source (défaut) | attente | tous
+    'tous' lit les deux dossiers (source + attente) sans filtre d'attribution.
+    """
     if not _CV_DRIVE_CONFIGURED:
         return jsonify({'success': False, 'error': 'Configuration Drive incomplète', 'missing': _CV_MISSING_VARS}), 503
     try:
         folder_param = request.args.get('folder', 'source').strip()
-        folder_key = 'CV_ATTENTE_FOLDER_ID' if folder_param == 'attente' else 'CV_SOURCE_FOLDER_ID'
+        recruiter_name = session.get('recruiter_name', '')
         drive = _get_drive_client()
-        source_id = _CV_FOLDER_IDS[folder_key]
-        results = []
-        page_token = None
-        while True:
-            resp = drive.files().list(
-                q=f"'{source_id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'",
-                fields='nextPageToken,files(id,name,size,mimeType,createdTime,modifiedTime,webViewLink)',
-                pageSize=100,
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True,
-                orderBy='createdTime',
-                pageToken=page_token,
-            ).execute()
-            results.extend(resp.get('files', []))
-            page_token = resp.get('nextPageToken')
-            if not page_token:
-                break
-        # Cross-référence : quels fileId sont déjà dans PHASE 1 col M ?
-        validated_fids = set()
+
+        def _list_folder(folder_id, dossier_label):
+            """Retourne la liste des fichiers d'un dossier Drive avec le label dossier."""
+            out = []
+            page_token = None
+            while True:
+                resp = drive.files().list(
+                    q=f"'{folder_id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'",
+                    fields='nextPageToken,files(id,name,size,mimeType,createdTime,modifiedTime,webViewLink)',
+                    pageSize=100,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                    orderBy='createdTime',
+                    pageToken=page_token,
+                ).execute()
+                for f in resp.get('files', []):
+                    f['_dossier'] = dossier_label
+                    out.append(f)
+                page_token = resp.get('nextPageToken')
+                if not page_token:
+                    break
+            return out
+
+        if folder_param == 'tous':
+            results = _list_folder(_CV_FOLDER_IDS['CV_SOURCE_FOLDER_ID'], 'À traiter')
+            results += _list_folder(_CV_FOLDER_IDS['CV_ATTENTE_FOLDER_ID'], 'En attente')
+        elif folder_param == 'attente':
+            results = _list_folder(_CV_FOLDER_IDS['CV_ATTENTE_FOLDER_ID'], 'En attente')
+        else:
+            results = _list_folder(_CV_FOLDER_IDS['CV_SOURCE_FOLDER_ID'], 'À traiter')
+
+        # Cross-référence Sheet PHASE 1 : col M (fileId) → col T (attribue_a)
+        sheet_data = {}  # {file_id: attribue_a}
         try:
             gc = get_sheets_client()
             if gc:
@@ -2042,21 +2059,30 @@ def cv_inbox():
                         continue
                     fid = (row[12] if len(row) > 12 else '').strip()
                     if fid:
-                        validated_fids.add(fid)
+                        attribue_a = (row[19] if len(row) > 19 else '').strip()
+                        sheet_data[fid] = attribue_a
         except Exception as e:
             print(f'[CV-PIPELINE] Erreur cross-ref Sheet: {e}')
 
         files_out = []
         for f in results:
+            fid = f['id']
+            attribue_a = sheet_data.get(fid, '')
+            profil_cree = fid in sheet_data
+            # Filtre d'attribution : pour source et attente, masquer les fiches des autres
+            if folder_param != 'tous' and attribue_a and attribue_a != recruiter_name:
+                continue
             files_out.append({
-                'fileId': f['id'],
+                'fileId': fid,
                 'name': f.get('name', ''),
                 'size': int(f.get('size', 0)),
                 'mimeType': f.get('mimeType', ''),
                 'createdTime': f.get('createdTime', ''),
                 'modifiedTime': f.get('modifiedTime', ''),
                 'webViewLink': f.get('webViewLink', ''),
-                'profilCree': f['id'] in validated_fids,
+                'profilCree': profil_cree,
+                'attribue_a': attribue_a,
+                'dossier': f.get('_dossier', ''),
             })
         return jsonify({'success': True, 'files': files_out})
     except Exception as e:
@@ -2067,7 +2093,20 @@ def cv_inbox():
 @app.route('/api/recrutement/cv-extraire', methods=['POST'])
 @login_required
 def cv_extraire():
-    """Télécharge un fichier du dossier CV, extrait le texte et appelle GPT."""
+    """Ouvre un CV : charge la fiche si elle existe, sinon extrait + crée la ligne.
+    Puis attribue la fiche à la recruteuse courante (séquence lecture-écriture-relecture).
+
+    Ordre :
+      1. Métadonnées Drive
+      2. Chercher fileId en col M de PHASE 1
+      3a. TROUVÉ  → champs depuis Sheet, PAS de réécriture A-E
+      3b. ABSENT  → extraction GPT + append_row A-T (T vide)
+      4. Séquence d'attribution sur col T :
+           a. lire T
+           b. T ≠ '' et T ≠ moi          → attribution_blocked
+           c. T vide                       → écrire T, puis relire
+           d. après écriture, T ≠ moi     → attribution_lost (course perdue)
+    """
     if not _CV_DRIVE_CONFIGURED:
         return jsonify({'success': False, 'error': 'Configuration Drive incomplète', 'missing': _CV_MISSING_VARS}), 503
     try:
@@ -2076,81 +2115,190 @@ def cv_extraire():
         if not file_id:
             return jsonify({'success': False, 'error': 'fileId requis'}), 400
 
+        recruiter_name = session.get('recruiter_name', '')
         drive = _get_drive_client()
 
-        # Métadonnées du fichier
+        # 1. Métadonnées Drive
         meta = drive.files().get(
             fileId=file_id,
-            fields='id,name,mimeType,size',
+            fields='id,name,mimeType,size,webViewLink',
             supportsAllDrives=True,
         ).execute()
         filename = meta.get('name', '')
-        print(f'[CV-PIPELINE] Extraction de {filename} (fileId={file_id})')
+        web_view_link = meta.get('webViewLink', '')
+        print(f'[CV-PIPELINE] Ouverture de {filename} (fileId={file_id})')
 
-        # Télécharger le contenu
-        from googleapiclient.http import MediaIoBaseDownload
-        import io
-        request_dl = drive.files().get_media(fileId=file_id)
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, request_dl)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        file_bytes = buf.getvalue()
+        # Accès Sheet
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        rows = ws.get_all_values()
 
-        # Extraire le texte
-        text = extract_text_from_file(file_bytes, filename)
-        illisible = not text.strip()
-
-        # Appeler GPT si on a du texte
+        # 2. Chercher ligne existante par fileId (col M, index 12)
+        target_row = None
         champs = {}
-        if not illisible:
-            try:
-                champs = extract_cv_with_gpt(text[:8000])
-            except Exception as e:
-                print(f'[CV-PIPELINE] GPT erreur: {e}')
-                champs = {}
-
-        # Contrôles de doublon dans PHASE 1
-        doublon_fileid = False
+        illisible = False
+        ligne_existante = False
         doublon_email = False
-        doublon_fileid_row = None
         doublon_email_row = None
-        try:
-            gc = get_sheets_client()
-            if gc:
-                sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
-                ws = _get_or_create_phase1(sh)
-                rows = ws.get_all_values()
-                extracted_email = (champs.get('email', '') or '').strip().lower()
+
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            if (row[12] if len(row) > 12 else '').strip() == file_id:
+                target_row = i + 1
+                ligne_existante = True
+                # 3a. TROUVÉ — charger champs depuis Sheet, sans réécriture A-E
+                champs = {
+                    'nom':       row[0] if len(row) > 0 else '',
+                    'prenom':    row[1] if len(row) > 1 else '',
+                    'email':     row[2] if len(row) > 2 else '',
+                    'telephone': row[3] if len(row) > 3 else '',
+                    'adresse':   row[4] if len(row) > 4 else '',
+                    'poste':     row[6] if len(row) > 6 else '',
+                }
+                break
+
+        if not ligne_existante:
+            # 3b. ABSENT — télécharger, extraire, créer ligne
+            from googleapiclient.http import MediaIoBaseDownload
+            import io
+            request_dl = drive.files().get_media(fileId=file_id)
+            buf = io.BytesIO()
+            downloader = MediaIoBaseDownload(buf, request_dl)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            file_bytes = buf.getvalue()
+
+            text = extract_text_from_file(file_bytes, filename)
+            illisible = not text.strip()
+            if not illisible:
+                try:
+                    champs = extract_cv_with_gpt(text[:8000])
+                except Exception as e:
+                    print(f'[CV-PIPELINE] GPT erreur: {e}')
+                    champs = {}
+
+            # Contrôle doublon email avant création
+            extracted_email = (champs.get('email', '') or '').strip().lower()
+            if extracted_email:
                 for i, row in enumerate(rows):
                     if i == 0:
                         continue
-                    # Col M = DRIVE_FILE_ID (index 12)
-                    row_fid = (row[12] if len(row) > 12 else '').strip()
-                    if row_fid == file_id:
-                        doublon_fileid = True
-                        doublon_fileid_row = i + 1
-                    # Col C = EMAIL (index 2)
-                    if extracted_email:
-                        row_email = (row[2] if len(row) > 2 else '').strip().lower()
-                        if row_email == extracted_email and not doublon_email:
-                            doublon_email = True
-                            doublon_email_row = i + 1
-        except Exception as e:
-            print(f'[CV-PIPELINE] Doublon check erreur: {e}')
+                    if (row[2] if len(row) > 2 else '').strip().lower() == extracted_email:
+                        doublon_email = True
+                        doublon_email_row = i + 1
+                        break
 
+            # Créer la ligne A-T (T vide — l'attribution suit)
+            date_str = datetime.now().strftime('%d/%m/%Y')
+            tel = champs.get('telephone', '') or ''
+            if isinstance(tel, list):
+                tel = ' / '.join(str(t) for t in tel)
+            email_val = champs.get('email', '') or ''
+            if isinstance(email_val, list):
+                email_val = email_val[0] if email_val else ''
+            nom_val = (champs.get('nom', '') or '').upper()
+            row_data = [
+                nom_val,
+                champs.get('prenom', '') or '',
+                email_val,
+                tel,
+                champs.get('adresse', '') or '',
+                'NON CONTACTÉ',
+                champs.get('poste', '') or '',
+                date_str,
+                '',
+                web_view_link,  # J = LIEN_CV
+                '', '', file_id, '', '',  # K, L, M, N, O
+                '',             # P = CRM_EVENT_ID
+                '', '', '',     # Q, R, S
+                '',             # T = ATTRIBUE_A (séquence d'attribution ci-dessous)
+            ]
+            ws.append_row(row_data, value_input_option='RAW')
+            # Retrouver le numéro de ligne exact par fileId (robuste aux insertions concurrentes)
+            rows2 = ws.get_all_values()
+            for i, row in enumerate(rows2):
+                if i == 0:
+                    continue
+                if (row[12] if len(row) > 12 else '').strip() == file_id:
+                    target_row = i + 1
+            print(f'[CV-PIPELINE] Ligne créée : {champs.get("prenom","")} {nom_val} → ligne {target_row}')
+
+        # 4. Séquence d'attribution (col T, index 19)
+        # Cas dégradé : session absente (ne devrait pas arriver avec login_required)
+        if not recruiter_name or not target_row:
+            return jsonify({
+                'success': True, 'fileId': file_id, 'filename': filename,
+                'illisible': illisible, 'champs': champs, 'ligne_existante': ligne_existante,
+                'attribue_a': '', 'attribution_blocked': False, 'attribution_lost': False,
+                'doublon_email': doublon_email, 'doublon_email_row': doublon_email_row,
+            })
+
+        # 4a. Lire T
+        current_row_data = ws.row_values(target_row)
+        current_T = (current_row_data[19] if len(current_row_data) > 19 else '').strip()
+
+        # 4b. Quelqu'un d'autre a déjà la fiche
+        if current_T and current_T != recruiter_name:
+            print(f'[CV-PIPELINE] Attribution bloquée : {file_id} → {current_T}')
+            return jsonify({
+                'success': True, 'fileId': file_id, 'filename': filename,
+                'illisible': illisible, 'champs': champs, 'ligne_existante': ligne_existante,
+                'attribue_a': current_T, 'attribution_blocked': True, 'attribution_lost': False,
+                'doublon_email': doublon_email, 'doublon_email_row': doublon_email_row,
+            })
+
+        # 4c. T vide → écrire, puis 4d. relire pour détecter la course
+        if not current_T:
+            ws.update(f'T{target_row}', [[recruiter_name]], value_input_option='RAW')
+            reread = ws.row_values(target_row)
+            reread_T = (reread[19] if len(reread) > 19 else '').strip()
+            if reread_T != recruiter_name:
+                print(f'[CV-PIPELINE] Course perdue : {file_id} → {reread_T}')
+                return jsonify({
+                    'success': True, 'fileId': file_id, 'filename': filename,
+                    'illisible': illisible, 'champs': champs, 'ligne_existante': ligne_existante,
+                    'attribue_a': reread_T, 'attribution_blocked': False, 'attribution_lost': True,
+                    'doublon_email': doublon_email, 'doublon_email_row': doublon_email_row,
+                })
+
+        # Attribution réussie (T était vide et est maintenant la mienne, ou était déjà la mienne)
         return jsonify({
-            'success': True,
-            'fileId': file_id,
-            'filename': filename,
-            'illisible': illisible,
-            'champs': champs,
-            'doublon_fileid': doublon_fileid,
-            'doublon_fileid_row': doublon_fileid_row,
-            'doublon_email': doublon_email,
-            'doublon_email_row': doublon_email_row,
+            'success': True, 'fileId': file_id, 'filename': filename,
+            'illisible': illisible, 'champs': champs, 'ligne_existante': ligne_existante,
+            'attribue_a': recruiter_name, 'attribution_blocked': False, 'attribution_lost': False,
+            'doublon_email': doublon_email, 'doublon_email_row': doublon_email_row,
         })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/recrutement/cv-attribuer', methods=['POST'])
+@login_required
+def cv_attribuer():
+    """Attribue explicitement un CV à la recruteuse courante (force, remplace l'attribution existante)."""
+    try:
+        d = request.get_json()
+        file_id = (d.get('fileId', '') or '').strip()
+        if not file_id:
+            return jsonify({'success': False, 'error': 'fileId requis'}), 400
+        recruiter_name = session.get('recruiter_name', '')
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        target_row, _ = _find_phase1_row_by_fileid_or_email(ws, file_id)
+        if not target_row:
+            return jsonify({'success': False, 'error': 'Fiche introuvable dans PHASE 1'}), 404
+        ws.update(f'T{target_row}', [[recruiter_name]], value_input_option='RAW')
+        print(f'[CV-PIPELINE] Attribution forcée : {file_id} → {recruiter_name}')
+        return jsonify({'success': True, 'attribue_a': recruiter_name})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})

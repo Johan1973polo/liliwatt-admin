@@ -1007,8 +1007,9 @@
         </div>
         <div id="acc-cv" style="padding:20px;display:block;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-            <button id="cvTabSource" onclick="_cvSwitchFolder('source')" style="padding:6px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid #7c3aed;background:#7c3aed;color:#fff;">CV à traiter <span id="cvCountSource"></span></button>
+            <button id="cvTabMes" onclick="_cvSwitchFolder('source')" style="padding:6px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid #7c3aed;background:#7c3aed;color:#fff;">Mes CV <span id="cvCountSource"></span></button>
             <button id="cvTabAttente" onclick="_cvSwitchFolder('attente')" style="padding:6px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid #f59e0b;background:#fff;color:#f59e0b;">En attente <span id="cvCountAttente"></span></button>
+            <button id="cvTabTous" onclick="_cvSwitchFolder('tous')" style="padding:6px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid #059669;background:#fff;color:#059669;">Tous les CV <span id="cvCountTous"></span></button>
             <div style="flex:1;"></div>
             <button onclick="loadCvInbox()" style="padding:6px 12px;background:#ede9fe;color:#7c3aed;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Actualiser</button>
           </div>
@@ -4427,10 +4428,12 @@ var _cvCurrentFolder = 'source';
 function _cvSwitchFolder(folder) {
   _cvCurrentFolder = folder;
   // Update tab styles
-  var srcBtn = document.getElementById('cvTabSource');
-  var attBtn = document.getElementById('cvTabAttente');
-  if (srcBtn) { srcBtn.style.background = folder === 'source' ? '#7c3aed' : '#fff'; srcBtn.style.color = folder === 'source' ? '#fff' : '#7c3aed'; }
-  if (attBtn) { attBtn.style.background = folder === 'attente' ? '#f59e0b' : '#fff'; attBtn.style.color = folder === 'attente' ? '#f59e0b' : '#f59e0b'; }
+  var mesBtn  = document.getElementById('cvTabMes');
+  var attBtn  = document.getElementById('cvTabAttente');
+  var tousBtn = document.getElementById('cvTabTous');
+  if (mesBtn)  { mesBtn.style.background  = folder === 'source'  ? '#7c3aed' : '#fff'; mesBtn.style.color  = folder === 'source'  ? '#fff' : '#7c3aed'; }
+  if (attBtn)  { attBtn.style.background  = folder === 'attente' ? '#f59e0b' : '#fff'; attBtn.style.color  = folder === 'attente' ? '#fff' : '#f59e0b'; }
+  if (tousBtn) { tousBtn.style.background = folder === 'tous'    ? '#059669' : '#fff'; tousBtn.style.color = folder === 'tous'    ? '#fff' : '#059669'; }
   loadCvInbox();
 }
 
@@ -4447,9 +4450,8 @@ async function loadCvInbox() {
     }
     var files = d.files || [];
     var nbNew = files.filter(function(f) { return !f.profilCree; }).length;
-    // Update the count on the active tab
-    var countId = _cvCurrentFolder === 'attente' ? 'cvCountAttente' : 'cvCountSource';
-    var countEl = document.getElementById(countId);
+    var countIdMap = {source: 'cvCountSource', attente: 'cvCountAttente', tous: 'cvCountTous'};
+    var countEl = document.getElementById(countIdMap[_cvCurrentFolder] || 'cvCountSource');
     if (countEl) countEl.textContent = '(' + files.length + ')';
     var accEl = document.getElementById('accCvCount');
     if (accEl) accEl.textContent = nbNew > 0 ? '(' + nbNew + ')' : '';
@@ -4457,22 +4459,40 @@ async function loadCvInbox() {
       div.innerHTML = '<div style="color:#9ca3af;">Le dossier CV est vide. Déposez un CV dans le dossier Drive pour le voir apparaître ici.</div>';
       return;
     }
+    var isTous = _cvCurrentFolder === 'tous';
     var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
       + '<tr style="background:#f5f3ff;font-weight:700;color:#1e1b4b;">'
       + '<td style="padding:8px 10px;">Fichier</td><td style="padding:8px 10px;">Taille</td>'
-      + '<td style="padding:8px 10px;">Date dépôt</td><td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;">Actions</td></tr>';
+      + '<td style="padding:8px 10px;">Date dépôt</td>';
+    if (isTous) html += '<td style="padding:8px 10px;">Dossier</td><td style="padding:8px 10px;">Attribué à</td>';
+    html += '<td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;">Actions</td></tr>';
     files.forEach(function(f) {
       var size = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' Mo' : Math.round(f.size / 1024) + ' Ko';
       var date = (f.createdTime || f.modifiedTime) ? new Date(f.createdTime || f.modifiedTime).toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'}) : '—';
       var statut = f.profilCree
         ? '<span style="color:#16a34a;font-weight:600;font-size:11px;">✅ Déjà extrait</span>'
         : '<span style="color:#f59e0b;font-weight:600;font-size:11px;">⏳ À extraire</span>';
+      var isMine = !f.attribue_a || f.attribue_a === _recruiterName;
+      var actions;
+      if (isTous && !isMine) {
+        actions = '<button onclick="_cvAttribuer(\'' + f.fileId + '\',\'' + (f.attribue_a||'').replace(/'/g,"\\'") + '\')" style="padding:5px 12px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">Me l\'attribuer</button>';
+      } else {
+        actions = '<button onclick="_cvLoadCandidat(\'' + f.fileId + '\',\'' + f.name.replace(/'/g,"\\'") + '\',\'' + (f.webViewLink||'').replace(/'/g,"\\'") + '\')" style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">' + (f.profilCree ? '🔄 Ré-extraire' : '📋 Extraire') + '</button>';
+      }
       html += '<tr style="border-bottom:1px solid #f3f4f6;">'
         + '<td style="padding:8px 10px;"><a href="' + f.webViewLink + '" target="_blank" style="color:#7c3aed;text-decoration:none;font-weight:600;">' + f.name + '</a></td>'
         + '<td style="padding:8px 10px;">' + size + '</td>'
-        + '<td style="padding:8px 10px;">' + date + '</td>'
-        + '<td style="padding:8px 10px;">' + statut + '</td>'
-        + '<td style="padding:8px 10px;"><button onclick="_cvLoadCandidat(\'' + f.fileId + '\',\'' + f.name.replace(/'/g,"\\'") + '\',\'' + (f.webViewLink||'').replace(/'/g,"\\'") + '\')" style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">' + (f.profilCree ? '🔄 Ré-extraire' : '📋 Extraire') + '</button></td></tr>';
+        + '<td style="padding:8px 10px;">' + date + '</td>';
+      if (isTous) {
+        var dossierColor = f.dossier === 'En attente' ? '#f59e0b' : '#7c3aed';
+        html += '<td style="padding:8px 10px;"><span style="color:' + dossierColor + ';font-weight:600;font-size:11px;">' + _escH(f.dossier||'') + '</span></td>';
+        var attrDisplay = f.attribue_a
+          ? '<span style="color:#059669;font-weight:600;font-size:11px;">' + _escH(f.attribue_a) + '</span>'
+          : '<span style="color:#9ca3af;font-size:11px;">(libre)</span>';
+        html += '<td style="padding:8px 10px;">' + attrDisplay + '</td>';
+      }
+      html += '<td style="padding:8px 10px;">' + statut + '</td>'
+        + '<td style="padding:8px 10px;">' + actions + '</td></tr>';
     });
     html += '</table>';
     div.innerHTML = html;
@@ -4508,6 +4528,18 @@ async function _cvLoadCandidat(fileId, filename, webViewLink) {
     var d = await r.json();
     if (!d.success) { bandeau.innerHTML = '❌ ' + d.error; return; }
 
+    // Vérifier l'attribution avant de charger le candidat dans le script
+    if (d.attribution_blocked) {
+      bandeau.innerHTML = '🔒 Fiche attribuée à <strong>' + _escH(d.attribue_a) + '</strong>'
+        + ' <button onclick="_cvAttribuer(\'' + fileId + '\',\'' + (d.attribue_a||'').replace(/'/g,"\\'") + '\')" '
+        + 'style="margin-left:12px;padding:3px 10px;background:#f59e0b;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">Me l\'attribuer</button>';
+      return;
+    }
+    if (d.attribution_lost) {
+      bandeau.innerHTML = '⚡ <strong>' + _escH(d.attribue_a) + '</strong> vient de prendre cette fiche.';
+      return;
+    }
+
     var c = d.champs || {};
     // Stocker dans _scrCv (utilisé par le script d'appel)
     _scrCv = {
@@ -4522,7 +4554,8 @@ async function _cvLoadCandidat(fileId, filename, webViewLink) {
 
     // Mettre à jour le bandeau
     var displayName = (_scrCv.prenom || '') + ' ' + (_scrCv.nom || '').toUpperCase();
-    bandeau.innerHTML = '📋 Candidat chargé : <strong>' + displayName.trim() + '</strong>'
+    var ficheLabel = d.ligne_existante ? '📂 Fiche chargée : ' : '📋 Candidat chargé : ';
+    bandeau.innerHTML = ficheLabel + '<strong>' + displayName.trim() + '</strong>'
       + ' <button onclick="_cvClearCandidat()" style="margin-left:12px;padding:2px 8px;background:#e5e7eb;border:none;border-radius:4px;font-size:11px;cursor:pointer;">✕ Changer</button>';
 
     // Pré-remplir le formulaire du script phase 5
@@ -4543,11 +4576,10 @@ async function _cvLoadCandidat(fileId, filename, webViewLink) {
       indeedAlert.style.display = 'block';
     }
 
-    // Avertissements doublons
-    if (d.doublon_fileid || d.doublon_email || d.illisible) {
+    // Avertissements (doublons uniquement pour les nouvelles lignes)
+    if (d.doublon_email || d.illisible) {
       var warn = '';
       if (d.illisible) warn += '⚠️ PDF illisible — saisie manuelle requise. ';
-      if (d.doublon_fileid) warn += '⚠️ Déjà extrait (ligne ' + d.doublon_fileid_row + '). ';
       if (d.doublon_email) warn += '⚠️ Email déjà connu (ligne ' + d.doublon_email_row + '). ';
       bandeau.innerHTML += '<div style="color:#92400e;font-size:11px;margin-top:4px;">' + warn + '</div>';
     }
@@ -4571,6 +4603,24 @@ function _cvClearCandidat() {
     if (el) el.value = '';
   });
   scrRender();
+}
+
+async function _cvAttribuer(fileId, currentOwner) {
+  if (!confirm('Reprendre ce candidat à ' + currentOwner + ' ?')) return;
+  try {
+    var r = await fetch('/api/recrutement/cv-attribuer', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({fileId: fileId})
+    });
+    var d = await r.json();
+    if (d.success) {
+      loadCvInbox();
+    } else {
+      alert('Erreur : ' + (d.error || 'inconnue'));
+    }
+  } catch(e) {
+    alert('Erreur réseau : ' + e.message);
+  }
 }
 
 // Charger la inbox CV à l'ouverture de l'onglet (hook déjà en place dans showTab)
@@ -5394,11 +5444,13 @@ async function envoyerTestMailsProxy(app, total) {
 
 // ── Recruteur connecté + gestion ──────────────────────────────────
 var _recruiterRole = '';
+var _recruiterName = '';
 (function() {
   fetch('/api/recruiter-info')
     .then(function(r) { return r.ok ? r.json() : null; })
     .then(function(d) {
       if (d && d.name) {
+        _recruiterName = d.name;
         document.getElementById('recruiter-name-display').textContent = d.name;
         var roleEl = document.getElementById('recruiter-role-display');
         _recruiterRole = d.role || '';
