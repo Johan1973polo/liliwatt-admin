@@ -2046,8 +2046,14 @@ def cv_inbox():
         else:
             results = _list_folder(_CV_FOLDER_IDS['CV_SOURCE_FOLDER_ID'], 'À traiter')
 
-        # Cross-référence Sheet PHASE 1 : col M (fileId) → col T (attribue_a)
-        sheet_data = {}  # {file_id: attribue_a}
+        # Cross-référence Sheet PHASE 1 : col M (fileId) → données candidat
+        # {file_id: {attribue_a, nom, prenom, telephone, tentatives, derniere_tentative, sms_envoye}}
+        sheet_data = {}
+        recruiter_role = session.get('recruiter_role', '')
+        traites_aujourd_hui = 0
+        visios_envoyees = 0
+        from zoneinfo import ZoneInfo
+        today_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d')
         try:
             gc = get_sheets_client()
             if gc:
@@ -2057,36 +2063,70 @@ def cv_inbox():
                 for i, row in enumerate(rows):
                     if i == 0:
                         continue
-                    fid = (row[12] if len(row) > 12 else '').strip()
+                    fid       = (row[12] if len(row) > 12 else '').strip()
+                    attribue_a = (row[19] if len(row) > 19 else '').strip()
+                    derniere   = (row[17] if len(row) > 17 else '').strip()
+                    statut     = (row[5]  if len(row) > 5  else '').strip()
+                    # Compteurs du jour (tous fileIds, filtrés par attribution)
+                    if derniere.startswith(today_paris):
+                        if recruiter_role == 'admin' or attribue_a == recruiter_name:
+                            traites_aujourd_hui += 1
+                            if statut == 'CONTACTÉ':
+                                visios_envoyees += 1
                     if fid:
-                        attribue_a = (row[19] if len(row) > 19 else '').strip()
-                        sheet_data[fid] = attribue_a
+                        sheet_data[fid] = {
+                            'attribue_a':        attribue_a,
+                            'nom':               (row[0]  if len(row) > 0  else '').strip(),
+                            'prenom':            (row[1]  if len(row) > 1  else '').strip(),
+                            'telephone':         (row[3]  if len(row) > 3  else '').strip(),
+                            'tentatives':        (row[16] if len(row) > 16 else '').strip(),
+                            'derniere_tentative': derniere,
+                            'sms_envoye':        (row[18] if len(row) > 18 else '').strip(),
+                        }
         except Exception as e:
             print(f'[CV-PIPELINE] Erreur cross-ref Sheet: {e}')
 
-        recruiter_role = session.get('recruiter_role', '')
         files_out = []
         for f in results:
-            fid = f['id']
-            attribue_a = sheet_data.get(fid, '')
+            fid   = f['id']
+            sdata = sheet_data.get(fid, {})
+            attribue_a  = sdata.get('attribue_a', '') if sdata else ''
             profil_cree = fid in sheet_data
             # Filtre d'attribution : pour source et attente, masquer les fiches des autres
             # Les admins voient toute la pile sans filtre
             if folder_param != 'tous' and recruiter_role != 'admin' and attribue_a and attribue_a != recruiter_name:
                 continue
             files_out.append({
-                'fileId': fid,
-                'name': f.get('name', ''),
-                'size': int(f.get('size', 0)),
-                'mimeType': f.get('mimeType', ''),
-                'createdTime': f.get('createdTime', ''),
-                'modifiedTime': f.get('modifiedTime', ''),
-                'webViewLink': f.get('webViewLink', ''),
-                'profilCree': profil_cree,
-                'attribue_a': attribue_a,
-                'dossier': f.get('_dossier', ''),
+                'fileId':             fid,
+                'name':               f.get('name', ''),
+                'size':               int(f.get('size', 0)),
+                'mimeType':           f.get('mimeType', ''),
+                'createdTime':        f.get('createdTime', ''),
+                'modifiedTime':       f.get('modifiedTime', ''),
+                'webViewLink':        f.get('webViewLink', ''),
+                'profilCree':         profil_cree,
+                'attribue_a':         attribue_a,
+                'dossier':            f.get('_dossier', ''),
+                'nom':                sdata.get('nom', '')               if sdata else '',
+                'prenom':             sdata.get('prenom', '')            if sdata else '',
+                'telephone':          sdata.get('telephone', '')         if sdata else '',
+                'tentatives':         sdata.get('tentatives', '')        if sdata else '',
+                'derniere_tentative': sdata.get('derniere_tentative', '') if sdata else '',
+                'sms_envoye':         sdata.get('sms_envoye', '')        if sdata else '',
             })
-        return jsonify({'success': True, 'files': files_out, 'is_admin': recruiter_role == 'admin'})
+
+        # En attente : triée du plus ancien appel au plus récent (col R, format YYYY-MM-DD HH:MM)
+        if folder_param == 'attente':
+            files_out.sort(key=lambda f: f.get('derniere_tentative', '') or '')
+
+        return jsonify({
+            'success':             True,
+            'files':               files_out,
+            'is_admin':            recruiter_role == 'admin',
+            'traites_aujourd_hui': traites_aujourd_hui,
+            'visios_envoyees':     visios_envoyees,
+            'tel_rappel':          os.environ.get('RECRUTEMENT_TEL_RAPPEL', ''),
+        })
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
@@ -2445,11 +2485,60 @@ def cv_decision():
             ws.update(f'N{target_row}', [['OK' if move_ok else 'ECHEC']], value_input_option='RAW')
             ws.update(f'O{target_row}', [[move_error]], value_input_option='RAW')
 
+        # Écrire R = horodatage de la décision (YYYY-MM-DD HH:MM, heure Paris)
+        from zoneinfo import ZoneInfo
+        now_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
+        ws.update(f'R{target_row}', [[now_paris]], value_input_option='RAW')
+        print(f'[CV-PIPELINE] Ligne {target_row} → R={now_paris}')
+
+        # SANS_REPONSE : incrémenter Q (tentatives). Lecture depuis rows si ligne existante.
+        if action == 'SANS_REPONSE':
+            old_q_str = ''
+            if target_row <= len(rows):
+                old_row = rows[target_row - 1]
+                old_q_str = (old_row[16] if len(old_row) > 16 else '').strip()
+            try:
+                q_val = int(old_q_str) + 1
+            except (ValueError, TypeError):
+                q_val = 1
+            ws.update(f'Q{target_row}', [[q_val]], value_input_option='RAW')
+            print(f'[CV-PIPELINE] Ligne {target_row} → Q={q_val}')
+
         return jsonify({'success': True, 'sheet_ok': True, 'move_ok': move_ok})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)})
 
+
+@app.route('/api/recrutement/cv-sms-envoye', methods=['POST'])
+@login_required
+def cv_sms_envoye():
+    """Enregistre la date/heure d'envoi du SMS de rappel dans col S (SMS_ENVOYE)."""
+    try:
+        d = request.get_json()
+        file_id = (d.get('fileId', '') or '').strip()
+        email   = (d.get('email',  '') or '').strip()
+        if not file_id and not email:
+            return jsonify({'success': False, 'error': 'fileId ou email requis'}), 400
+
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+
+        target_row, _ = _find_phase1_row_by_fileid_or_email(ws, file_id or None, email or None)
+        if not target_row:
+            return jsonify({'success': False, 'error': 'Candidat non trouvé'}), 404
+
+        from zoneinfo import ZoneInfo
+        now_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
+        ws.update(f'S{target_row}', [[now_paris]], value_input_option='RAW')
+        print(f'[CV-PIPELINE] SMS enregistré row {target_row} : {now_paris}')
+        return jsonify({'success': True})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
 
 
 @app.route('/api/recrutement/phase1/modifier-contact', methods=['POST'])
@@ -3361,7 +3450,7 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
     except Exception as _pe:
         print(f'[RECRUTEMENT] Écriture P ignorée : {_pe}')
 
-    # ── 4. Écriture Sheet (F, I, K, L, M) — non bloquant ─────────────────────
+    # ── 4. Écriture Sheet (F, I, K, L, M, R) — non bloquant ──────────────────
     sheet_ok = False
     sheet_error = None
     try:
@@ -3372,8 +3461,12 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
             ws.update(f'K{target_row}:L{target_row}', [['', '']], value_input_option='RAW')
             if file_id:
                 ws.update(f'M{target_row}', [[file_id]], value_input_option='RAW')
+            # R = horodatage de la décision CONTACTÉ (YYYY-MM-DD HH:MM, heure Paris)
+            from zoneinfo import ZoneInfo
+            _now_r = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
+            ws.update(f'R{target_row}', [[_now_r]], value_input_option='RAW')
             sheet_ok = True
-            print(f'[RECRUTEMENT] Sheet row {target_row} mis à jour')
+            print(f'[RECRUTEMENT] Sheet row {target_row} mis à jour (R={_now_r})')
         else:
             sheet_error = f'Email {email} non trouvé dans PHASE 1'
             print(f'[RECRUTEMENT] {sheet_error}')
