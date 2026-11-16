@@ -1298,6 +1298,50 @@ def envoyer_contrat():
 
 PHASE1_HEADERS = ['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV', 'PRESENCE', 'LIEN_CANDIDATURE_ENVOYE', 'DRIVE_FILE_ID', 'DRIVE_MOVE_STATUS', 'DRIVE_MOVE_ERREUR', 'CRM_EVENT_ID', 'TENTATIVES', 'DERNIERE_TENTATIVE', 'SMS_ENVOYE', 'ATTRIBUE_A']
 
+# ── Cache PHASE 1 en mémoire ─────────────────────────────────────────────
+# Un seul get_all_values() par cycle lecture/écriture, TTL 30 s.
+# Avec deux workers Render, chaque worker a son cache ;
+# TTL 30 s garantit qu'une attribution par l'un est vue par l'autre en < 1 min.
+_phase1_cache = {'rows': None, 'ts': 0.0}
+_PHASE1_CACHE_TTL = 30
+
+
+def _read_phase1_rows(ws=None, force_fresh=False):
+    """Rows PHASE 1 depuis le cache (< 30 s) ou depuis le Sheet.
+    force_fresh=True contourne le cache — obligatoire pour toute lecture
+    qui DÉCIDE d'une écriture (recherche avant append, attribution)."""
+    now = time.time()
+    if not force_fresh and _phase1_cache['rows'] is not None and now - _phase1_cache['ts'] < _PHASE1_CACHE_TTL:
+        return _phase1_cache['rows']
+    if ws is None:
+        gc = get_sheets_client()
+        if not gc:
+            return []
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+    rows = ws.get_all_values()
+    _phase1_cache['rows'] = rows
+    _phase1_cache['ts'] = now
+    return rows
+
+
+def _invalidate_phase1_cache():
+    """Force la prochaine lecture à interroger le Sheet."""
+    _phase1_cache['rows'] = None
+    _phase1_cache['ts'] = 0.0
+
+
+def _friendly_sheets_error(e):
+    """Message français pour les erreurs Google Sheets — le détail reste dans les logs."""
+    err = str(e)
+    print(f'[SHEETS-ERROR] {err}')
+    if '429' in err or 'Quota' in err or 'quota' in err or 'RATE_LIMIT' in err:
+        return "Google Sheets est momentanément saturé, réessayez dans une minute."
+    if 'already exists' in err:
+        return "Erreur temporaire de configuration, réessayez."
+    return "Erreur de communication avec Google Sheets, réessayez dans un instant."
+
+
 # ===== PIPELINE CV — dossiers Drive =====
 _CV_FOLDER_IDS = {
     'CV_SOURCE_FOLDER_ID':  os.environ.get('CV_SOURCE_FOLDER_ID', ''),
@@ -1351,7 +1395,7 @@ def _find_phase1_row(ws, email, session=None):
     email = (email or '').strip().lower()
     if not email:
         return None, None
-    rows = ws.get_all_values()
+    rows = _read_phase1_rows(ws)
     matches = []
     for i, row in enumerate(rows):
         if i == 0:
@@ -1391,17 +1435,28 @@ def _build_session_iso(iso_date, heure):
 
 def _get_or_create_phase1(sh):
     """Retourne le worksheet PHASE 1, le crée si absent, et s'assure que le header va jusqu'à T1.
-    N'écrit que les colonnes manquantes, une par une — jamais les colonnes existantes."""
+    N'écrit que les colonnes manquantes, une par une — jamais les colonnes existantes.
+    Idempotent : si le worksheet existe, on le récupère sans le recréer."""
     _COLS = 'ABCDEFGHIJKLMNOPQRST'
+    # 1. Tenter de récupérer l'onglet existant
     try:
         ws = sh.worksheet('PHASE 1')
+    except Exception:
+        # Onglet absent → le créer. Si « already exists » (race condition), récupérer.
+        try:
+            ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=len(PHASE1_HEADERS))
+            ws.update('A1:T1', [PHASE1_HEADERS], value_input_option='RAW')
+        except Exception:
+            ws = sh.worksheet('PHASE 1')
+        return ws
+    # 2. Compléter le header si colonnes manquantes (non bloquant)
+    try:
         hdr = ws.row_values(1)
         if len(hdr) < len(PHASE1_HEADERS):
             for idx in range(len(hdr), len(PHASE1_HEADERS)):
                 ws.update(f'{_COLS[idx]}1', [[PHASE1_HEADERS[idx]]], value_input_option='RAW')
     except Exception:
-        ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=len(PHASE1_HEADERS))
-        ws.update('A1:T1', [PHASE1_HEADERS], value_input_option='RAW')
+        pass
     return ws
 
 # ===== PHASE 1 — Import CV + Profils =====
@@ -1415,7 +1470,7 @@ def list_candidats_phase1():
             return jsonify({'success': False, 'error': 'Sheets non configuré'})
         sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
         ws = _get_or_create_phase1(sh)
-        rows = ws.get_all_values()
+        rows = _read_phase1_rows(ws)
         candidats = []
         for i, row in enumerate(rows):
             if i == 0:
@@ -1969,7 +2024,7 @@ def session_destinataires():
             return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
         sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
         ws = _get_or_create_phase1(sh)
-        rows = ws.get_all_values()
+        rows = _read_phase1_rows(ws)
 
         # Même logique que envoyer-lien : PRESENT + col L vide + dédupliqué
         seen = {}
@@ -2005,19 +2060,16 @@ def session_destinataires():
 @app.route('/api/recrutement/cv-inbox')
 @login_required
 def cv_inbox():
-    """Liste les fichiers d'un dossier CV Drive.
-    ?folder=source (défaut) | attente | tous
-    'tous' lit les deux dossiers (source + attente) sans filtre d'attribution.
-    """
+    """Retourne les trois listes (source, attente, tous) + compteurs en un seul appel.
+    Une seule lecture Sheet (cache 30 s), deux lectures Drive (source + attente)."""
     if not _CV_DRIVE_CONFIGURED:
         return jsonify({'success': False, 'error': 'Configuration Drive incomplète', 'missing': _CV_MISSING_VARS}), 503
     try:
-        folder_param = request.args.get('folder', 'source').strip()
         recruiter_name = session.get('recruiter_name', '')
+        recruiter_role = session.get('recruiter_role', '')
         drive = _get_drive_client()
 
         def _list_folder(folder_id, dossier_label):
-            """Retourne la liste des fichiers d'un dossier Drive avec le label dossier."""
             out = []
             page_token = None
             while True:
@@ -2038,90 +2090,80 @@ def cv_inbox():
                     break
             return out
 
-        if folder_param == 'tous':
-            results = _list_folder(_CV_FOLDER_IDS['CV_SOURCE_FOLDER_ID'], 'À traiter')
-            results += _list_folder(_CV_FOLDER_IDS['CV_ATTENTE_FOLDER_ID'], 'En attente')
-        elif folder_param == 'attente':
-            results = _list_folder(_CV_FOLDER_IDS['CV_ATTENTE_FOLDER_ID'], 'En attente')
-        else:
-            results = _list_folder(_CV_FOLDER_IDS['CV_SOURCE_FOLDER_ID'], 'À traiter')
+        source_drive  = _list_folder(_CV_FOLDER_IDS['CV_SOURCE_FOLDER_ID'],  'À traiter')
+        attente_drive = _list_folder(_CV_FOLDER_IDS['CV_ATTENTE_FOLDER_ID'], 'En attente')
 
-        # Cross-référence Sheet PHASE 1 : col M (fileId) → données candidat
-        # {file_id: {attribue_a, nom, prenom, telephone, tentatives, derniere_tentative, sms_envoye}}
+        # Une seule lecture Sheet (cache 30 s)
         sheet_data = {}
-        recruiter_role = session.get('recruiter_role', '')
         traites_aujourd_hui = 0
         visios_envoyees = 0
         from zoneinfo import ZoneInfo
         today_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d')
         try:
-            gc = get_sheets_client()
-            if gc:
-                sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
-                ws = _get_or_create_phase1(sh)
-                rows = ws.get_all_values()
-                for i, row in enumerate(rows):
-                    if i == 0:
-                        continue
-                    fid       = (row[12] if len(row) > 12 else '').strip()
-                    attribue_a = (row[19] if len(row) > 19 else '').strip()
-                    derniere   = (row[17] if len(row) > 17 else '').strip()
-                    statut     = (row[5]  if len(row) > 5  else '').strip()
-                    # Compteurs du jour (tous fileIds, filtrés par attribution)
-                    if derniere.startswith(today_paris):
-                        if recruiter_role == 'admin' or attribue_a == recruiter_name:
-                            traites_aujourd_hui += 1
-                            if statut == 'CONTACTÉ':
-                                visios_envoyees += 1
-                    if fid:
-                        sheet_data[fid] = {
-                            'attribue_a':        attribue_a,
-                            'nom':               (row[0]  if len(row) > 0  else '').strip(),
-                            'prenom':            (row[1]  if len(row) > 1  else '').strip(),
-                            'telephone':         (row[3]  if len(row) > 3  else '').strip(),
-                            'tentatives':        (row[16] if len(row) > 16 else '').strip(),
-                            'derniere_tentative': derniere,
-                            'sms_envoye':        (row[18] if len(row) > 18 else '').strip(),
-                        }
+            rows = _read_phase1_rows()
+            for i, row in enumerate(rows):
+                if i == 0:
+                    continue
+                fid        = (row[12] if len(row) > 12 else '').strip()
+                attribue_a = (row[19] if len(row) > 19 else '').strip()
+                derniere   = (row[17] if len(row) > 17 else '').strip()
+                statut     = (row[5]  if len(row) > 5  else '').strip()
+                if derniere.startswith(today_paris):
+                    if recruiter_role == 'admin' or attribue_a == recruiter_name:
+                        traites_aujourd_hui += 1
+                        if statut == 'CONTACTÉ':
+                            visios_envoyees += 1
+                if fid:
+                    sheet_data[fid] = {
+                        'attribue_a':         attribue_a,
+                        'nom':                (row[0]  if len(row) > 0  else '').strip(),
+                        'prenom':             (row[1]  if len(row) > 1  else '').strip(),
+                        'telephone':          (row[3]  if len(row) > 3  else '').strip(),
+                        'tentatives':         (row[16] if len(row) > 16 else '').strip(),
+                        'derniere_tentative': derniere,
+                        'sms_envoye':         (row[18] if len(row) > 18 else '').strip(),
+                    }
         except Exception as e:
             print(f'[CV-PIPELINE] Erreur cross-ref Sheet: {e}')
 
-        files_out = []
-        for f in results:
-            fid   = f['id']
-            sdata = sheet_data.get(fid, {})
-            attribue_a  = sdata.get('attribue_a', '') if sdata else ''
-            profil_cree = fid in sheet_data
-            # Filtre d'attribution : pour source et attente, masquer les fiches des autres
-            # Les admins voient toute la pile sans filtre
-            if folder_param != 'tous' and recruiter_role != 'admin' and attribue_a and attribue_a != recruiter_name:
-                continue
-            files_out.append({
-                'fileId':             fid,
-                'name':               f.get('name', ''),
-                'size':               int(f.get('size', 0)),
-                'mimeType':           f.get('mimeType', ''),
-                'createdTime':        f.get('createdTime', ''),
-                'modifiedTime':       f.get('modifiedTime', ''),
-                'webViewLink':        f.get('webViewLink', ''),
-                'profilCree':         profil_cree,
-                'attribue_a':         attribue_a,
-                'dossier':            f.get('_dossier', ''),
-                'nom':                sdata.get('nom', '')               if sdata else '',
-                'prenom':             sdata.get('prenom', '')            if sdata else '',
-                'telephone':          sdata.get('telephone', '')         if sdata else '',
-                'tentatives':         sdata.get('tentatives', '')        if sdata else '',
-                'derniere_tentative': sdata.get('derniere_tentative', '') if sdata else '',
-                'sms_envoye':         sdata.get('sms_envoye', '')        if sdata else '',
-            })
+        def _build_files(drive_results, apply_attrib_filter):
+            out = []
+            for f in drive_results:
+                fid   = f['id']
+                sdata = sheet_data.get(fid, {})
+                att   = sdata.get('attribue_a', '') if sdata else ''
+                if apply_attrib_filter and recruiter_role != 'admin' and att and att != recruiter_name:
+                    continue
+                out.append({
+                    'fileId':             fid,
+                    'name':               f.get('name', ''),
+                    'size':               int(f.get('size', 0)),
+                    'mimeType':           f.get('mimeType', ''),
+                    'createdTime':        f.get('createdTime', ''),
+                    'modifiedTime':       f.get('modifiedTime', ''),
+                    'webViewLink':        f.get('webViewLink', ''),
+                    'profilCree':         fid in sheet_data,
+                    'attribue_a':         att,
+                    'dossier':            f.get('_dossier', ''),
+                    'nom':                sdata.get('nom', '')               if sdata else '',
+                    'prenom':             sdata.get('prenom', '')            if sdata else '',
+                    'telephone':          sdata.get('telephone', '')         if sdata else '',
+                    'tentatives':         sdata.get('tentatives', '')        if sdata else '',
+                    'derniere_tentative': sdata.get('derniere_tentative', '') if sdata else '',
+                    'sms_envoye':         sdata.get('sms_envoye', '')        if sdata else '',
+                })
+            return out
 
-        # En attente : triée du plus ancien appel au plus récent (col R, format YYYY-MM-DD HH:MM)
-        if folder_param == 'attente':
-            files_out.sort(key=lambda f: f.get('derniere_tentative', '') or '')
+        source_files  = _build_files(source_drive,  apply_attrib_filter=True)
+        attente_files = _build_files(attente_drive,  apply_attrib_filter=True)
+        attente_files.sort(key=lambda f: f.get('derniere_tentative', '') or '')
+        tous_files    = _build_files(source_drive + attente_drive, apply_attrib_filter=False)
 
         return jsonify({
             'success':             True,
-            'files':               files_out,
+            'source':              source_files,
+            'attente':             attente_files,
+            'tous':                tous_files,
             'is_admin':            recruiter_role == 'admin',
             'traites_aujourd_hui': traites_aujourd_hui,
             'visios_envoyees':     visios_envoyees,
@@ -2129,7 +2171,7 @@ def cv_inbox():
         })
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': _friendly_sheets_error(e)})
 
 
 @app.route('/api/recrutement/cv-extraire', methods=['POST'])
@@ -2176,7 +2218,7 @@ def cv_extraire():
             return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
         sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
         ws = _get_or_create_phase1(sh)
-        rows = ws.get_all_values()
+        rows = _read_phase1_rows(ws, force_fresh=True)  # décide existant vs nouveau → jamais le cache
 
         # 2. Chercher ligne existante par fileId (col M, index 12)
         target_row = None
@@ -2261,8 +2303,9 @@ def cv_extraire():
                 '',             # T = ATTRIBUE_A (séquence d'attribution ci-dessous)
             ]
             ws.append_row(row_data, value_input_option='RAW')
+            _invalidate_phase1_cache()
             # Retrouver le numéro de ligne exact par fileId (robuste aux insertions concurrentes)
-            rows2 = ws.get_all_values()
+            rows2 = _read_phase1_rows(ws, force_fresh=True)
             for i, row in enumerate(rows2):
                 if i == 0:
                     continue
@@ -2297,6 +2340,7 @@ def cv_extraire():
         # 4c. T vide → écrire, puis 4d. relire pour détecter la course
         if not current_T:
             ws.update(f'T{target_row}', [[recruiter_name]], value_input_option='RAW')
+            _invalidate_phase1_cache()
             reread = ws.row_values(target_row)
             reread_T = (reread[19] if len(reread) > 19 else '').strip()
             if reread_T != recruiter_name:
@@ -2317,7 +2361,7 @@ def cv_extraire():
         })
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': _friendly_sheets_error(e)})
 
 
 @app.route('/api/recrutement/cv-attribuer', methods=['POST'])
@@ -2339,6 +2383,7 @@ def cv_attribuer():
         if not target_row:
             return jsonify({'success': False, 'error': 'Fiche introuvable dans PHASE 1'}), 404
         ws.update(f'T{target_row}', [[recruiter_name]], value_input_option='RAW')
+        _invalidate_phase1_cache()
         print(f'[CV-PIPELINE] Attribution forcée : {file_id} → {recruiter_name}')
         return jsonify({'success': True, 'attribue_a': recruiter_name})
     except Exception as e:
@@ -2420,7 +2465,7 @@ def cv_decision():
 
         # Chercher une ligne existante par fileId (col M)
         target_row = None
-        rows = ws.get_all_values()
+        rows = _read_phase1_rows(ws, force_fresh=True)  # décide existant vs nouveau → jamais le cache
         for i, row in enumerate(rows):
             if i == 0:
                 continue
@@ -2504,10 +2549,11 @@ def cv_decision():
             ws.update(f'Q{target_row}', [[q_val]], value_input_option='RAW')
             print(f'[CV-PIPELINE] Ligne {target_row} → Q={q_val}')
 
+        _invalidate_phase1_cache()
         return jsonify({'success': True, 'sheet_ok': True, 'move_ok': move_ok})
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': _friendly_sheets_error(e)})
 
 
 @app.route('/api/recrutement/cv-sms-envoye', methods=['POST'])
@@ -2534,11 +2580,12 @@ def cv_sms_envoye():
         from zoneinfo import ZoneInfo
         now_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
         ws.update(f'S{target_row}', [[now_paris]], value_input_option='RAW')
+        _invalidate_phase1_cache()
         print(f'[CV-PIPELINE] SMS enregistré row {target_row} : {now_paris}')
         return jsonify({'success': True})
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': _friendly_sheets_error(e)})
 
 
 @app.route('/api/recrutement/phase1/modifier-contact', methods=['POST'])
@@ -2560,7 +2607,7 @@ def modifier_contact_phase1():
             return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
         sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
         ws = _get_or_create_phase1(sh)
-        rows = ws.get_all_values()
+        rows = _read_phase1_rows(ws)
 
         # Trouver la ligne par fileId (col M, index 12) ou par email (col C, index 2)
         target_row = None
@@ -2588,15 +2635,16 @@ def modifier_contact_phase1():
             ws.update(f'D{target_row}', [[new_tel.strip()]], value_input_option='RAW')
             print(f'[PHASE1] Téléphone modifié row {target_row} → {new_tel.strip()}')
 
+        _invalidate_phase1_cache()
         return jsonify({'success': True, 'row': target_row})
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': _friendly_sheets_error(e)})
 
 
 def _find_phase1_row_by_fileid_or_email(ws, file_id=None, email=None):
     """Cherche une ligne par fileId (col M) puis par email (col C). Retourne (row_num, row_data) ou (None, None)."""
-    rows = ws.get_all_values()
+    rows = _read_phase1_rows(ws)
     if file_id:
         for i, row in enumerate(rows):
             if i == 0:
@@ -3465,6 +3513,7 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
             from zoneinfo import ZoneInfo
             _now_r = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
             ws.update(f'R{target_row}', [[_now_r]], value_input_option='RAW')
+            _invalidate_phase1_cache()
             sheet_ok = True
             print(f'[RECRUTEMENT] Sheet row {target_row} mis à jour (R={_now_r})')
         else:

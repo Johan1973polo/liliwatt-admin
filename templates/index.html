@@ -4479,6 +4479,7 @@ async function _svDoDecaler(email, fileId) {
 // ===== CV À TRAITER =====
 
 var _cvCurrentFolder  = 'source';
+var _cvData           = null;  // dernière réponse complète de cv-inbox {source, attente, tous, …}
 var _cvQueue          = [];    // [{fileId, name, webViewLink, prenom, nom, telephone, tentatives, derniere_tentative, sms_envoye}]
 var _cvCurrentFileId  = null;  // fileId du candidat actuellement chargé dans le script
 var _prefetched       = null;  // {fileId, promise} — prefetch N+1 au moment du chargement de N
@@ -4486,129 +4487,134 @@ var _pendingSms       = null;  // {prenom, telephone, fileId} — SMS en attente
 var _telRappel        = '';    // valeur de RECRUTEMENT_TEL_RAPPEL (retournée par cv-inbox)
 var _cvProcessedToday = new Set(); // fileIds traités dans la session courante
 
+function _cleanFileName(name) {
+  name = name.replace(/\.(pdf|docx?|odt|rtf|txt)$/i, '');
+  name = name.replace(/^(cv|CV|Cv)[\s_.\-]*/i, '');
+  name = name.replace(/([a-z])([A-Z])/g, '$1 $2');
+  name = name.replace(/[_.\-]+/g, ' ');
+  name = name.replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+  return name.trim() || '(sans nom)';
+}
+
 function _cvSwitchFolder(folder) {
   _cvCurrentFolder = folder;
-  // Update tab styles
   var mesBtn  = document.getElementById('cvTabMes');
   var attBtn  = document.getElementById('cvTabAttente');
   var tousBtn = document.getElementById('cvTabTous');
   if (mesBtn)  { mesBtn.style.background  = folder === 'source'  ? '#7c3aed' : '#fff'; mesBtn.style.color  = folder === 'source'  ? '#fff' : '#7c3aed'; }
   if (attBtn)  { attBtn.style.background  = folder === 'attente' ? '#f59e0b' : '#fff'; attBtn.style.color  = folder === 'attente' ? '#fff' : '#f59e0b'; }
   if (tousBtn) { tousBtn.style.background = folder === 'tous'    ? '#059669' : '#fff'; tousBtn.style.color = folder === 'tous'    ? '#fff' : '#059669'; }
-  loadCvInbox();
+  if (_cvData) { _renderCvInbox(); } else { loadCvInbox(); }
 }
 
 async function loadCvInbox() {
-  await _recruiterInfoReady;  // garantit que _recruiterRole est connu avant de dessiner
+  await _recruiterInfoReady;
   var div = document.getElementById('cvInboxList');
   if (!div) return;
   div.innerHTML = '<div style="color:#9ca3af;">⏳ Chargement…</div>';
   try {
-    var r = await fetch('/api/recrutement/cv-inbox?folder=' + _cvCurrentFolder);
+    var r = await fetch('/api/recrutement/cv-inbox');
     var d = await r.json();
     if (!d.success) {
-      div.innerHTML = '<div style="color:#ef4444;">' + (d.error || 'Erreur') + (d.missing ? '<br>Variables manquantes : ' + d.missing.join(', ') : '') + '</div>';
+      div.innerHTML = '<div style="color:#ef4444;">' + _escH(d.error || 'Erreur') + '</div>';
       return;
     }
-    var files = d.files || [];
-    var nbNew = files.filter(function(f) { return !f.profilCree; }).length;
-    var countIdMap = {source: 'cvCountSource', attente: 'cvCountAttente', tous: 'cvCountTous'};
-    var countEl = document.getElementById(countIdMap[_cvCurrentFolder] || 'cvCountSource');
-    if (countEl) countEl.textContent = '(' + files.length + ')';
-    var accEl = document.getElementById('accCvCount');
-    if (accEl && _cvCurrentFolder === 'source') accEl.textContent = '(' + files.length + ')';
-    if (!files.length) {
-      div.innerHTML = '<div style="color:#9ca3af;">Le dossier CV est vide. Déposez un CV dans le dossier Drive pour le voir apparaître ici.</div>';
-      return;
-    }
-    var isTous = _cvCurrentFolder === 'tous';
-    var showAttrib = isTous || d.is_admin === true;
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-      + '<tr style="background:#f5f3ff;font-weight:700;color:#1e1b4b;">'
-      + '<td style="padding:8px 10px;">Fichier</td><td style="padding:8px 10px;">Taille</td>'
-      + '<td style="padding:8px 10px;">Date dépôt</td>';
-    if (isTous) html += '<td style="padding:8px 10px;">Dossier</td>';
-    if (showAttrib) html += '<td style="padding:8px 10px;">Attribué à</td>';
-    html += '<td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;">Actions</td></tr>';
-    files.forEach(function(f) {
-      var size = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' Mo' : Math.round(f.size / 1024) + ' Ko';
-      var date = (f.createdTime || f.modifiedTime) ? new Date(f.createdTime || f.modifiedTime).toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'}) : '—';
-      var statut = f.profilCree
-        ? '<span style="color:#16a34a;font-weight:600;font-size:11px;">✅ Déjà extrait</span>'
-        : '<span style="color:#f59e0b;font-weight:600;font-size:11px;">⏳ À extraire</span>';
-      var isMine = !f.attribue_a || f.attribue_a === _recruiterName;
-      var actions;
-      if (isTous && !isMine) {
-        actions = '<button onclick="_cvAttribuer(\'' + f.fileId + '\',\'' + (f.attribue_a||'').replace(/'/g,"\\'") + '\')" style="padding:5px 12px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">Me l\'attribuer</button>';
-      } else {
-        actions = '<button onclick="_loadCandidat(\'' + f.fileId + '\')" style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">' + (f.profilCree ? '🔄 Ré-extraire' : '📋 Extraire') + '</button>';
-      }
-      html += '<tr style="border-bottom:1px solid #f3f4f6;">'
-        + '<td style="padding:8px 10px;"><a href="' + f.webViewLink + '" target="_blank" style="color:#7c3aed;text-decoration:none;font-weight:600;">' + f.name + '</a></td>'
-        + '<td style="padding:8px 10px;">' + size + '</td>'
-        + '<td style="padding:8px 10px;">' + date + '</td>';
-      if (isTous) {
-        var dossierColor = f.dossier === 'En attente' ? '#f59e0b' : '#7c3aed';
-        html += '<td style="padding:8px 10px;"><span style="color:' + dossierColor + ';font-weight:600;font-size:11px;">' + _escH(f.dossier||'') + '</span></td>';
-      }
-      if (showAttrib) {
-        var attrDisplay = f.attribue_a
-          ? '<span style="color:#059669;font-weight:600;font-size:11px;">' + _escH(f.attribue_a) + '</span>'
-          : '<span style="color:#9ca3af;font-size:11px;">(libre)</span>';
-        html += '<td style="padding:8px 10px;">' + attrDisplay + '</td>';
-      }
-      html += '<td style="padding:8px 10px;">' + statut + '</td>'
-        + '<td style="padding:8px 10px;">' + actions + '</td></tr>';
-    });
-    html += '</table>';
-    div.innerHTML = html;
-
-    // Mettre à jour la file d'appel (source et attente — pas "tous")
-    if (_cvCurrentFolder !== 'tous') {
-      _cvQueue = files.map(function(f) {
-        return {
-          fileId:             f.fileId,
-          name:               f.name,
-          webViewLink:        f.webViewLink || '',
-          prenom:             f.prenom || '',
-          nom:                f.nom || '',
-          telephone:          f.telephone || '',
-          tentatives:         f.tentatives || '',
-          derniere_tentative: f.derniere_tentative || '',
-          sms_envoye:         f.sms_envoye || '',
-        };
-      });
-      _renderQueue();
-      // Auto-charger le premier candidat non encore traité si aucun n'est en cours
-      if (!_cvCurrentFileId) {
-        var first = _cvQueue.find(function(q) { return !q.derniere_tentative && !_cvProcessedToday.has(q.fileId); });
-        if (!first) first = _cvQueue[0]; // tous déjà traités : prendre le premier quand même
-        if (first) _loadCandidat(first.fileId);
-      }
-    }
-
-    // Compteurs du jour
-    if (d.traites_aujourd_hui !== undefined) {
-      var cntEl = document.getElementById('cvInboxCounters');
-      if (cntEl) cntEl.textContent = 'Traités aujourd\'hui : ' + d.traites_aujourd_hui
-        + ' · Visios envoyées : ' + (d.visios_envoyees || 0);
-    }
-    // Numéro de rappel SMS (lu une fois, stable pendant la session)
+    _cvData = d;
     if (d.tel_rappel !== undefined) _telRappel = d.tel_rappel;
-
-    // Pré-charger les compteurs des onglets non actifs (fire-and-forget, une seule fois par compteur vide)
-    var _cvCountIdMap = {source:'cvCountSource', attente:'cvCountAttente', tous:'cvCountTous'};
-    ['source', 'attente', 'tous'].forEach(function(f) {
-      if (f === _cvCurrentFolder) return;
-      var el = document.getElementById(_cvCountIdMap[f]);
-      if (!el || el.textContent) return; // déjà rempli
-      fetch('/api/recrutement/cv-inbox?folder=' + f)
-        .then(function(r) { return r.ok ? r.json() : null; })
-        .then(function(d) { if (d && d.success && el) el.textContent = '(' + d.files.length + ')'; })
-        .catch(function() {});
-    });
+    _renderCvInbox();
   } catch(e) {
     div.innerHTML = '<div style="color:#ef4444;">Erreur réseau : ' + e.message + '</div>';
+  }
+}
+
+function _renderCvInbox() {
+  if (!_cvData) return;
+  var d = _cvData;
+  var div = document.getElementById('cvInboxList');
+  if (!div) return;
+
+  var files = d[_cvCurrentFolder] || [];
+
+  // Compteurs des trois onglets (toujours à jour, un seul appel réseau)
+  var srcEl  = document.getElementById('cvCountSource');
+  var attEl  = document.getElementById('cvCountAttente');
+  var tousEl = document.getElementById('cvCountTous');
+  var accEl  = document.getElementById('accCvCount');
+  if (srcEl)  srcEl.textContent  = '(' + (d.source  || []).length + ')';
+  if (attEl)  attEl.textContent  = '(' + (d.attente || []).length + ')';
+  if (tousEl) tousEl.textContent = '(' + (d.tous    || []).length + ')';
+  if (accEl)  accEl.textContent  = '(' + (d.source  || []).length + ')';
+
+  // Compteurs du jour
+  var cntEl = document.getElementById('cvInboxCounters');
+  if (cntEl && d.traites_aujourd_hui !== undefined) {
+    cntEl.textContent = 'Traités aujourd\'hui : ' + d.traites_aujourd_hui
+      + ' · Visios envoyées : ' + (d.visios_envoyees || 0);
+  }
+
+  if (!files.length) {
+    div.innerHTML = '<div style="color:#9ca3af;">Le dossier CV est vide. Déposez un CV dans le dossier Drive pour le voir apparaître ici.</div>';
+    return;
+  }
+
+  var isTous = _cvCurrentFolder === 'tous';
+  var showAttrib = isTous || d.is_admin === true;
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    + '<tr style="background:#f5f3ff;font-weight:700;color:#1e1b4b;">'
+    + '<td style="padding:8px 10px;">Fichier</td><td style="padding:8px 10px;">Taille</td>'
+    + '<td style="padding:8px 10px;">Date dépôt</td>';
+  if (isTous) html += '<td style="padding:8px 10px;">Dossier</td>';
+  if (showAttrib) html += '<td style="padding:8px 10px;">Attribué à</td>';
+  html += '<td style="padding:8px 10px;">Statut</td><td style="padding:8px 10px;">Actions</td></tr>';
+  files.forEach(function(f) {
+    var size = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' Mo' : Math.round(f.size / 1024) + ' Ko';
+    var date = (f.createdTime || f.modifiedTime) ? new Date(f.createdTime || f.modifiedTime).toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'}) : '—';
+    var statut = f.profilCree
+      ? '<span style="color:#16a34a;font-weight:600;font-size:11px;">✅ Déjà extrait</span>'
+      : '<span style="color:#f59e0b;font-weight:600;font-size:11px;">⏳ À extraire</span>';
+    var isMine = !f.attribue_a || f.attribue_a === _recruiterName;
+    var actions;
+    if (isTous && !isMine) {
+      actions = '<button onclick="_cvAttribuer(\'' + f.fileId + '\',\'' + (f.attribue_a||'').replace(/'/g,"\\'") + '\')" style="padding:5px 12px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">Me l\'attribuer</button>';
+    } else {
+      actions = '<button onclick="_loadCandidat(\'' + f.fileId + '\')" style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">' + (f.profilCree ? '🔄 Ré-extraire' : '📋 Extraire') + '</button>';
+    }
+    html += '<tr style="border-bottom:1px solid #f3f4f6;">'
+      + '<td style="padding:8px 10px;"><a href="' + f.webViewLink + '" target="_blank" style="color:#7c3aed;text-decoration:none;font-weight:600;">' + f.name + '</a></td>'
+      + '<td style="padding:8px 10px;">' + size + '</td>'
+      + '<td style="padding:8px 10px;">' + date + '</td>';
+    if (isTous) {
+      var dossierColor = f.dossier === 'En attente' ? '#f59e0b' : '#7c3aed';
+      html += '<td style="padding:8px 10px;"><span style="color:' + dossierColor + ';font-weight:600;font-size:11px;">' + _escH(f.dossier||'') + '</span></td>';
+    }
+    if (showAttrib) {
+      var attrDisplay = f.attribue_a
+        ? '<span style="color:#059669;font-weight:600;font-size:11px;">' + _escH(f.attribue_a) + '</span>'
+        : '<span style="color:#9ca3af;font-size:11px;">(libre)</span>';
+      html += '<td style="padding:8px 10px;">' + attrDisplay + '</td>';
+    }
+    html += '<td style="padding:8px 10px;">' + statut + '</td>'
+      + '<td style="padding:8px 10px;">' + actions + '</td></tr>';
+  });
+  html += '</table>';
+  div.innerHTML = html;
+
+  // File d'appel (source et attente — pas "tous")
+  if (_cvCurrentFolder !== 'tous') {
+    _cvQueue = files.map(function(f) {
+      return {
+        fileId: f.fileId, name: f.name, webViewLink: f.webViewLink || '',
+        prenom: f.prenom || '', nom: f.nom || '', telephone: f.telephone || '',
+        tentatives: f.tentatives || '', derniere_tentative: f.derniere_tentative || '',
+        sms_envoye: f.sms_envoye || '',
+      };
+    });
+    _renderQueue();
+    if (!_cvCurrentFileId) {
+      var first = _cvQueue.find(function(q) { return !q.derniere_tentative && !_cvProcessedToday.has(q.fileId); });
+      if (!first) first = _cvQueue[0];
+      if (first) _loadCandidat(first.fileId);
+    }
   }
 }
 
@@ -4618,7 +4624,7 @@ function _cvLoadCandidat(fileId) { return _loadCandidat(fileId); }
 async function _loadCandidat(fileId) {
   // ── Ordre strict ──────────────────────────────────────────────────────────
   // 1. Réinitialiser _scrPhase — le SMS block, les compteurs et la file ne sont PAS réinitialisés
-  _scrPhase = 1;
+  _scrPhase = 0;
   // 2. Vider l'affichage
   var bandeau = document.getElementById('scrBandeau');
   bandeau.style.display = 'block';
@@ -4771,7 +4777,7 @@ function _renderQueue() {
   var html = '';
   _cvQueue.forEach(function(q) {
     var isCurrent = q.fileId === _cvCurrentFileId;
-    var displayName = (q.prenom ? q.prenom + ' ' : '') + (q.nom ? q.nom.toUpperCase() : q.name);
+    var displayName = (q.prenom ? q.prenom + ' ' : '') + (q.nom ? q.nom.toUpperCase() : _cleanFileName(q.name));
     var tel = q.telephone || '';
     var tent = parseInt(q.tentatives) || 0;
     var badges = '';
