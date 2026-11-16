@@ -122,14 +122,52 @@ ZOHO_CLIENT_SECRET = os.environ.get('ZOHO_CLIENT_SECRET', '')
 ZOHO_REFRESH_TOKEN = os.environ.get('ZOHO_REFRESH_TOKEN', '')
 ZOHO_ORG_ID = os.environ.get('ZOHO_ORG_ID', '')
 
+_zoho_token_cache = {'token': None, 'expires_at': 0.0}
+
 def get_zoho_token():
-    r = requests.post('https://accounts.zoho.eu/oauth/v2/token', data={
-        'refresh_token': ZOHO_REFRESH_TOKEN,
-        'client_id': ZOHO_CLIENT_ID,
-        'client_secret': ZOHO_CLIENT_SECRET,
-        'grant_type': 'refresh_token'
-    })
-    return r.json().get('access_token')
+    """Obtient un access_token Zoho avec mise en cache (validité 55 min).
+    Lève une exception explicite en cas d'échec :
+      - 'Zoho injoignable (réseau)'
+      - "Zoho a refusé l'authentification (<code>)"
+      - 'Zoho a répondu sans token (HTTP <code>)'
+    """
+    global _zoho_token_cache
+    now = time.time()
+    if _zoho_token_cache['token'] and now < _zoho_token_cache['expires_at'] - 300:
+        return _zoho_token_cache['token']
+
+    # Invalider avant la tentative pour ne pas renvoyer un token périmé en cas d'erreur
+    _zoho_token_cache = {'token': None, 'expires_at': 0.0}
+
+    try:
+        r = requests.post('https://accounts.zoho.eu/oauth/v2/token', data={
+            'refresh_token': ZOHO_REFRESH_TOKEN,
+            'client_id': ZOHO_CLIENT_ID,
+            'client_secret': ZOHO_CLIENT_SECRET,
+            'grant_type': 'refresh_token'
+        }, timeout=15)
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        raise Exception('Zoho injoignable (réseau)')
+    except Exception as exc:
+        raise Exception(f'Zoho injoignable (réseau) : {exc}')
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {}
+
+    token = data.get('access_token')
+    if token:
+        _zoho_token_cache = {'token': token, 'expires_at': now + 3600.0}
+        return token
+
+    zoho_error = data.get('error', '').strip()
+    if zoho_error:
+        print(f'[ZOHO] Refus authentification HTTP {r.status_code}: {zoho_error}')
+        raise Exception(f"Zoho a refusé l'authentification ({zoho_error})")
+
+    print(f'[ZOHO] Réponse sans token HTTP {r.status_code}')
+    raise Exception(f'Zoho a répondu sans token (HTTP {r.status_code})')
 
 
 _zoho_account_id_cache = None
@@ -1847,6 +1885,8 @@ def envoyer_lien_candidature():
         now_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
 
         envoyes = 0
+        token = get_zoho_token()           # obtenu une seule fois pour l'ensemble du lot
+        account_id = _zoho_get_account_id(token)
         for c in unique_recipients:
             prenom_display = _normalize_display_name(c['prenom']) or 'Monsieur/Madame'
             corps = '\n'.join([
@@ -1872,11 +1912,6 @@ def envoyer_lien_candidature():
             mail_html = mail_liliwatt('BIENVENUE', 'LILIWATT', corps)
 
             try:
-                token = get_zoho_token()
-                if not token:
-                    erreurs.append({'email': c['email'], 'erreur': 'Token Zoho indisponible'})
-                    continue
-                account_id = _zoho_get_account_id(token)
                 resp = requests.post(
                     f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
                     headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
@@ -2680,8 +2715,12 @@ def contrats_generer():
         except Exception as sheet_err:
             print(f'[CONTRATS] Sheet log warning: {sheet_err}')
 
-        # 7. Mail a johan.mallet@liliwatt.fr
-        token = get_zoho_token()
+        # 7. Mail a johan.mallet@liliwatt.fr (best effort : non bloquant)
+        try:
+            token = get_zoho_token()
+        except Exception as _token_err:
+            print(f'[CONTRATS] Token Zoho indisponible, mail non envoyé : {_token_err}')
+            token = None
         if token:
             docs_links = ''.join([
                 f'<tr><td style="padding:8px 0 4px;"><p style="margin:0 0 4px;font-weight:700;color:#1e1b4b;font-size:14px;">{l["nom"]}</p><p style="margin:0 0 4px;"><a href="{l["lien_gdoc"]}" style="color:#7c3aed;font-weight:600;text-decoration:none;font-size:13px;">🖋️ Signer le document (Google Doc)</a></p><p style="margin:0 0 8px;"><a href="{l["lien_pdf"]}" style="color:#6b7280;font-weight:500;text-decoration:none;font-size:12px;">📄 PDF (archive)</a></p></td></tr>'
@@ -3096,8 +3135,6 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
     mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_corps)
 
     token = get_zoho_token()
-    if not token:
-        raise Exception('Impossible de se connecter à Zoho Mail')
     account_id = _zoho_get_account_id(token)
     print(f'[RECRUTEMENT] Envoi invitation à {email}')
     resp = requests.post(
@@ -6146,7 +6183,13 @@ def _nl_send_thread(objet, titre, message, dest_map, fmt='newsletter', cta_texte
     escaped = html_mod.escape(message)
     escaped = re.sub(r'\n{2,}', '<br>', escaped).replace('\n', '<br>')
     body_html = _nl_parse_balises(escaped)
-    token_zoho = get_zoho_token()
+    try:
+        token_zoho = get_zoho_token()
+    except Exception as _tok_err:
+        _nl_status["en_cours"] = False
+        _nl_status["erreurs"].append(f'Zoho indisponible : {_tok_err}')
+        print(f'❌ [NEWSLETTER] Token Zoho indisponible : {_tok_err}')
+        return
     account_id = os.environ.get('ZOHO_ACCOUNT_ID', '8439060000000002002')
     base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://liliwatt-admin.onrender.com')
     for i, email in enumerate(destinataires):
