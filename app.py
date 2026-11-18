@@ -2516,12 +2516,20 @@ def cv_decision():
         print(f'[CV-PIPELINE] Ligne {target_row} → R={now_paris}')
 
         # RAPPEL : écrire U = date/heure de rappel demandée. Q n'est PAS incrémentée.
+        # Toute autre action : vider U (le rappel ne doit plus remonter en tête).
         if action == 'RAPPEL':
             rappel_date = (d.get('rappel_date', '') or '').strip()
             rappel_heure = (d.get('rappel_heure', '') or '').strip()
             if rappel_date and rappel_heure:
                 ws.update(f'U{target_row}', [[f'{rappel_date} {rappel_heure}']], value_input_option='RAW')
                 print(f'[CV-PIPELINE] Ligne {target_row} → U={rappel_date} {rappel_heure}')
+        else:
+            # Ne vider U que si elle est renseignée (économie d'une écriture Sheets)
+            old_u = ''
+            if target_row <= len(rows):
+                old_u = (rows[target_row - 1][20] if len(rows[target_row - 1]) > 20 else '').strip()
+            if old_u:
+                ws.update(f'U{target_row}', [['']], value_input_option='RAW')
 
         # SANS_REPONSE : incrémenter Q (tentatives). Lecture depuis rows si ligne existante.
         if action == 'SANS_REPONSE':
@@ -2578,6 +2586,32 @@ def cv_decision():
 
         _invalidate_phase1_cache()
         return jsonify({'success': True, 'sheet_ok': True, 'move_ok': move_ok})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': _friendly_sheets_error(e)})
+
+
+@app.route('/api/recrutement/cv-rappel-clear', methods=['POST'])
+@login_required
+def cv_rappel_clear():
+    """Vide la colonne U (RAPPEL_LE) d'un candidat."""
+    try:
+        d = request.get_json()
+        file_id = (d.get('fileId', '') or '').strip()
+        if not file_id:
+            return jsonify({'success': False, 'error': 'fileId requis'}), 400
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+        target_row, _ = _find_phase1_row_by_fileid_or_email(ws, file_id)
+        if not target_row:
+            return jsonify({'success': False, 'error': 'Candidat non trouvé'}), 404
+        ws.update(f'U{target_row}', [['']], value_input_option='RAW')
+        _invalidate_phase1_cache()
+        print(f'[CV-PIPELINE] Rappel retiré row {target_row}')
+        return jsonify({'success': True})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': _friendly_sheets_error(e)})
@@ -3638,6 +3672,9 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
             from zoneinfo import ZoneInfo
             _now_r = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
             ws.update(f'R{target_row}', [[_now_r]], value_input_option='RAW')
+            # Vider U si renseignée : un rappel programmé ne doit plus remonter après une visio
+            if _row_data and len(_row_data) > 20 and (_row_data[20] or '').strip():
+                ws.update(f'U{target_row}', [['']], value_input_option='RAW')
             _invalidate_phase1_cache()
             sheet_ok = True
             print(f'[RECRUTEMENT] Sheet row {target_row} mis à jour (R={_now_r})')

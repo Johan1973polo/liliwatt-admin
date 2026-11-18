@@ -4652,6 +4652,9 @@ async function _loadCandidat(fileId) {
   _pendingNote = null;
   var _nb = document.getElementById('noteBlock'); if (_nb) _nb.style.display = 'none';
   var _rb = document.getElementById('rappelBlock'); if (_rb) _rb.style.display = 'none';
+  // Vider le récapitulatif d'invitation et le résultat — rien ne doit survivre d'une fiche à l'autre
+  var _recap = document.getElementById('scrInviteRecap'); if (_recap) { _recap.style.display = 'none'; _recap.innerHTML = ''; }
+  var _res = document.getElementById('scrInviteResult'); if (_res) _res.innerHTML = '';
   // 2. Vider l'affichage
   var bandeau = document.getElementById('scrBandeau');
   bandeau.style.display = 'block';
@@ -4810,7 +4813,7 @@ function _renderQueue() {
     var badges = '';
     if (tent > 0) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#ddd6fe;color:#5b21b6;border-radius:4px;margin-right:2px;">' + (tent + 1) + 'ème</span>';
     if (q.sms_envoye) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#d1fae5;color:#065f46;border-radius:4px;margin-right:2px;">SMS</span>';
-    if (q.rappel_le) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#fef3c7;color:#92400e;border-radius:4px;margin-right:2px;">📞 ' + q.rappel_le.slice(11,16) + '</span>';
+    if (q.rappel_le) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#fef3c7;color:#92400e;border-radius:4px;margin-right:2px;">📞 ' + q.rappel_le.slice(11,16) + ' <span onclick="event.stopPropagation();_cvRappelClear(\'' + q.fileId + '\')" style="cursor:pointer;color:#ef4444;" title="Retirer le rappel">✕</span></span>';
     if (q.note_recruteur) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#dbeafe;color:#1e40af;border-radius:4px;margin-right:2px;">📝</span>';
     if (q.derniere_tentative && !q.rappel_le) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#fef3c7;color:#92400e;border-radius:4px;">✓</span>';
     html += '<div onclick="_loadCandidat(\'' + q.fileId + '\')" '
@@ -4989,6 +4992,27 @@ function _notePasser() {
   _pendingNote = null;
   var el = document.getElementById('noteBlock');
   if (el) el.style.display = 'none';
+}
+
+async function _cvRappelClear(fileId) {
+  try {
+    var r = await fetch('/api/recrutement/cv-rappel-clear', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({fileId: fileId})
+    });
+    var d = await r.json();
+    if (d.success) {
+      var qItem = _cvQueue.find(function(q) { return q.fileId === fileId; });
+      if (qItem) { qItem.rappel_le = ''; _renderQueue(); }
+      if (typeof loadCvInbox === 'function') loadCvInbox();
+    } else {
+      var res = document.getElementById('scrInviteResult');
+      if (res) res.innerHTML = '<span style="color:#ef4444;">❌ ' + _escH(d.error || 'Erreur') + '</span>';
+    }
+  } catch(e) {
+    var res = document.getElementById('scrInviteResult');
+    if (res) res.innerHTML = '<span style="color:#ef4444;">❌ Erreur réseau</span>';
+  }
 }
 
 // ===== RATTACHEMENT MEC =====
