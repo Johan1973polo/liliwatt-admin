@@ -1058,13 +1058,18 @@
               <!-- Boutons de décision — toujours visibles -->
               <div style="display:flex;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid #e9d5ff;">
                 <button onclick="scrPrepareInvite()" id="scrBtnInvite2" style="flex:1;padding:10px 16px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">📧 Programmer la visio</button>
+                <button onclick="_cvRappelDialog()" style="padding:10px 16px;background:#f59e0b;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">📞 Rappeler plus tard</button>
                 <button onclick="_cvDecision('SANS_REPONSE', this)" style="padding:10px 16px;background:#6366f1;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">📵 Sans réponse</button>
                 <button onclick="_cvDecision('REFUSE', this)" style="padding:10px 16px;background:#ef4444;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">✗ Non retenu</button>
               </div>
+              <!-- Sélecteur rappel -->
+              <div id="rappelBlock" style="display:none;margin-top:12px;padding:14px;background:#fffbeb;border-radius:10px;border:2px solid #f59e0b;font-size:13px;"></div>
               <div id="scrInviteRecap" style="display:none;margin-top:12px;padding:14px;background:#fff;border-radius:10px;border:2px solid #7c3aed;font-size:14px;"></div>
               <div id="scrInviteResult" style="margin-top:8px;font-size:13px;"></div>
               <!-- Bloc SMS de rappel — affiché après SANS RÉPONSE -->
               <div id="smsBlock" style="display:none;margin-top:12px;padding:14px;background:#f0fdf4;border-radius:10px;border:2px solid #22c55e;font-size:13px;"></div>
+              <!-- Bloc note recruteuse -->
+              <div id="noteBlock" style="display:none;margin-top:12px;padding:14px;background:#eff6ff;border-radius:10px;border:2px solid #3b82f6;font-size:13px;"></div>
               <!-- Overlay objection -->
               <div id="scrObjOverlay" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.85);z-index:10;border-radius:12px;padding:24px;overflow-y:auto;">
                 <button onclick="scrCloseObj()" style="position:absolute;top:10px;right:14px;background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;">✕</button>
@@ -4074,6 +4079,8 @@ async function scrConfirmInvite(){
       res.innerHTML = '<span style="color:#16a34a;font-weight:700;">'+msg+'</span>';
       document.getElementById('scrInviteRecap').style.display = 'none';
       if (_scrCv && _scrCv.fileId) {
+        _pendingNote = {fileId: _scrCv.fileId};
+        _renderNoteBlock();
         _cvProcessedToday.add(_scrCv.fileId);
         _cvAdvance();
       }
@@ -4088,25 +4095,28 @@ async function scrConfirmInvite(){
   }
 }
 
-async function _cvDecision(action, btn) {
+async function _cvDecision(action, btn, extraData) {
   if (!_scrCv || !_scrCv.fileId) { alert('Aucun CV chargé depuis le dossier Drive.'); return; }
-  var label = action === 'REFUSE' ? 'non retenu' : 'sans réponse';
+  var labelMap = {REFUSE:'non retenu', SANS_REPONSE:'sans réponse', RAPPEL:'rappel programmé'};
+  var label = labelMap[action] || action;
   if (action === 'REFUSE' && !confirm('Marquer ce candidat comme non retenu ?')) return;
   if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; }
   var res = document.getElementById('scrInviteResult');
   res.innerHTML = '<span style="color:#9ca3af;">⏳ Enregistrement…</span>';
   try {
+    var payload = {
+      fileId: _scrCv.fileId, action: action,
+      nom: document.getElementById('scrNom')?.value?.trim() || _scrCv.nom || '',
+      prenom: document.getElementById('scrPrenom')?.value?.trim() || _scrCv.prenom || '',
+      email: document.getElementById('scrEmail')?.value?.trim() || _scrCv.email || '',
+      telephone: document.getElementById('scrTel')?.value?.trim() || _scrCv.telephone || '',
+      adresse: _scrCv.adresse || '',
+      poste: document.getElementById('scrExp')?.value?.trim() || _scrCv.poste || '',
+    };
+    if (extraData) Object.assign(payload, extraData);
     var r = await fetch('/api/recrutement/cv-decision', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        fileId: _scrCv.fileId, action: action,
-        nom: document.getElementById('scrNom')?.value?.trim() || _scrCv.nom || '',
-        prenom: document.getElementById('scrPrenom')?.value?.trim() || _scrCv.prenom || '',
-        email: document.getElementById('scrEmail')?.value?.trim() || _scrCv.email || '',
-        telephone: document.getElementById('scrTel')?.value?.trim() || _scrCv.telephone || '',
-        adresse: _scrCv.adresse || '',
-        poste: document.getElementById('scrExp')?.value?.trim() || _scrCv.poste || '',
-      })
+      body: JSON.stringify(payload)
     });
     var d = await r.json();
     if (d.success) {
@@ -4127,6 +4137,9 @@ async function _cvDecision(action, btn) {
         _pendingSms = {prenom: donePrenom, telephone: doneTel, fileId: doneFileId};
         _renderSmsBlock();
       }
+      // Encadré note — toutes les décisions sauf CONTACTE (géré dans scrConfirmInvite)
+      _pendingNote = {fileId: doneFileId};
+      _renderNoteBlock();
       _cvAdvance();
       if (typeof loadCvInbox === 'function') loadCvInbox();
     } else {
@@ -4486,6 +4499,7 @@ var _cvQueue          = [];    // [{fileId, name, webViewLink, prenom, nom, tele
 var _cvCurrentFileId  = null;  // fileId du candidat actuellement chargé dans le script
 var _prefetched       = null;  // {fileId, promise} — prefetch N+1 au moment du chargement de N
 var _pendingSms       = null;  // {prenom, telephone, fileId} — SMS en attente après SANS RÉPONSE
+var _pendingNote      = null;  // {fileId} — note en attente après décision
 var _telRappel        = '';    // valeur de RECRUTEMENT_TEL_RAPPEL (retournée par cv-inbox)
 var _cvProcessedToday = new Set(); // fileIds traités dans la session courante
 
@@ -4543,7 +4557,14 @@ function _renderCvInbox() {
   var tousEl = document.getElementById('cvCountTous');
   var accEl  = document.getElementById('accCvCount');
   if (srcEl)  srcEl.textContent  = '(' + (d.source  || []).length + ')';
-  if (attEl)  attEl.textContent  = '(' + (d.attente || []).length + ')';
+  if (attEl) {
+    attEl.textContent = '(' + (d.attente || []).length + ')';
+    var _d = new Date(); var _nowStr = _d.getFullYear() + '-' + String(_d.getMonth()+1).padStart(2,'0') + '-' + String(_d.getDate()).padStart(2,'0') + ' ' + String(_d.getHours()).padStart(2,'0') + ':' + String(_d.getMinutes()).padStart(2,'0');
+    var hasOverdue = (d.attente || []).some(function(f) { return f.rappel_le && f.rappel_le <= _nowStr; });
+    var attBtn = document.getElementById('cvTabAttente');
+    if (attBtn && hasOverdue) { attBtn.style.borderColor = '#ef4444'; attEl.style.color = '#ef4444'; }
+    else if (attBtn) { attBtn.style.borderColor = '#f59e0b'; attEl.style.color = ''; }
+  }
   if (tousEl) tousEl.textContent = '(' + (d.tous    || []).length + ')';
   if (accEl)  accEl.textContent  = '(' + (d.source  || []).length + ')';
 
@@ -4608,7 +4629,8 @@ function _renderCvInbox() {
         fileId: f.fileId, name: f.name, webViewLink: f.webViewLink || '',
         prenom: f.prenom || '', nom: f.nom || '', telephone: f.telephone || '',
         tentatives: f.tentatives || '', derniere_tentative: f.derniere_tentative || '',
-        sms_envoye: f.sms_envoye || '',
+        sms_envoye: f.sms_envoye || '', rappel_le: f.rappel_le || '',
+        note_recruteur: f.note_recruteur || '',
       };
     });
     _renderQueue();
@@ -4627,6 +4649,9 @@ async function _loadCandidat(fileId) {
   // ── Ordre strict ──────────────────────────────────────────────────────────
   // 1. Réinitialiser _scrPhase — le SMS block, les compteurs et la file ne sont PAS réinitialisés
   _scrPhase = 0;
+  _pendingNote = null;
+  var _nb = document.getElementById('noteBlock'); if (_nb) _nb.style.display = 'none';
+  var _rb = document.getElementById('rappelBlock'); if (_rb) _rb.style.display = 'none';
   // 2. Vider l'affichage
   var bandeau = document.getElementById('scrBandeau');
   bandeau.style.display = 'block';
@@ -4785,7 +4810,9 @@ function _renderQueue() {
     var badges = '';
     if (tent > 0) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#ddd6fe;color:#5b21b6;border-radius:4px;margin-right:2px;">' + (tent + 1) + 'ème</span>';
     if (q.sms_envoye) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#d1fae5;color:#065f46;border-radius:4px;margin-right:2px;">SMS</span>';
-    if (q.derniere_tentative) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#fef3c7;color:#92400e;border-radius:4px;">✓</span>';
+    if (q.rappel_le) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#fef3c7;color:#92400e;border-radius:4px;margin-right:2px;">📞 ' + q.rappel_le.slice(11,16) + '</span>';
+    if (q.note_recruteur) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#dbeafe;color:#1e40af;border-radius:4px;margin-right:2px;">📝</span>';
+    if (q.derniere_tentative && !q.rappel_le) badges += '<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;background:#fef3c7;color:#92400e;border-radius:4px;">✓</span>';
     html += '<div onclick="_loadCandidat(\'' + q.fileId + '\')" '
       + 'style="cursor:pointer;padding:8px;border-radius:6px;margin-bottom:3px;'
       + (isCurrent ? 'background:#ede9fe;border:1.5px solid #7c3aed;' : 'background:#f9f7ff;border:1.5px solid transparent;')
@@ -4882,6 +4909,85 @@ async function _smsFait() {
 function _smsPasser() {
   _pendingSms = null;
   var el = document.getElementById('smsBlock');
+  if (el) el.style.display = 'none';
+}
+
+// ── Rappeler plus tard ─────────────────────────────────────────────────
+function _cvRappelDialog() {
+  if (!_scrCv || !_scrCv.fileId) { alert('Aucun CV chargé depuis le dossier Drive.'); return; }
+  var el = document.getElementById('rappelBlock');
+  if (!el) return;
+  var today = new Date().toISOString().slice(0, 10);
+  var nowH = new Date().toTimeString().slice(0, 5);
+  el.innerHTML = '<div style="font-weight:700;color:#92400e;margin-bottom:8px;">📞 Rappeler plus tard</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+    + '<input type="date" id="rappelDate" value="' + today + '" style="padding:6px;border:1.5px solid #f59e0b;border-radius:6px;font-size:13px;">'
+    + '<input type="time" id="rappelHeure" value="' + nowH + '" style="padding:6px;border:1.5px solid #f59e0b;border-radius:6px;font-size:13px;">'
+    + '<button onclick="_cvRappelConfirm()" style="padding:6px 14px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">✓ Programmer</button>'
+    + '<button onclick="document.getElementById(\'rappelBlock\').style.display=\'none\'" style="padding:6px 14px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">Annuler</button>'
+    + '</div>';
+  el.style.display = 'block';
+}
+
+async function _cvRappelConfirm() {
+  var dateVal = document.getElementById('rappelDate')?.value || '';
+  var heureVal = document.getElementById('rappelHeure')?.value || '';
+  if (!dateVal || !heureVal) { alert('Date et heure requises'); return; }
+  document.getElementById('rappelBlock').style.display = 'none';
+  await _cvDecision('RAPPEL', null, {rappel_date: dateVal, rappel_heure: heureVal});
+}
+
+// ── Encadré note recruteuse ───────────────────────────────────────────────
+function _renderNoteBlock() {
+  if (!_pendingNote) return;
+  var el = document.getElementById('noteBlock');
+  if (!el) return;
+  var fid = _pendingNote.fileId;
+  el.innerHTML = '<div style="font-weight:700;color:#1e40af;margin-bottom:8px;">📝 Ajouter une note sur ce candidat ?</div>'
+    + '<textarea id="noteText" rows="2" style="width:100%;padding:8px;border:1.5px solid #93c5fd;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical;" placeholder="Ex : parle mal français mais du potentiel…"></textarea>'
+    + '<div style="display:flex;gap:8px;margin-top:6px;">'
+    + '<button onclick="_noteSave(\'' + fid + '\')" id="noteSaveBtn" style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">Enregistrer</button>'
+    + '<button onclick="_notePasser()" style="padding:6px 14px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">Passer</button>'
+    + '</div>'
+    + '<div id="noteResult" style="margin-top:4px;font-size:11px;"></div>';
+  el.style.display = 'block';
+}
+
+async function _noteSave(fileId) {
+  var text = (document.getElementById('noteText')?.value || '').trim();
+  if (!text) return;
+  var btn = document.getElementById('noteSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
+  try {
+    var r = await fetch('/api/recrutement/cv-note', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({fileId: fileId, note: text})
+    });
+    var d = await r.json();
+    var resEl = document.getElementById('noteResult');
+    if (d.success) {
+      var msg = '✅ Note enregistrée';
+      if (d.crm_warning) msg += ' · ⚠ ' + d.crm_warning;
+      if (resEl) resEl.innerHTML = '<span style="color:#16a34a;font-weight:600;">' + msg + '</span>';
+      _pendingNote = null;
+      setTimeout(function() { var el = document.getElementById('noteBlock'); if (el) el.style.display = 'none'; }, 2000);
+      // Mettre à jour le badge note dans la file
+      var qItem = _cvQueue.find(function(q) { return q.fileId === fileId; });
+      if (qItem) { qItem.note_recruteur = '1'; _renderQueue(); }
+    } else {
+      if (resEl) resEl.innerHTML = '<span style="color:#ef4444;">❌ ' + (d.error || 'Erreur') + '</span>';
+    }
+  } catch(e) {
+    var resEl = document.getElementById('noteResult');
+    if (resEl) resEl.innerHTML = '<span style="color:#ef4444;">❌ Erreur réseau</span>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Enregistrer'; }
+  }
+}
+
+function _notePasser() {
+  _pendingNote = null;
+  var el = document.getElementById('noteBlock');
   if (el) el.style.display = 'none';
 }
 

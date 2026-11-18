@@ -1296,7 +1296,7 @@ def envoyer_contrat():
         print(f"⚠️ Erreur contrat: {e}")
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
 
-PHASE1_HEADERS = ['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV', 'PRESENCE', 'LIEN_CANDIDATURE_ENVOYE', 'DRIVE_FILE_ID', 'DRIVE_MOVE_STATUS', 'DRIVE_MOVE_ERREUR', 'CRM_EVENT_ID', 'TENTATIVES', 'DERNIERE_TENTATIVE', 'SMS_ENVOYE', 'ATTRIBUE_A']
+PHASE1_HEADERS = ['NOM', 'PRENOM', 'EMAIL', 'TEL', 'ADRESSE', 'STATUT', 'NOTE', 'DATE', 'SESSION', 'LIEN_CV', 'PRESENCE', 'LIEN_CANDIDATURE_ENVOYE', 'DRIVE_FILE_ID', 'DRIVE_MOVE_STATUS', 'DRIVE_MOVE_ERREUR', 'CRM_EVENT_ID', 'TENTATIVES', 'DERNIERE_TENTATIVE', 'SMS_ENVOYE', 'ATTRIBUE_A', 'RAPPEL_LE', 'NOTE_RECRUTEUR']
 
 # ── Cache PHASE 1 en mémoire ─────────────────────────────────────────────
 # Un seul get_all_values() par cycle lecture/écriture, TTL 30 s.
@@ -1437,7 +1437,7 @@ def _get_or_create_phase1(sh):
     """Retourne le worksheet PHASE 1, le crée si absent, et s'assure que le header va jusqu'à T1.
     N'écrit que les colonnes manquantes, une par une — jamais les colonnes existantes.
     Idempotent : si le worksheet existe, on le récupère sans le recréer."""
-    _COLS = 'ABCDEFGHIJKLMNOPQRST'
+    _COLS = 'ABCDEFGHIJKLMNOPQRSTUVW'
     # 1. Tenter de récupérer l'onglet existant
     try:
         ws = sh.worksheet('PHASE 1')
@@ -1445,7 +1445,7 @@ def _get_or_create_phase1(sh):
         # Onglet absent → le créer. Si « already exists » (race condition), récupérer.
         try:
             ws = sh.add_worksheet(title='PHASE 1', rows=500, cols=len(PHASE1_HEADERS))
-            ws.update('A1:T1', [PHASE1_HEADERS], value_input_option='RAW')
+            ws.update('A1:V1', [PHASE1_HEADERS], value_input_option='RAW')
         except Exception:
             ws = sh.worksheet('PHASE 1')
         return ws
@@ -2122,6 +2122,8 @@ def cv_inbox():
                         'tentatives':         (row[16] if len(row) > 16 else '').strip(),
                         'derniere_tentative': derniere,
                         'sms_envoye':         (row[18] if len(row) > 18 else '').strip(),
+                        'rappel_le':          (row[20] if len(row) > 20 else '').strip(),
+                        'note_recruteur':     (row[21] if len(row) > 21 else '').strip(),
                     }
         except Exception as e:
             print(f'[CV-PIPELINE] Erreur cross-ref Sheet: {e}')
@@ -2151,12 +2153,28 @@ def cv_inbox():
                     'tentatives':         sdata.get('tentatives', '')        if sdata else '',
                     'derniere_tentative': sdata.get('derniere_tentative', '') if sdata else '',
                     'sms_envoye':         sdata.get('sms_envoye', '')        if sdata else '',
+                    'rappel_le':          sdata.get('rappel_le', '')         if sdata else '',
+                    'note_recruteur':     sdata.get('note_recruteur', '')    if sdata else '',
                 })
             return out
 
         source_files  = _build_files(source_drive,  apply_attrib_filter=True)
         attente_files = _build_files(attente_drive,  apply_attrib_filter=True)
-        attente_files.sort(key=lambda f: f.get('derniere_tentative', '') or '')
+        # Tri En attente : U dépassée en haut, U à venir, puis R (sans U) croissant
+        # Le tri ne doit JAMAIS faire tomber la file — fallback sur R en cas d'erreur
+        try:
+            from zoneinfo import ZoneInfo
+            _now_sort = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
+            def _attente_sort_key(f):
+                u = f.get('rappel_le', '')
+                r = f.get('derniere_tentative', '') or ''
+                if u:
+                    tier = 0 if u <= _now_sort else 1
+                    return (tier, u)
+                return (2, r)
+            attente_files.sort(key=_attente_sort_key)
+        except Exception:
+            attente_files.sort(key=lambda f: f.get('derniere_tentative', '') or '')
         tous_files    = _build_files(source_drive + attente_drive, apply_attrib_filter=False)
 
         return jsonify({
@@ -2395,12 +2413,13 @@ def cv_attribuer():
 @login_required
 def cv_decision():
     """Crée ou met à jour la fiche candidat dans PHASE 1 selon l'issue de l'appel."""
+    move_ok = False
     try:
         d = request.get_json()
         file_id = (d.get('fileId', '') or '').strip()
         action = (d.get('action', '') or '').strip()
-        if not file_id or action not in ('CONTACTE', 'REFUSE', 'SANS_REPONSE'):
-            return jsonify({'success': False, 'error': 'fileId et action (CONTACTE/REFUSE/SANS_REPONSE) requis'}), 400
+        if not file_id or action not in ('CONTACTE', 'REFUSE', 'SANS_REPONSE', 'RAPPEL'):
+            return jsonify({'success': False, 'error': 'fileId et action (CONTACTE/REFUSE/SANS_REPONSE/RAPPEL) requis'}), 400
 
         nom = (d.get('nom', '') or '').upper()
         prenom = d.get('prenom', '') or ''
@@ -2411,7 +2430,7 @@ def cv_decision():
         if isinstance(telephone, list):
             telephone = ' / '.join(str(t) for t in telephone)
 
-        statut_map = {'CONTACTE': 'CONTACTÉ', 'REFUSE': 'REFUSÉ', 'SANS_REPONSE': 'SANS RÉPONSE'}
+        statut_map = {'CONTACTE': 'CONTACTÉ', 'REFUSE': 'REFUSÉ', 'SANS_REPONSE': 'SANS RÉPONSE', 'RAPPEL': 'CONTACTÉ'}
         statut = statut_map[action]
 
         # Si CONTACTE, envoyer l'invitation via la fonction interne unique
@@ -2489,52 +2508,20 @@ def cv_decision():
             target_row = len(rows) + 1
             print(f'[CV-PIPELINE] Ligne créée : {prenom} {nom} → {statut}')
 
-        # Move Drive : déplacer le fichier vers le dossier cible
-        move_ok = False
-        move_error = ''
-        dest_map = {
-            'SANS_REPONSE': _CV_FOLDER_IDS.get('CV_ATTENTE_FOLDER_ID', ''),
-            'REFUSE': _CV_FOLDER_IDS.get('CV_REFUSE_FOLDER_ID', ''),
-        }
-        dest_folder = dest_map.get(action, '')
-        if dest_folder and _CV_DRIVE_CONFIGURED:
-            try:
-                drive = _get_drive_client()
-                # Lire les parents actuels pour savoir d'où retirer
-                meta = drive.files().get(fileId=file_id, fields='parents', supportsAllDrives=True).execute()
-                current_parents = meta.get('parents', [])
-                # Déplacer : ajouter le dossier cible, retirer les parents actuels
-                remove_parents = ','.join(current_parents) if current_parents else ''
-                drive.files().update(
-                    fileId=file_id,
-                    addParents=dest_folder,
-                    removeParents=remove_parents,
-                    supportsAllDrives=True,
-                ).execute()
-                move_ok = True
-                print(f'[CV-PIPELINE] Move Drive OK : {file_id} → {dest_folder}')
-            except Exception as e:
-                err_str = str(e)
-                # Idempotent : si le fichier est déjà dans le dossier cible, c'est OK
-                if 'not found' in err_str.lower() or '404' in err_str:
-                    move_ok = True
-                    move_error = 'Fichier introuvable (peut-être déjà déplacé)'
-                    print(f'[CV-PIPELINE] Move Drive : fichier déjà absent de la source')
-                else:
-                    from zoneinfo import ZoneInfo
-                    now_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
-                    move_error = f'{now_paris} — {err_str}'
-                    print(f'[CV-PIPELINE] Move Drive ECHEC : {err_str}')
-
-            # Écrire N et O
-            ws.update(f'N{target_row}', [['OK' if move_ok else 'ECHEC']], value_input_option='RAW')
-            ws.update(f'O{target_row}', [[move_error]], value_input_option='RAW')
-
+        # ── Écritures Sheet AVANT le déplacement Drive ──────────────────────
         # Écrire R = horodatage de la décision (YYYY-MM-DD HH:MM, heure Paris)
         from zoneinfo import ZoneInfo
         now_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
         ws.update(f'R{target_row}', [[now_paris]], value_input_option='RAW')
         print(f'[CV-PIPELINE] Ligne {target_row} → R={now_paris}')
+
+        # RAPPEL : écrire U = date/heure de rappel demandée. Q n'est PAS incrémentée.
+        if action == 'RAPPEL':
+            rappel_date = (d.get('rappel_date', '') or '').strip()
+            rappel_heure = (d.get('rappel_heure', '') or '').strip()
+            if rappel_date and rappel_heure:
+                ws.update(f'U{target_row}', [[f'{rappel_date} {rappel_heure}']], value_input_option='RAW')
+                print(f'[CV-PIPELINE] Ligne {target_row} → U={rappel_date} {rappel_heure}')
 
         # SANS_REPONSE : incrémenter Q (tentatives). Lecture depuis rows si ligne existante.
         if action == 'SANS_REPONSE':
@@ -2548,6 +2535,46 @@ def cv_decision():
                 q_val = 1
             ws.update(f'Q{target_row}', [[q_val]], value_input_option='RAW')
             print(f'[CV-PIPELINE] Ligne {target_row} → Q={q_val}')
+
+        # ── Déplacement Drive APRÈS les écritures Sheet ───────────────────────
+        move_ok = False
+        move_error = ''
+        dest_map = {
+            'SANS_REPONSE': _CV_FOLDER_IDS.get('CV_ATTENTE_FOLDER_ID', ''),
+            'REFUSE': _CV_FOLDER_IDS.get('CV_REFUSE_FOLDER_ID', ''),
+            'RAPPEL': _CV_FOLDER_IDS.get('CV_ATTENTE_FOLDER_ID', ''),
+        }
+        dest_folder = dest_map.get(action, '')
+        if dest_folder and _CV_DRIVE_CONFIGURED:
+            try:
+                drive = _get_drive_client()
+                meta = drive.files().get(fileId=file_id, fields='parents', supportsAllDrives=True).execute()
+                current_parents = meta.get('parents', [])
+                # Idempotent : si déjà dans le dossier cible, ne rien faire
+                if dest_folder in current_parents:
+                    move_ok = True
+                    print(f'[CV-PIPELINE] Move Drive : déjà dans le dossier cible')
+                else:
+                    remove_parents = ','.join(current_parents) if current_parents else ''
+                    drive.files().update(
+                        fileId=file_id,
+                        addParents=dest_folder,
+                        removeParents=remove_parents,
+                        supportsAllDrives=True,
+                    ).execute()
+                    move_ok = True
+                    print(f'[CV-PIPELINE] Move Drive OK : {file_id} → {dest_folder}')
+            except Exception as e:
+                err_str = str(e)
+                if 'not found' in err_str.lower() or '404' in err_str:
+                    move_ok = True
+                    move_error = 'Fichier introuvable (peut-être déjà déplacé)'
+                else:
+                    move_error = f'{now_paris} — {err_str}'
+                    print(f'[CV-PIPELINE] Move Drive ECHEC : {err_str}')
+
+            ws.update(f'N{target_row}', [['OK' if move_ok else 'ECHEC']], value_input_option='RAW')
+            ws.update(f'O{target_row}', [[move_error]], value_input_option='RAW')
 
         _invalidate_phase1_cache()
         return jsonify({'success': True, 'sheet_ok': True, 'move_ok': move_ok})
@@ -2583,6 +2610,84 @@ def cv_sms_envoye():
         _invalidate_phase1_cache()
         print(f'[CV-PIPELINE] SMS enregistré row {target_row} : {now_paris}')
         return jsonify({'success': True})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': _friendly_sheets_error(e)})
+
+
+@app.route('/api/recrutement/cv-note', methods=['POST'])
+@login_required
+def cv_note():
+    """Ajoute une note datée et signée en col V (journal, nouvelles entrées en haut).
+    Si col P porte un eventId, met à jour la description CRM via PATCH."""
+    try:
+        d = request.get_json()
+        file_id = (d.get('fileId', '') or '').strip()
+        note_text = (d.get('note', '') or '').strip()
+        if not file_id or not note_text:
+            return jsonify({'success': False, 'error': 'fileId et note requis'}), 400
+
+        gc = get_sheets_client()
+        if not gc:
+            return jsonify({'success': False, 'error': 'Sheets non configuré'}), 500
+        sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
+        ws = _get_or_create_phase1(sh)
+
+        # force_fresh : la lecture de V DÉCIDE du contenu à écrire — deux notes rapprochées perdraient la première sinon
+        _invalidate_phase1_cache()
+        target_row, row_data = _find_phase1_row_by_fileid_or_email(ws, file_id)
+        if not target_row:
+            return jsonify({'success': False, 'error': 'Candidat non trouvé'}), 404
+
+        # Construire l'entrée journal : nouvelle note en haut
+        from zoneinfo import ZoneInfo
+        now_paris = datetime.now(ZoneInfo('Europe/Paris')).strftime('%Y-%m-%d %H:%M')
+        recruiter_name = session.get('recruiter_name', '')
+        entry = f'{now_paris} — {recruiter_name} : {note_text}'
+        existing_v = (row_data[21] if len(row_data) > 21 else '').strip()
+        new_v = entry + '\n' + existing_v if existing_v else entry
+        ws.update(f'V{target_row}', [[new_v]], value_input_option='RAW')
+        _invalidate_phase1_cache()
+        print(f'[CV-PIPELINE] Note ajoutée row {target_row} par {recruiter_name}')
+
+        # Si eventId en col P → PATCH la description CRM
+        crm_warning = None
+        event_id = (row_data[15] if len(row_data) > 15 else '').strip()
+        if event_id:
+            crm_api_url = os.environ.get('CRM_API_URL', '').rstrip('/')
+            crm_api_token = os.environ.get('CRM_API_TOKEN', '')
+            if crm_api_url and crm_api_token:
+                # Reconstruire la description complète avec _build_crm_description
+                _prenom = (row_data[1] if len(row_data) > 1 else '').strip()
+                _nom = (row_data[0] if len(row_data) > 0 else '').strip()
+                _tel = (row_data[3] if len(row_data) > 3 else '').strip()
+                _email = (row_data[2] if len(row_data) > 2 else '').strip()
+                _exp = (row_data[6] if len(row_data) > 6 else '').strip()
+                _cv = (row_data[9] if len(row_data) > 9 else '').strip()
+                _sess = (row_data[8] if len(row_data) > 8 else '').strip()
+                _attr = (row_data[19] if len(row_data) > 19 else '').strip()
+                desc = _build_crm_description(
+                    prenom=_normalize_display_name(_prenom),
+                    nom=_normalize_display_name(_nom),
+                    tel=_tel, email=_email, experience=_exp,
+                    lien_cv=_cv, session_str=_sess,
+                    recruteuse=_attr, notes=new_v,
+                )
+                try:
+                    resp = requests.patch(
+                        f'{crm_api_url}/api/external/calendar-event/{event_id}',
+                        headers={'Authorization': f'Bearer {crm_api_token}', 'Content-Type': 'application/json'},
+                        json={'description': desc},
+                        timeout=15,
+                    )
+                    if resp.status_code >= 400:
+                        crm_warning = "Note enregistrée, agenda non mis à jour."
+                        print(f'[CV-PIPELINE] PATCH CRM échoué : {resp.status_code} {resp.text[:200]}')
+                except Exception as _pe:
+                    crm_warning = "Note enregistrée, agenda non mis à jour."
+                    print(f'[CV-PIPELINE] PATCH CRM erreur réseau : {_pe}')
+
+        return jsonify({'success': True, 'crm_warning': crm_warning})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': _friendly_sheets_error(e)})
@@ -3365,6 +3470,25 @@ def extraire_contrat():
 
 # ===== INVITATION RECRUTEMENT =====
 
+
+def _build_crm_description(*, prenom, nom, tel, email, experience, lien_cv, session_str, recruteuse, notes=''):
+    """Construction UNIQUE de la description CRM — utilisée par la création ET la mise à jour.
+    Ne JAMAIS construire cette description ailleurs."""
+    desc_lines = [
+        f'Candidat : {prenom} {nom.upper() if nom else ""}'.strip(),
+        f'Téléphone : {tel}' if tel else None,
+        f'Email : {email}',
+        f'Dernière expérience : {experience}' if experience else None,
+        f'CV : {lien_cv}' if lien_cv else None,
+        f'Session du {session_str}' if session_str else None,
+        f'Programmé par : {recruteuse}' if recruteuse else None,
+    ]
+    text = '\n'.join(l for l in desc_lines if l)
+    if notes:
+        text += '\n\n── Notes ──\n' + notes
+    return text
+
+
 def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_session, heure_session,
                            file_id=None, reprogrammation=False, ecrire_statut=True):
     """Fonction interne unique : mail + Sheet + CRM.
@@ -3431,16 +3555,15 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
     try:
         start_iso, end_iso = _build_session_iso(iso_date, heure_session)
         _recruteuse = session.get('recruiter_name', '') if session else ''
-        desc_lines = [
-            f'Candidat : {prenom_display_sheet} {nom_display.upper() if nom_display else ""}',
-            f'Téléphone : {tel}' if tel else None,
-            f'Email : {email}',
-            f'Dernière expérience : {experience}' if experience else None,
-            f'CV : {lien_cv}' if lien_cv else None,
-            f'Session du {iso_date} à {heure_session}',
-            f'Programmé par : {_recruteuse}' if _recruteuse else None,
-        ]
-        description_crm = '\n'.join(l for l in desc_lines if l)
+        _notes_v = ''
+        if _row_data:
+            _notes_v = (_row_data[21] if len(_row_data) > 21 else '').strip()
+        description_crm = _build_crm_description(
+            prenom=prenom_display_sheet, nom=nom_display,
+            tel=tel, email=email, experience=experience,
+            lien_cv=lien_cv, session_str=f'{iso_date} à {heure_session}',
+            recruteuse=_recruteuse, notes=_notes_v,
+        )
         crm_resp = requests.post(
             f'{crm_api_url}/api/external/calendar-event',
             headers={'Authorization': f'Bearer {crm_api_token}', 'Content-Type': 'application/json'},
