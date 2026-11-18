@@ -4115,8 +4115,10 @@ async function _cvDecision(action, btn) {
       else if (d.move_ok === false) msg += ' · ⚠ Déplacement Drive échoué';
       res.innerHTML = '<span style="color:#16a34a;font-weight:700;">' + msg + '</span>';
       var doneFileId = _scrCv.fileId;
-      var donePrenom = _scrCv.prenom || '';
+      var donePrenom = document.getElementById('scrPrenom')?.value?.trim() || _scrCv.prenom || '';
       var doneTel    = document.getElementById('scrTel')?.value?.trim() || _scrCv.telephone || '';
+      // Fallback : téléphone depuis la file d'appel (col D du Sheet)
+      if (!doneTel) { var _qi = _cvQueue.find(function(q){ return q.fileId === doneFileId; }); if (_qi) doneTel = _qi.telephone || ''; }
       _cvProcessedToday.add(doneFileId);
       // Bloc SMS — SANS RÉPONSE seulement.
       // Si deux SANS RÉPONSE consécutifs, le nouvel encadré remplace l'ancien
@@ -4811,31 +4813,53 @@ async function _cvAdvance() {
 }
 
 // ── Bloc SMS de rappel ────────────────────────────────────────────────────
+function _smsText() {
+  if (!_pendingSms) return '';
+  var prenom = _pendingSms.prenom || 'Bonjour';
+  var recruteuse = _recruiterName || 'LILIWATT';
+  var rappel = _telRappel || '(numéro non configuré)';
+  return 'Bonjour ' + prenom + ',\n'
+    + recruteuse + ' de LILIWATT. J\'ai tenté de vous joindre suite à votre candidature.\n'
+    + 'Vous pouvez me rappeler au ' + rappel + ' ou me dire quand vous êtes disponible.\n'
+    + 'À bientôt.';
+}
+
 function _renderSmsBlock() {
   if (!_pendingSms) return;
   var el = document.getElementById('smsBlock');
   if (!el) return;
   var tel = _pendingSms.telephone || '—';
   var prenom = _pendingSms.prenom || '';
-  var telRappelHtml;
-  if (_telRappel) {
-    telRappelHtml = '<button onclick="_smsCopyRappel()" style="padding:5px 12px;background:#f0f9ff;border:1.5px solid #0ea5e9;border-radius:6px;font-size:12px;font-weight:700;color:#0369a1;cursor:pointer;">📋 Rappel : ' + _escH(_telRappel) + '</button>';
-  } else {
-    telRappelHtml = '<span style="color:#9ca3af;font-size:11px;">Numéro de rappel non configuré (RECRUTEMENT_TEL_RAPPEL)</span>';
-  }
+  var smsBody = _smsText();
+
+  var telHtml = '<span style="font-weight:700;">' + _escH(tel) + '</span>';
+  if (tel !== '—') telHtml += ' <button onclick="_smsCopyTel()" id="smsCopyTelBtn" style="padding:2px 8px;background:#ede9fe;border:1px solid #d8b4fe;border-radius:4px;font-size:11px;font-weight:600;color:#7c3aed;cursor:pointer;">Copier le n°</button>';
+
   el.innerHTML = '<div style="font-weight:700;color:#15803d;margin-bottom:8px;">📱 SMS de rappel — '
-    + _escH(prenom) + ' (' + _escH(tel) + ')</div>'
-    + '<div style="margin-bottom:10px;">' + telRappelHtml + '</div>'
-    + '<div style="display:flex;gap:8px;">'
+    + _escH(prenom) + ' · ' + telHtml + '</div>'
+    + '<div style="margin-bottom:10px;padding:10px;background:#fff;border:1px solid #d1fae5;border-radius:8px;white-space:pre-wrap;font-size:13px;color:#1e1b4b;line-height:1.5;">'
+    + _escH(smsBody) + '</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+    + '<button onclick="_smsCopySms()" id="smsCopySmsBtn" style="padding:6px 14px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">📋 Copier le SMS</button>'
     + '<button onclick="_smsFait()" style="padding:6px 14px;background:#22c55e;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">✅ SMS envoyé</button>'
     + '<button onclick="_smsPasser()" style="padding:6px 14px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">⏭ Passer</button>'
     + '</div>';
   el.style.display = 'block';
 }
 
-function _smsCopyRappel() {
-  if (!_telRappel) return;
-  navigator.clipboard.writeText(_telRappel).catch(function() {});
+function _smsCopyTel() {
+  if (!_pendingSms || !_pendingSms.telephone) return;
+  navigator.clipboard.writeText(_pendingSms.telephone).then(function() {
+    var btn = document.getElementById('smsCopyTelBtn'); if (btn) { btn.textContent = '✓ Copié'; setTimeout(function(){ btn.textContent = 'Copier le n°'; }, 1500); }
+  }).catch(function() {});
+}
+
+function _smsCopySms() {
+  var text = _smsText();
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = document.getElementById('smsCopySmsBtn'); if (btn) { btn.textContent = '✓ Copié'; setTimeout(function(){ btn.textContent = '📋 Copier le SMS'; }, 1500); }
+  }).catch(function() {});
 }
 
 async function _smsFait() {

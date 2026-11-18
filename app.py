@@ -3430,6 +3430,7 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
         raise Exception("L'agenda n'est pas configuré sur ce serveur. Contactez l'administrateur.")
     try:
         start_iso, end_iso = _build_session_iso(iso_date, heure_session)
+        _recruteuse = session.get('recruiter_name', '') if session else ''
         desc_lines = [
             f'Candidat : {prenom_display_sheet} {nom_display.upper() if nom_display else ""}',
             f'Téléphone : {tel}' if tel else None,
@@ -3437,6 +3438,7 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
             f'Dernière expérience : {experience}' if experience else None,
             f'CV : {lien_cv}' if lien_cv else None,
             f'Session du {iso_date} à {heure_session}',
+            f'Programmé par : {_recruteuse}' if _recruteuse else None,
         ]
         description_crm = '\n'.join(l for l in desc_lines if l)
         crm_resp = requests.post(
