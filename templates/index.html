@@ -4815,11 +4815,11 @@ async function _cvAdvance() {
 // ── Bloc SMS de rappel ────────────────────────────────────────────────────
 function _smsText() {
   if (!_pendingSms) return '';
-  var prenom = _pendingSms.prenom || 'Bonjour';
-  var recruteuse = _recruiterName || 'LILIWATT';
+  var prenom = _pendingSms.prenom || '';
   var rappel = _telRappel || '(numéro non configuré)';
-  return 'Bonjour ' + prenom + ',\n'
-    + recruteuse + ' de LILIWATT. J\'ai tenté de vous joindre suite à votre candidature.\n'
+  var qui = _recruiterName ? (_recruiterName + ' de LILIWATT') : 'L\'équipe LILIWATT';
+  return 'Bonjour' + (prenom ? ' ' + prenom : '') + ',\n'
+    + qui + '. J\'ai tenté de vous joindre suite à votre candidature.\n'
     + 'Vous pouvez me rappeler au ' + rappel + ' ou me dire quand vous êtes disponible.\n'
     + 'À bientôt.';
 }
