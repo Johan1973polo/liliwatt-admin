@@ -3951,6 +3951,9 @@ function scrRender(){
         if(emailEl) emailEl.value = _scrCv.email;
         scrCheckIndeed(_scrCv.email);
       }
+      // Garde-fou : date min = aujourd'hui
+      var dateEl = document.getElementById('scrDate');
+      if(dateEl) dateEl.min = new Date().toISOString().slice(0,10);
     }, 50);
   }
   // Objections
@@ -4018,17 +4021,28 @@ function scrCheckEmailOverride(){
 }
 
 // Upload CV
+// Données capturées au moment de la préparation — les inputs DOM peuvent disparaître ensuite (scrRender phase ≠ 5)
+var _pendingInvite = null;
+
 function scrPrepareInvite(){
   var email = document.getElementById('scrEmail')?.value?.trim();
   var prenom = document.getElementById('scrPrenom')?.value?.trim();
   var nom = document.getElementById('scrNom')?.value?.trim();
   var dateEl = document.getElementById('scrDate');
   var heureEl = document.getElementById('scrHeure');
+  var tel = document.getElementById('scrTel')?.value?.trim() || '';
+  var exp = document.getElementById('scrExp')?.value?.trim() || '';
   if(!email){ alert('Saisissez l\'email du candidat'); return; }
   if(!dateEl || !dateEl.value){ alert('Choisissez une date'); return; }
   if(!heureEl || !heureEl.value){ alert('Choisissez une heure'); return; }
-  // Formater la date en JJ/MM/AAAA
-  var parts = dateEl.value.split('-'); // AAAA-MM-JJ
+  // Capturer tout maintenant — scrConfirmInvite relit _pendingInvite, pas le DOM
+  _pendingInvite = {
+    fileId: (_scrCv && _scrCv.fileId) ? _scrCv.fileId : null,
+    email: email, prenom: prenom || '', nom: nom || '',
+    tel: tel, exp: exp, adresse: (_scrCv && _scrCv.adresse) || '',
+    date_session: dateEl.value, heure_session: heureEl.value,
+  };
+  var parts = dateEl.value.split('-');
   var dateFR = parts[2]+'/'+parts[1]+'/'+parts[0];
   var recap = document.getElementById('scrInviteRecap');
   recap.style.display = 'block';
@@ -4038,28 +4052,23 @@ function scrPrepareInvite(){
     +(prenom||nom ? 'Candidat : '+prenom+' '+nom+'<br>' : '')
     +'<div style="margin-top:10px;display:flex;gap:8px;">'
     +'<button onclick="scrConfirmInvite()" id="scrBtnConfirm" style="padding:10px 20px;background:#16a34a;color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;">✓ Confirmer l\'envoi</button>'
-    +'<button onclick="document.getElementById(\'scrInviteRecap\').style.display=\'none\'" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Annuler</button>'
+    +'<button onclick="document.getElementById(\'scrInviteRecap\').style.display=\'none\';_pendingInvite=null;" style="padding:10px 20px;background:#e5e7eb;color:#374151;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Annuler</button>'
     +'</div>';
 }
 
 async function scrConfirmInvite(){
+  if (!_pendingInvite) { alert('Aucune invitation en attente.'); return; }
+  var inv = _pendingInvite;
   var btn = document.getElementById('scrBtnConfirm');
   if(btn){ btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; btn.textContent = '⏳ Envoi...'; }
-  var email = document.getElementById('scrEmail').value.trim();
-  var prenom = document.getElementById('scrPrenom')?.value?.trim() || '';
-  var nom = document.getElementById('scrNom')?.value?.trim() || '';
-  var dateEl = document.getElementById('scrDate');
-  var heureEl = document.getElementById('scrHeure');
-  var tel = document.getElementById('scrTel')?.value?.trim() || '';
-  var exp = document.getElementById('scrExp')?.value?.trim() || '';
   try {
     var url, body;
-    if (_scrCv && _scrCv.fileId) {
+    if (inv.fileId) {
       url = '/api/recrutement/cv-decision';
-      body = {fileId:_scrCv.fileId, action:'CONTACTE', email:email, prenom:prenom, nom:nom, telephone:tel, adresse:_scrCv.adresse||'', poste:exp, date_session:dateEl.value, heure_session:heureEl.value};
+      body = {fileId:inv.fileId, action:'CONTACTE', email:inv.email, prenom:inv.prenom, nom:inv.nom, telephone:inv.tel, adresse:inv.adresse, poste:inv.exp, date_session:inv.date_session, heure_session:inv.heure_session};
     } else {
       url = '/api/recrutement/inviter-candidat';
-      body = {email:email, prenom:prenom, nom:nom, telephone:tel, experience:exp, date_session:dateEl.value, heure_session:heureEl.value};
+      body = {email:inv.email, prenom:inv.prenom, nom:inv.nom, telephone:inv.tel, experience:inv.exp, date_session:inv.date_session, heure_session:inv.heure_session};
     }
     var r = await fetch(url, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -4072,16 +4081,18 @@ async function scrConfirmInvite(){
       if(d.reprogramme){
         msg = '✅ Entretien reprogrammé au '+d.date_lisible+' à '+d.heure+' — l\'ancien a été supprimé de l\'agenda';
       } else {
-        msg = '✅ Invitation envoyée à '+email;
+        msg = '✅ Invitation envoyée à '+inv.email;
       }
       if(d.delete_warning) msg += ' · ⚠ ' + d.delete_warning;
       if(d.sheet_ok === false && d.sheet_error) msg += ' · ⚠ Sheet : '+d.sheet_error;
       res.innerHTML = '<span style="color:#16a34a;font-weight:700;">'+msg+'</span>';
       document.getElementById('scrInviteRecap').style.display = 'none';
-      if (_scrCv && _scrCv.fileId) {
-        _pendingNote = {fileId: _scrCv.fileId};
+      var _invFileId = inv.fileId;
+      _pendingInvite = null;
+      if (_invFileId) {
+        _pendingNote = {fileId: _invFileId, displayName: (inv.prenom || '') + ' ' + (inv.nom || '').toUpperCase()};
         _renderNoteBlock();
-        _cvProcessedToday.add(_scrCv.fileId);
+        _cvProcessedToday.add(_invFileId);
         _cvAdvance();
       }
       if (typeof loadCvInbox === 'function') loadCvInbox();
@@ -4121,7 +4132,16 @@ async function _cvDecision(action, btn, extraData) {
     var d = await r.json();
     if (d.success) {
       var msg = '✅ Candidat marqué ' + label;
-      if (d.move_ok) msg += ' · CV déplacé';
+      if (action === 'RAPPEL' && extraData) {
+        var _rd = (extraData.rappel_date || '').split('-'); var _rdFR = _rd.length === 3 ? _rd[2]+'/'+_rd[1] : extraData.rappel_date;
+        if (d.move_ok) {
+          msg = '✅ Rappel programmé le ' + _rdFR + ' à ' + (extraData.rappel_heure || '')
+            + ' — fiche déplacée dans <a href="#" onclick="_cvSwitchFolder(\'attente\');return false;" style="color:#f59e0b;font-weight:700;text-decoration:underline;">En attente</a>';
+        } else {
+          msg = '⚠ Rappel programmé le ' + _rdFR + ' à ' + (extraData.rappel_heure || '')
+            + ' — mais le déplacement du CV a échoué, la fiche est restée dans le dossier CV';
+        }
+      } else if (d.move_ok) { msg += ' · CV déplacé'; }
       else if (d.move_ok === false) msg += ' · ⚠ Déplacement Drive échoué';
       res.innerHTML = '<span style="color:#16a34a;font-weight:700;">' + msg + '</span>';
       var doneFileId = _scrCv.fileId;
@@ -4138,7 +4158,7 @@ async function _cvDecision(action, btn, extraData) {
         _renderSmsBlock();
       }
       // Encadré note — toutes les décisions sauf CONTACTE (géré dans scrConfirmInvite)
-      _pendingNote = {fileId: doneFileId};
+      _pendingNote = {fileId: doneFileId, displayName: donePrenom + ' ' + (document.getElementById('scrNom')?.value?.trim() || _scrCv.nom || '').toUpperCase()};
       _renderNoteBlock();
       _cvAdvance();
       if (typeof loadCvInbox === 'function') loadCvInbox();
@@ -4630,7 +4650,7 @@ function _renderCvInbox() {
         prenom: f.prenom || '', nom: f.nom || '', telephone: f.telephone || '',
         tentatives: f.tentatives || '', derniere_tentative: f.derniere_tentative || '',
         sms_envoye: f.sms_envoye || '', rappel_le: f.rappel_le || '',
-        note_recruteur: f.note_recruteur || '',
+        note_recruteur: f.note_recruteur || '', rappel_du_jour: f.rappel_du_jour || false,
       };
     });
     _renderQueue();
@@ -4649,10 +4669,10 @@ async function _loadCandidat(fileId) {
   // ── Ordre strict ──────────────────────────────────────────────────────────
   // 1. Réinitialiser _scrPhase — le SMS block, les compteurs et la file ne sont PAS réinitialisés
   _scrPhase = 0;
-  _pendingNote = null;
-  var _nb = document.getElementById('noteBlock'); if (_nb) _nb.style.display = 'none';
+  // _pendingNote et noteBlock ne sont PAS réinitialisés ici (même principe que _pendingSms/smsBlock)
   var _rb = document.getElementById('rappelBlock'); if (_rb) _rb.style.display = 'none';
   // Vider le récapitulatif d'invitation et le résultat — rien ne doit survivre d'une fiche à l'autre
+  _pendingInvite = null;
   var _recap = document.getElementById('scrInviteRecap'); if (_recap) { _recap.style.display = 'none'; _recap.innerHTML = ''; }
   var _res = document.getElementById('scrInviteResult'); if (_res) _res.innerHTML = '';
   // 2. Vider l'affichage
@@ -4819,6 +4839,7 @@ function _renderQueue() {
     html += '<div onclick="_loadCandidat(\'' + q.fileId + '\')" '
       + 'style="cursor:pointer;padding:8px;border-radius:6px;margin-bottom:3px;'
       + (isCurrent ? 'background:#ede9fe;border:1.5px solid #7c3aed;' : 'background:#f9f7ff;border:1.5px solid transparent;')
+      + (q.rappel_du_jour ? 'border-left:3px solid #f59e0b;' : '')
       + '">'
       + '<div style="font-size:12px;font-weight:700;color:#1e1b4b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escH(displayName) + '</div>'
       + (tel ? '<div style="font-size:11px;color:#6b7280;">' + _escH(tel) + '</div>' : '')
@@ -4946,7 +4967,8 @@ function _renderNoteBlock() {
   var el = document.getElementById('noteBlock');
   if (!el) return;
   var fid = _pendingNote.fileId;
-  el.innerHTML = '<div style="font-weight:700;color:#1e40af;margin-bottom:8px;">📝 Ajouter une note sur ce candidat ?</div>'
+  var noteName = _pendingNote.displayName ? ' — ' + _escH(_pendingNote.displayName.trim()) : '';
+  el.innerHTML = '<div style="font-weight:700;color:#1e40af;margin-bottom:8px;">📝 Ajouter une note' + noteName + ' ?</div>'
     + '<textarea id="noteText" rows="2" style="width:100%;padding:8px;border:1.5px solid #93c5fd;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical;" placeholder="Ex : parle mal français mais du potentiel…"></textarea>'
     + '<div style="display:flex;gap:8px;margin-top:6px;">'
     + '<button onclick="_noteSave(\'' + fid + '\')" id="noteSaveBtn" style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">Enregistrer</button>'

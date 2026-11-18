@@ -2160,6 +2160,24 @@ def cv_inbox():
 
         source_files  = _build_files(source_drive,  apply_attrib_filter=True)
         attente_files = _build_files(attente_drive,  apply_attrib_filter=True)
+
+        # Rappels du jour : fiches EN ATTENTE avec U ≤ aujourd'hui, injectées en tête de source
+        # today_paris est déclaré ligne ~2101, avant ce bloc.
+        # try/except : ne jamais faire tomber la file à cause de l'injection
+        try:
+            source_fids = {f['fileId'] for f in source_files}
+            rappels_du_jour = []
+            for f in attente_files:
+                u = f.get('rappel_le', '')
+                if u and u[:10] <= today_paris and f['fileId'] not in source_fids:
+                    fc = dict(f)
+                    fc['rappel_du_jour'] = True
+                    rappels_du_jour.append(fc)
+            rappels_du_jour.sort(key=lambda f: f.get('rappel_le', ''))
+            source_files = rappels_du_jour + source_files
+        except Exception:
+            pass
+
         # Tri En attente : U dépassée en haut, U à venir, puis R (sans U) croissant
         # Le tri ne doit JAMAIS faire tomber la file — fallback sur R en cas d'erreur
         try:
@@ -3541,6 +3559,14 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
     _dp = iso_date.split('-')
     _dt = datetime(int(_dp[0]), int(_dp[1]), int(_dp[2]))
     date_lisible = _date_fr(_dt)
+
+    # Garde-fou : refuser une date passée ou à plus de 6 mois
+    from zoneinfo import ZoneInfo
+    _today = datetime.now(ZoneInfo('Europe/Paris')).date()
+    if _dt.date() < _today:
+        raise Exception(f"Date de session invalide : {iso_date}. La date est dans le passé.")
+    if (_dt.date() - _today).days > 180:
+        raise Exception(f"Date de session invalide : {iso_date}. La date est à plus de 6 mois.")
 
     crm_api_url = os.environ.get('CRM_API_URL', '')
     crm_api_token = os.environ.get('CRM_API_TOKEN', '')
