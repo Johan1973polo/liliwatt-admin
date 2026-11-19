@@ -4024,7 +4024,26 @@ function scrCheckEmailOverride(){
 // Données capturées au moment de la préparation — les inputs DOM peuvent disparaître ensuite (scrRender phase ≠ 5)
 var _pendingInvite = null;
 
+function _scrInlineError(msg, fieldId) {
+  var res = document.getElementById('scrInviteResult');
+  if (res) res.innerHTML = '<span style="color:#ef4444;font-weight:600;">' + msg + '</span>';
+  if (fieldId) {
+    var f = document.getElementById(fieldId);
+    if (f) { f.style.borderColor = '#ef4444'; setTimeout(function(){ f.style.borderColor = ''; }, 3000); }
+  }
+}
+
 function scrPrepareInvite(){
+  // Si pas en phase 6 : y naviguer et laisser Carole remplir le formulaire
+  if (_scrPhase !== 5) {
+    _scrPhase = 5;
+    scrRender();
+    setTimeout(function() {
+      var form = document.getElementById('scrEmail');
+      if (form) form.scrollIntoView({behavior:'smooth', block:'center'});
+    }, 100);
+    return;
+  }
   var email = document.getElementById('scrEmail')?.value?.trim();
   var prenom = document.getElementById('scrPrenom')?.value?.trim();
   var nom = document.getElementById('scrNom')?.value?.trim();
@@ -4032,9 +4051,9 @@ function scrPrepareInvite(){
   var heureEl = document.getElementById('scrHeure');
   var tel = document.getElementById('scrTel')?.value?.trim() || '';
   var exp = document.getElementById('scrExp')?.value?.trim() || '';
-  if(!email){ alert('Saisissez l\'email du candidat'); return; }
-  if(!dateEl || !dateEl.value){ alert('Choisissez une date'); return; }
-  if(!heureEl || !heureEl.value){ alert('Choisissez une heure'); return; }
+  if(!email){ _scrInlineError('Saisissez l\'email du candidat', 'scrEmail'); return; }
+  if(!dateEl || !dateEl.value){ _scrInlineError('Choisissez une date', 'scrDate'); return; }
+  if(!heureEl || !heureEl.value){ _scrInlineError('Choisissez une heure', 'scrHeure'); return; }
   // Capturer tout maintenant — scrConfirmInvite relit _pendingInvite, pas le DOM
   _pendingInvite = {
     fileId: (_scrCv && _scrCv.fileId) ? _scrCv.fileId : null,
@@ -4057,7 +4076,7 @@ function scrPrepareInvite(){
 }
 
 async function scrConfirmInvite(){
-  if (!_pendingInvite) { alert('Aucune invitation en attente.'); return; }
+  if (!_pendingInvite) { _scrInlineError('Aucune invitation en attente — cliquez d\'abord sur Programmer la visio.'); return; }
   var inv = _pendingInvite;
   var btn = document.getElementById('scrBtnConfirm');
   if(btn){ btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; btn.textContent = '⏳ Envoi...'; }
@@ -4107,7 +4126,7 @@ async function scrConfirmInvite(){
 }
 
 async function _cvDecision(action, btn, extraData) {
-  if (!_scrCv || !_scrCv.fileId) { alert('Aucun CV chargé depuis le dossier Drive.'); return; }
+  if (!_scrCv || !_scrCv.fileId) { _scrInlineError('Aucun CV chargé depuis le dossier Drive.'); return; }
   var labelMap = {REFUSE:'non retenu', SANS_REPONSE:'sans réponse', RAPPEL:'rappel programmé'};
   var label = labelMap[action] || action;
   if (action === 'REFUSE' && !confirm('Marquer ce candidat comme non retenu ?')) return;
@@ -4938,7 +4957,7 @@ function _smsPasser() {
 
 // ── Rappeler plus tard ─────────────────────────────────────────────────
 function _cvRappelDialog() {
-  if (!_scrCv || !_scrCv.fileId) { alert('Aucun CV chargé depuis le dossier Drive.'); return; }
+  if (!_scrCv || !_scrCv.fileId) { _scrInlineError('Aucun CV chargé depuis le dossier Drive.'); return; }
   var el = document.getElementById('rappelBlock');
   if (!el) return;
   var today = new Date().toISOString().slice(0, 10);
@@ -4956,7 +4975,7 @@ function _cvRappelDialog() {
 async function _cvRappelConfirm() {
   var dateVal = document.getElementById('rappelDate')?.value || '';
   var heureVal = document.getElementById('rappelHeure')?.value || '';
-  if (!dateVal || !heureVal) { alert('Date et heure requises'); return; }
+  if (!dateVal || !heureVal) { _scrInlineError('Date et heure requises'); return; }
   document.getElementById('rappelBlock').style.display = 'none';
   await _cvDecision('RAPPEL', null, {rappel_date: dateVal, rappel_heure: heureVal});
 }
