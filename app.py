@@ -1413,6 +1413,68 @@ def _invalidate_phase1_cache():
     _phase1_cache['ts'] = 0.0
 
 
+def _cell(v, field_name=''):
+    """Assainit une valeur avant écriture dans Sheets. Toute sortie GPT DOIT passer par _cell()."""
+    if v is None:
+        return ''
+    if isinstance(v, str):
+        return v.strip()
+    if isinstance(v, dict):
+        if field_name:
+            print(f'[EXTRACT-SANITIZE] {field_name} : dict reçu ({list(v.keys())})')
+        vals = [str(x).strip() for x in v.values() if x]
+        return ' / '.join(vals)
+    if isinstance(v, (list, tuple)):
+        if field_name:
+            print(f'[EXTRACT-SANITIZE] {field_name} : {type(v).__name__} reçu ({len(v)} éléments)')
+        vals = [str(x).strip() for x in v if x]
+        return ' / '.join(vals)
+    if field_name:
+        print(f'[EXTRACT-SANITIZE] {field_name} : {type(v).__name__} reçu')
+    return str(v)
+
+
+def _cell_email(v):
+    """Assainit un email. UNE SEULE adresse — jamais de join."""
+    if v is None:
+        return ''
+    if isinstance(v, str):
+        return v.strip()
+    if isinstance(v, dict):
+        print(f'[EXTRACT-SANITIZE] email : dict reçu ({list(v.keys())})')
+        for val in v.values():
+            if val:
+                return str(val).strip()
+        return ''
+    if isinstance(v, (list, tuple)):
+        print(f'[EXTRACT-SANITIZE] email : {type(v).__name__} reçu ({len(v)} éléments)')
+        return str(v[0]).strip() if v else ''
+    print(f'[EXTRACT-SANITIZE] email : {type(v).__name__} reçu')
+    return str(v)
+
+
+def _cell_tel(v):
+    """Assainit un téléphone. Si dict, préfère mobile > portable > fixe > première valeur."""
+    if v is None:
+        return ''
+    if isinstance(v, str):
+        return v.strip()
+    if isinstance(v, dict):
+        print(f'[EXTRACT-SANITIZE] telephone : dict reçu ({list(v.keys())})')
+        for key in ('mobile', 'portable', 'fixe'):
+            if v.get(key):
+                return str(v[key]).strip()
+        # Première valeur non vide
+        for val in v.values():
+            if val:
+                return str(val).strip()
+        return ''
+    if isinstance(v, (list, tuple)):
+        print(f'[EXTRACT-SANITIZE] telephone : list reçu ({len(v)} éléments)')
+        return str(v[0]).strip() if v else ''
+    return str(v)
+
+
 def _friendly_sheets_error(e):
     """Message français pour les erreurs Google Sheets — le détail reste dans les logs."""
     err = str(e)
@@ -1690,18 +1752,12 @@ def save_cv_to_sheet(data, lien_cv=''):
     ws = _get_or_create_phase1(sh)
     import time
     date_str = datetime.now().strftime('%d/%m/%Y')
-    tel = data.get('telephone', '') or ''
-    if isinstance(tel, list):
-        tel = ' / '.join(str(t) for t in tel)
-    email = data.get('email', '') or ''
-    if isinstance(email, list):
-        email = email[0] if email else ''
     row_data = [
-        (data.get('nom', '') or '').upper(),
-        data.get('prenom', '') or '',
-        email,
-        tel,
-        data.get('adresse', '') or '',
+        _cell(data.get('nom'), 'nom').upper(),
+        _cell(data.get('prenom'), 'prenom'),
+        _cell_email(data.get('email')),
+        _cell_tel(data.get('telephone')),
+        _cell(data.get('adresse'), 'adresse'),
         'NON CONTACTÉ', '', date_str, '', lien_cv
     ]
     for attempt in range(3):
@@ -1803,7 +1859,7 @@ def upload_cv():
                             print(f"  ⚠️ Pas de texte extrait: {name}")
                             results['errors'] += 1; continue
                         data = extract_cv_with_gpt(text)
-                        lien = upload_cv_to_drive(inner, basename, data.get('prenom', ''), data.get('nom', ''))
+                        lien = upload_cv_to_drive(inner, basename, _cell(data.get('prenom')), _cell(data.get('nom')))
                         save_cv_to_sheet(data, lien)
                         results['ok'] += 1
                         print(f"  ✅ {name}: {data.get('nom','')} {data.get('prenom','')} ({data.get('email','')})")
@@ -1820,7 +1876,7 @@ def upload_cv():
 
         data = extract_cv_with_gpt(text)
         print(f"📄 CV extrait: {data}")
-        lien_cv = upload_cv_to_drive(file_bytes, filename, data.get('prenom', ''), data.get('nom', ''))
+        lien_cv = upload_cv_to_drive(file_bytes, filename, _cell(data.get('prenom')), _cell(data.get('nom')))
         save_cv_to_sheet(data, lien_cv)
         return jsonify({'success': True, 'data': data, 'lien_cv': lien_cv})
     except Exception as e:
@@ -2385,7 +2441,7 @@ def cv_extraire():
                     champs = {}
 
             # Contrôle doublon email avant création
-            extracted_email = (champs.get('email', '') or '').strip().lower()
+            extracted_email = _cell_email(champs.get('email')).lower()
             if extracted_email:
                 for i, row in enumerate(rows):
                     if i == 0:
@@ -2397,21 +2453,16 @@ def cv_extraire():
 
             # Créer la ligne A-T (T vide — l'attribution suit)
             date_str = datetime.now().strftime('%d/%m/%Y')
-            tel = champs.get('telephone', '') or ''
-            if isinstance(tel, list):
-                tel = ' / '.join(str(t) for t in tel)
-            email_val = champs.get('email', '') or ''
-            if isinstance(email_val, list):
-                email_val = email_val[0] if email_val else ''
-            nom_val = (champs.get('nom', '') or '').upper()
+            nom_val = _cell(champs.get('nom'), 'nom').upper()
+            email_val = _cell_email(champs.get('email'))
             row_data = [
                 nom_val,
-                champs.get('prenom', '') or '',
+                _cell(champs.get('prenom'), 'prenom'),
                 email_val,
-                tel,
-                champs.get('adresse', '') or '',
+                _cell_tel(champs.get('telephone')),
+                _cell(champs.get('adresse'), 'adresse'),
                 'NON CONTACTÉ',
-                champs.get('poste', '') or '',
+                _cell(champs.get('poste'), 'poste'),
                 date_str,
                 '',
                 web_view_link,  # J = LIEN_CV
