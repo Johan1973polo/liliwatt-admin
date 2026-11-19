@@ -158,7 +158,9 @@ def get_zoho_token():
 
     token = data.get('access_token')
     if token:
-        _zoho_token_cache = {'token': token, 'expires_at': now + 3600.0}
+        # Honorer expires_in renvoyé par Zoho (repli sur 3600 s si absent)
+        expires_in = int(data.get('expires_in', 3600))
+        _zoho_token_cache = {'token': token, 'expires_at': now + float(expires_in)}
         return token
 
     zoho_error = data.get('error', '').strip()
@@ -3886,18 +3888,43 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
     token = get_zoho_token()
     account_id = _zoho_get_account_id(token)
     print(f'[RECRUTEMENT] Envoi invitation à {email} (signé {_sig_name})')
+    _mail_payload = {
+        'fromAddress': 'recrutement@liliwatt.fr',
+        'replyTo': _reply_to,
+        'toAddress': email,
+        'subject': f'Invitation session LILIWATT — {date_lisible} à {heure_session}',
+        'content': mail_html, 'mailFormat': 'html',
+    }
     resp = requests.post(
         f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
         headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
-        json={'fromAddress': 'recrutement@liliwatt.fr',
-              'replyTo': _reply_to,
-              'toAddress': email,
-              'subject': f'Invitation session LILIWATT — {date_lisible} à {heure_session}',
-              'content': mail_html, 'mailFormat': 'html'},
-        timeout=15
+        json=_mail_payload, timeout=15,
     )
+    # Auto-réparation sur 401 : jeton périmé → en redemander un et réessayer une seule fois
+    if resp.status_code == 401:
+        global _zoho_account_id_cache
+        print(f'[ZOHO] 401 sur envoi mail — tentative de renouvellement du jeton')
+        _zoho_token_cache['token'] = None
+        _zoho_token_cache['expires_at'] = 0.0
+        _zoho_account_id_cache = None
+        token = get_zoho_token()
+        account_id = _zoho_get_account_id(token)
+        resp = requests.post(
+            f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
+            headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
+            json=_mail_payload, timeout=15,
+        )
     if resp.status_code >= 300:
-        raise Exception(f'Échec envoi email (Zoho {resp.status_code})')
+        try:
+            _err_body = resp.json()
+        except Exception:
+            _err_body = {}
+        _err_detail = _err_body.get('data', {}).get('errorCode', '') or _err_body.get('error', '') or ''
+        print(f'[ZOHO] Échec envoi mail HTTP {resp.status_code} : {_err_detail}')
+        raise Exception(
+            "L'entretien est bien dans l'agenda, mais le mail n'est pas parti. "
+            f"Recliquez sur Confirmer l'envoi pour relancer. (Zoho {resp.status_code})"
+        )
     print(f'[RECRUTEMENT] Email envoyé à {email}')
 
     return {
