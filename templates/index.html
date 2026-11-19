@@ -1118,13 +1118,25 @@
         <div id="recruteurs-list" style="margin-bottom:24px;"></div>
         <h3 style="font-size:15px;color:#1e1b4b;margin-bottom:12px;">Ajouter un recruteur</h3>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-          <div style="flex:1;min-width:140px;">
-            <label>Pr&eacute;nom / Nom</label>
+          <div style="flex:1;min-width:120px;">
+            <label>Nom court (attribution)</label>
             <input type="text" id="addRecNom" placeholder="Ex: Carole">
+          </div>
+          <div style="flex:1;min-width:120px;">
+            <label>Pr&eacute;nom</label>
+            <input type="text" id="addRecPrenom" placeholder="Carole">
+          </div>
+          <div style="flex:1;min-width:120px;">
+            <label>Nom</label>
+            <input type="text" id="addRecNomComplet" placeholder="Andria">
           </div>
           <div style="flex:1;min-width:200px;">
             <label>Email</label>
             <input type="email" id="addRecEmail" placeholder="prenom@liliwatt.fr">
+          </div>
+          <div style="flex:1;min-width:130px;">
+            <label>T&eacute;l&eacute;phone</label>
+            <input type="tel" id="addRecTel" placeholder="06 00 00 00 00">
           </div>
           <div style="min-width:130px;">
             <label>R&ocirc;le</label>
@@ -5877,6 +5889,8 @@ async function envoyerTestMailsProxy(app, total) {
 
 function _escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+var _recEditRow = null; // email de la ligne en cours d'édition
+
 async function loadRecruteurs() {
   var div = document.getElementById('recruteurs-list');
   if (!div) return;
@@ -5887,17 +5901,46 @@ async function loadRecruteurs() {
     if (!d.success) { div.innerHTML = '<span style="color:#ef4444;">' + _escH(d.error) + '</span>'; return; }
     var list = d.recruteurs || [];
     if (!list.length) { div.innerHTML = '<span style="color:#9ca3af;">Aucun recruteur.</span>'; return; }
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:14px;">';
-    html += '<tr style="border-bottom:2px solid #e5e7eb;"><td style="padding:8px;font-weight:700;color:#6b7280;">Nom</td><td style="padding:8px;font-weight:700;color:#6b7280;">Email</td><td style="padding:8px;font-weight:700;color:#6b7280;">R\u00f4le</td><td></td></tr>';
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<tr style="border-bottom:2px solid #e5e7eb;">'
+      + '<td style="padding:6px 8px;font-weight:700;color:#6b7280;">Nom court</td>'
+      + '<td style="padding:6px 8px;font-weight:700;color:#6b7280;">Pr\u00e9nom</td>'
+      + '<td style="padding:6px 8px;font-weight:700;color:#6b7280;">Nom</td>'
+      + '<td style="padding:6px 8px;font-weight:700;color:#6b7280;">Email</td>'
+      + '<td style="padding:6px 8px;font-weight:700;color:#6b7280;">T\u00e9l</td>'
+      + '<td style="padding:6px 8px;font-weight:700;color:#6b7280;">R\u00f4le</td>'
+      + '<td></td></tr>';
     list.forEach(function(rec) {
+      var esc = function(v) { return _escH(v||''); };
+      var eml = esc(rec.email).replace(/'/g,"\\'");
+      var isEdit = _recEditRow === rec.email;
       var roleBg = rec.role === 'admin' ? '#ede9fe' : '#dbeafe';
       var roleColor = rec.role === 'admin' ? '#7c3aed' : '#2563eb';
-      html += '<tr style="border-bottom:1px solid #f3f4f6;">'
-        + '<td style="padding:8px;">' + _escH(rec.nom) + '</td>'
-        + '<td style="padding:8px;color:#6b7280;font-size:13px;">' + _escH(rec.email) + '</td>'
-        + '<td style="padding:8px;"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:' + roleBg + ';color:' + roleColor + ';text-transform:uppercase;">' + _escH(rec.role) + '</span></td>'
-        + '<td style="padding:8px;text-align:right;"><button onclick="retirerRecruteur(\'' + _escH(rec.email).replace(/'/g,"\\'") + '\',\'' + _escH(rec.nom).replace(/'/g,"\\'") + '\')" style="padding:4px 10px;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Retirer</button></td>'
-        + '</tr>';
+      if (isEdit) {
+        html += '<tr style="border-bottom:1px solid #f3f4f6;background:#fffbeb;">'
+          + '<td style="padding:6px 8px;font-weight:600;color:#6b7280;">' + esc(rec.nom) + '<div style="font-size:10px;color:#9ca3af;">non modifiable</div></td>'
+          + '<td style="padding:4px;"><input id="editRecPrenom" value="' + esc(rec.prenom) + '" style="width:100%;padding:4px;border:1px solid #d8b4fe;border-radius:4px;font-size:13px;box-sizing:border-box;"></td>'
+          + '<td style="padding:4px;"><input id="editRecNomC" value="' + esc(rec.nom_complet) + '" style="width:100%;padding:4px;border:1px solid #d8b4fe;border-radius:4px;font-size:13px;box-sizing:border-box;"></td>'
+          + '<td style="padding:4px;"><input id="editRecEmail" value="' + esc(rec.email) + '" style="width:100%;padding:4px;border:1px solid #d8b4fe;border-radius:4px;font-size:13px;box-sizing:border-box;"></td>'
+          + '<td style="padding:4px;"><input id="editRecTel" value="' + esc(rec.telephone) + '" style="width:80px;padding:4px;border:1px solid #d8b4fe;border-radius:4px;font-size:13px;box-sizing:border-box;"></td>'
+          + '<td style="padding:4px;"><select id="editRecRole" style="padding:4px;border:1px solid #d8b4fe;border-radius:4px;font-size:13px;"><option value="recruteur"' + (rec.role!=='admin'?' selected':'') + '>Recruteur</option><option value="admin"' + (rec.role==='admin'?' selected':'') + '>Admin</option></select></td>'
+          + '<td style="padding:4px;text-align:right;white-space:nowrap;">'
+          + '<button onclick="modifierRecruteurSave(\'' + eml + '\')" style="padding:3px 8px;background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px;">Enregistrer</button>'
+          + '<button onclick="_recEditRow=null;loadRecruteurs();" style="padding:3px 8px;background:#e5e7eb;color:#374151;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">Annuler</button>'
+          + '</td></tr>';
+      } else {
+        html += '<tr style="border-bottom:1px solid #f3f4f6;">'
+          + '<td style="padding:6px 8px;font-weight:600;">' + esc(rec.nom) + '</td>'
+          + '<td style="padding:6px 8px;">' + esc(rec.prenom) + '</td>'
+          + '<td style="padding:6px 8px;">' + esc(rec.nom_complet) + '</td>'
+          + '<td style="padding:6px 8px;color:#6b7280;">' + esc(rec.email) + '</td>'
+          + '<td style="padding:6px 8px;color:#6b7280;">' + esc(rec.telephone) + '</td>'
+          + '<td style="padding:6px 8px;"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:' + roleBg + ';color:' + roleColor + ';text-transform:uppercase;">' + esc(rec.role) + '</span></td>'
+          + '<td style="padding:6px 8px;text-align:right;white-space:nowrap;">'
+          + '<button onclick="_recEditRow=\'' + eml + '\';loadRecruteurs();" style="padding:3px 8px;background:#ede9fe;color:#7c3aed;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;margin-right:4px;">Modifier</button>'
+          + '<button onclick="retirerRecruteur(\'' + eml + '\',\'' + esc(rec.nom).replace(/'/g,"\\'") + '\')" style="padding:3px 8px;background:#fee2e2;color:#dc2626;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">Retirer</button>'
+          + '</td></tr>';
+      }
     });
     div.innerHTML = html + '</table>';
   } catch(e) { div.innerHTML = '<span style="color:#ef4444;">Erreur r\u00e9seau</span>'; }
@@ -5907,17 +5950,45 @@ async function ajouterRecruteur() {
   var nom = document.getElementById('addRecNom').value.trim();
   var email = document.getElementById('addRecEmail').value.trim();
   var role = document.getElementById('addRecRole').value;
+  var prenom = document.getElementById('addRecPrenom').value.trim();
+  var nomComplet = document.getElementById('addRecNomComplet').value.trim();
+  var telephone = document.getElementById('addRecTel').value.trim();
   var msg = document.getElementById('recruteurs-msg');
   msg.textContent = ''; msg.style.color = '#6b7280';
-  if (!nom || !email) { msg.textContent = 'Pr\u00e9nom et email requis'; msg.style.color = '#ef4444'; return; }
+  if (!nom || !email) { msg.textContent = 'Nom court et email requis'; msg.style.color = '#ef4444'; return; }
   msg.textContent = 'Ajout…';
   try {
-    var r = await fetch('/api/recruteurs/ajouter', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nom:nom,email:email,role:role}) });
+    var r = await fetch('/api/recruteurs/ajouter', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nom:nom,email:email,role:role,prenom:prenom,nom_complet:nomComplet,telephone:telephone}) });
     var d = await r.json();
     if (d.success) {
       msg.textContent = _escH(nom) + ' ajout\u00e9'; msg.style.color = '#16a34a';
-      document.getElementById('addRecNom').value = '';
-      document.getElementById('addRecEmail').value = '';
+      ['addRecNom','addRecEmail','addRecPrenom','addRecNomComplet','addRecTel'].forEach(function(id){ document.getElementById(id).value = ''; });
+      loadRecruteurs();
+    } else {
+      msg.textContent = d.error || 'Erreur'; msg.style.color = '#ef4444';
+    }
+  } catch(e) { msg.textContent = 'Erreur r\u00e9seau'; msg.style.color = '#ef4444'; }
+}
+
+async function modifierRecruteurSave(currentEmail) {
+  var msg = document.getElementById('recruteurs-msg');
+  msg.textContent = 'Enregistrement…'; msg.style.color = '#6b7280';
+  try {
+    var r = await fetch('/api/recruteurs/modifier', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        current_email: currentEmail,
+        email: document.getElementById('editRecEmail').value.trim(),
+        role: document.getElementById('editRecRole').value,
+        prenom: document.getElementById('editRecPrenom').value.trim(),
+        nom_complet: document.getElementById('editRecNomC').value.trim(),
+        telephone: document.getElementById('editRecTel').value.trim(),
+      })
+    });
+    var d = await r.json();
+    if (d.success) {
+      msg.textContent = 'Fiche mise \u00e0 jour'; msg.style.color = '#16a34a';
+      _recEditRow = null;
       loadRecruteurs();
     } else {
       msg.textContent = d.error || 'Erreur'; msg.style.color = '#ef4444';

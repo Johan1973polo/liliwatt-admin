@@ -500,10 +500,14 @@ def _get_recruteurs(force_refresh=False):
                 email = (row[1] if len(row) > 1 else '').strip().lower()
                 role = (row[2] if len(row) > 2 else '').strip().lower() or 'recruteur'
                 if nom:
-                    # Filet de sécurité : email hardcodé → toujours admin
                     if email in _ADMIN_EMAILS_HARDCODED:
                         role = 'admin'
-                    result.append({'nom': nom, 'email': email, 'role': role})
+                    result.append({
+                        'nom': nom, 'email': email, 'role': role,
+                        'prenom':       (row[3] if len(row) > 3 else '').strip(),
+                        'nom_complet':  (row[4] if len(row) > 4 else '').strip(),
+                        'telephone':    (row[5] if len(row) > 5 else '').strip(),
+                    })
             if result:
                 _RECRUTEURS_CACHE['data'] = result
                 _RECRUTEURS_CACHE['ts'] = now
@@ -515,16 +519,29 @@ def _get_recruteurs(force_refresh=False):
     _RECRUTEURS_CACHE['ts'] = now
     return _RECRUTEURS_FALLBACK
 
+_RECRUTEURS_HEADERS = ['PRENOM_NOM', 'EMAIL', 'ROLE', 'PRENOM', 'NOM', 'TELEPHONE']
+
 def _get_recruteurs_ws():
-    """Retourne le worksheet RECRUTEURS (pour écriture). Crée l'onglet si absent."""
+    """Retourne le worksheet RECRUTEURS (pour écriture). Crée l'onglet si absent.
+    Extension non destructive des colonnes D-F si absentes."""
+    _COLS = 'ABCDEF'
     gc = get_sheets_client()
     sh = gc.open_by_key(RECRUTEMENT_SHEET_ID)
     try:
-        return sh.worksheet('RECRUTEURS')
+        ws = sh.worksheet('RECRUTEURS')
     except Exception:
-        ws = sh.add_worksheet(title='RECRUTEURS', rows=50, cols=3)
-        ws.update('A1:C1', [['PRENOM_NOM', 'EMAIL', 'ROLE']], value_input_option='RAW')
+        ws = sh.add_worksheet(title='RECRUTEURS', rows=50, cols=len(_RECRUTEURS_HEADERS))
+        ws.update('A1:F1', [_RECRUTEURS_HEADERS], value_input_option='RAW')
         return ws
+    # Extension non destructive
+    try:
+        hdr = ws.row_values(1)
+        if len(hdr) < len(_RECRUTEURS_HEADERS):
+            for idx in range(len(hdr), len(_RECRUTEURS_HEADERS)):
+                ws.update(f'{_COLS[idx]}1', [[_RECRUTEURS_HEADERS[idx]]], value_input_option='RAW')
+    except Exception:
+        pass
+    return ws
 
 @app.route('/select-recruiter', methods=['GET', 'POST'])
 def select_recruiter():
@@ -535,12 +552,17 @@ def select_recruiter():
         email = request.form.get('recruiter_email', '').strip().lower()
         role = request.form.get('recruiter_role', 'recruteur').strip().lower()
         if nom:
-            # Filet de sécurité
             if email in _ADMIN_EMAILS_HARDCODED:
                 role = 'admin'
             session['recruiter_name'] = nom
             session['recruiter_email'] = email
             session['recruiter_role'] = role
+            # Charger prénom, nom complet, téléphone depuis la fiche
+            _recs = _get_recruteurs()
+            _fiche = next((r for r in _recs if r['email'] == email), None)
+            session['recruiter_prenom'] = _fiche.get('prenom', '') if _fiche else ''
+            session['recruiter_nom_complet'] = _fiche.get('nom_complet', '') if _fiche else ''
+            session['recruiter_telephone'] = _fiche.get('telephone', '') if _fiche else ''
             return redirect(url_for('index'))
     recruteurs = _get_recruteurs()
     return render_template('select_recruiter.html', recruteurs=recruteurs)
@@ -552,6 +574,9 @@ def recruiter_info():
         'name': session.get('recruiter_name', ''),
         'email': session.get('recruiter_email', ''),
         'role': session.get('recruiter_role', ''),
+        'prenom': session.get('recruiter_prenom', ''),
+        'nom_complet': session.get('recruiter_nom_complet', ''),
+        'telephone': session.get('recruiter_telephone', ''),
     })
 
 # ── Gestion des recruteurs (admin seulement) ──────────────────────────
@@ -573,18 +598,24 @@ def ajouter_recruteur():
     nom = (d.get('nom') or '').strip()
     email = (d.get('email') or '').strip().lower()
     role = (d.get('role') or 'recruteur').strip().lower()
+    prenom = (d.get('prenom') or '').strip()
+    nom_complet = (d.get('nom_complet') or '').strip()
+    telephone = (d.get('telephone') or '').strip()
     if not nom or not email:
-        return jsonify({'error': 'Prénom et email requis'}), 400
+        return jsonify({'error': 'Nom court et email requis'}), 400
     if role not in ('admin', 'recruteur'):
         return jsonify({'error': 'Rôle invalide (admin ou recruteur)'}), 400
-    # Doublon ?
     existants = _get_recruteurs(force_refresh=True)
     if any(r['email'] == email for r in existants):
         return jsonify({'error': 'Cet email existe déjà'}), 409
+    # Unicité du nom court — insensible à la casse et aux espaces de bord
+    nom_norm = nom.strip().lower()
+    if any(r['nom'].strip().lower() == nom_norm for r in existants):
+        return jsonify({'error': f'Le nom court « {nom} » existe déjà'}), 409
     try:
         ws = _get_recruteurs_ws()
-        ws.append_row([nom, email, role], value_input_option='RAW')
-        _RECRUTEURS_CACHE['data'] = None  # invalider le cache
+        ws.append_row([nom, email, role, prenom, nom_complet, telephone], value_input_option='RAW')
+        _RECRUTEURS_CACHE['data'] = None
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -620,6 +651,57 @@ def retirer_recruteur():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recruteurs/modifier', methods=['POST'])
+@login_required
+def modifier_recruteur():
+    """Modifie une fiche recruteur (colonnes B-F). La colonne A (nom court) n'est jamais touchée."""
+    if session.get('recruiter_role') != 'admin':
+        return jsonify({'error': 'Accès réservé admin'}), 403
+    d = request.get_json()
+    current_email = (d.get('current_email') or '').strip().lower()
+    if not current_email:
+        return jsonify({'error': 'current_email requis'}), 400
+    new_email     = (d.get('email') or '').strip().lower()
+    role          = (d.get('role') or 'recruteur').strip().lower()
+    prenom        = (d.get('prenom') or '').strip()
+    nom_complet   = (d.get('nom_complet') or '').strip()
+    telephone     = (d.get('telephone') or '').strip()
+    if not new_email:
+        return jsonify({'error': 'Email requis'}), 400
+    if role not in ('admin', 'recruteur'):
+        return jsonify({'error': 'Rôle invalide (admin ou recruteur)'}), 400
+    # Garde-fou : ne jamais laisser zéro admin
+    existants = _get_recruteurs(force_refresh=True)
+    target = next((r for r in existants if r['email'] == current_email), None)
+    if not target:
+        return jsonify({'error': 'Recruteur non trouvé'}), 404
+    if target['role'] == 'admin' and role != 'admin':
+        admins = [r for r in existants if r['role'] == 'admin']
+        if len(admins) <= 1:
+            return jsonify({'error': 'Impossible : il doit rester au moins un administrateur.'}), 400
+    # Doublon email si changé
+    if new_email != current_email and any(r['email'] == new_email for r in existants):
+        return jsonify({'error': 'Cet email existe déjà'}), 409
+    try:
+        ws = _get_recruteurs_ws()
+        rows = ws.get_all_values()
+        target_row = None
+        for i, row in enumerate(rows):
+            if i == 0:
+                continue
+            if (row[1] if len(row) > 1 else '').strip().lower() == current_email:
+                target_row = i + 1
+                break
+        if not target_row:
+            return jsonify({'error': 'Ligne introuvable dans le Sheet'}), 404
+        # Écriture atomique B-F, colonne A intacte
+        ws.update(f'B{target_row}:F{target_row}', [[new_email, role, prenom, nom_complet, telephone]], value_input_option='RAW')
+        _RECRUTEURS_CACHE['data'] = None
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/create-drive-folder', methods=['POST'])
 @login_required
@@ -2203,7 +2285,7 @@ def cv_inbox():
             'is_admin':            recruiter_role == 'admin',
             'traites_aujourd_hui': traites_aujourd_hui,
             'visios_envoyees':     visios_envoyees,
-            'tel_rappel':          os.environ.get('RECRUTEMENT_TEL_RAPPEL', ''),
+            'tel_rappel':          session.get('recruiter_telephone', '') or os.environ.get('RECRUTEMENT_TEL_RAPPEL', ''),
         })
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -3717,6 +3799,25 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
     else:
         accroche = 'Suite &agrave; notre &eacute;change, nous avons le plaisir de vous inviter &agrave; rejoindre notre session de pr&eacute;sentation LILIWATT.'
 
+    # Signature et replyTo : recruteuse connectée, avec repli
+    _sig_prenom = (session.get('recruiter_prenom', '') if session else '') or ''
+    _sig_nom_c  = (session.get('recruiter_nom_complet', '') if session else '') or ''
+    _sig_tel    = (session.get('recruiter_telephone', '') if session else '') or ''
+    _sig_email  = (session.get('recruiter_email', '') if session else '') or ''
+    _reply_to   = _sig_email or 'recrutement@liliwatt.fr'
+    # Ligne 1 : PRENOM NOM si les deux renseignés, sinon nom court, sinon repli
+    if _sig_prenom and _sig_nom_c:
+        _sig_name = f'{_sig_prenom} {_sig_nom_c}'
+    else:
+        _sig_name = _recruteuse or "L'équipe LILIWATT"
+    # Construction sans ligne vide ni <br> orphelin
+    _sig_parts = [_sig_name]
+    if _sig_email:
+        _sig_parts.append(_sig_email)
+    if _sig_tel:
+        _sig_parts.append(_sig_tel)
+    _sig_line = '<br>'.join(_sig_parts)
+
     inv_corps = '\n'.join([
         paragraphe(f'Bonjour {accent(prenom_display, theme="clair")},'),
         paragraphe(accroche),
@@ -3726,19 +3827,19 @@ def _send_invitation_visio(*, email, prenom, nom, telephone, experience, date_se
         ])),
         bouton('Rejoindre la session Google Meet', 'https://meet.google.com/tzv-pgjc-und?authuser=0'),
         paragraphe('&Agrave; tr&egrave;s bient&ocirc;t !'),
-        paragraphe(f'Carole Andria<br>carole.andria@liliwatt.fr'),
+        paragraphe(_sig_line),
         signature_equipe(),
     ])
     mail_html = mail_liliwatt('INVITATION', 'SESSION', inv_corps)
 
     token = get_zoho_token()
     account_id = _zoho_get_account_id(token)
-    print(f'[RECRUTEMENT] Envoi invitation à {email}')
+    print(f'[RECRUTEMENT] Envoi invitation à {email} (signé {_sig_name})')
     resp = requests.post(
         f'https://mail.zoho.eu/api/accounts/{account_id}/messages',
         headers={'Authorization': f'Zoho-oauthtoken {token}', 'Content-Type': 'application/json'},
         json={'fromAddress': 'recrutement@liliwatt.fr',
-              'replyTo': 'carole.andria@liliwatt.fr',
+              'replyTo': _reply_to,
               'toAddress': email,
               'subject': f'Invitation session LILIWATT — {date_lisible} à {heure_session}',
               'content': mail_html, 'mailFormat': 'html'},
